@@ -1,4 +1,4 @@
-"""Config flow"""
+"""Config flow realm selector"""
 import asyncio
 import logging
 import voluptuous as vol
@@ -63,6 +63,47 @@ STEP_CHARACTER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_CHARACTER_NAME): str,
     }
 )
+
+
+def get_compatible_select_mode():
+    """Get compatible select mode based on HA version."""
+    try:
+        # Try new COMBOBOX mode (HA 2024.2+)
+        return selector.SelectSelectorMode.COMBOBOX
+    except AttributeError:
+        try:
+            # Fallback to LIST mode with custom_value (HA 2023.8+)
+            return selector.SelectSelectorMode.LIST
+        except AttributeError:
+            # Final fallback to DROPDOWN (older HA versions)
+            return selector.SelectSelectorMode.DROPDOWN
+
+
+def create_realm_selector_config(realm_options: List[Dict[str, str]]) -> selector.SelectSelectorConfig:
+    """Create realm selector config compatible with current HA version."""
+    try:
+        # Try newest approach first (HA 2024.2+)
+        return selector.SelectSelectorConfig(
+            options=realm_options,
+            mode=selector.SelectSelectorMode.COMBOBOX,
+            custom_value=True,
+            sort=True,
+        )
+    except AttributeError:
+        try:
+            # Try LIST mode with custom_value (HA 2023.8+)
+            return selector.SelectSelectorConfig(
+                options=realm_options,
+                mode=selector.SelectSelectorMode.LIST,
+                custom_value=True,
+            )
+        except AttributeError:
+            # Fallback to basic DROPDOWN (older HA versions)
+            _LOGGER.info("Using fallback DROPDOWN selector for realm selection")
+            return selector.SelectSelectorConfig(
+                options=realm_options,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
 
 
 async def validate_api_credentials(hass: HomeAssistant, data: dict[str, any]) -> dict[str, any]:
@@ -196,9 +237,9 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_character(
         self, user_input: dict[str, any] | None = None
     ) -> FlowResult:
-        """Handle character"""
+        """Handle character addition step with COMPATIBLE realm selector."""
         if user_input is None:
-            # Create SEARCHABLE realm selector from ALL available realms
+            # Create realm selector from ALL available realms
             realm_options = []
             if "available_realms" in self.data:
                 realm_options = [
@@ -206,21 +247,21 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     for realm in self.data["available_realms"]  # ALL REALMS!
                 ]
                 
-                _LOGGER.info(f"Showing {len(realm_options)} searchable realms")
+                _LOGGER.info(f"Showing {len(realm_options)} realms with compatible selector")
             
             if realm_options:
-                # 🔍 SEARCHABLE COMBOBOX with custom input support!
-                schema = vol.Schema({
-                    vol.Required(CONF_REALM): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=realm_options,
-                            mode=selector.SelectSelectorMode.COMBOBOX,  # ✅ SEARCH MODE!
-                            custom_value=True,  # ✅ Allow manual input if realm not found
-                            sort=True,          # ✅ Extra sorting 
-                        )
-                    ),
-                    vol.Required(CONF_CHARACTER_NAME): str,
-                })
+                # Use version-compatible selector
+                try:
+                    selector_config = create_realm_selector_config(realm_options)
+                    schema = vol.Schema({
+                        vol.Required(CONF_REALM): selector.SelectSelector(selector_config),
+                        vol.Required(CONF_CHARACTER_NAME): str,
+                    })
+                    _LOGGER.info("Using enhanced realm selector")
+                except Exception as e:
+                    # Ultimate fallback to text input
+                    _LOGGER.warning(f"Selector creation failed ({e}), using text input")
+                    schema = STEP_CHARACTER_DATA_SCHEMA
             else:
                 # Fallback to text input if no realms loaded
                 schema = STEP_CHARACTER_DATA_SCHEMA
@@ -232,7 +273,7 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 description_placeholders={
                     "character_count": len(self.characters),
                     "total_realms": len(self.data.get("available_realms", [])),
-                    "search_help": "Type to search realms, or enter manually if not found"
+                    "help_text": "Select your realm from the list, or type manually if not found"
                 }
             )
 
@@ -277,7 +318,7 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "character_count": len(self.characters),
                 "total_realms": len(self.data.get("available_realms", [])),
-                "search_help": "Type to search realms, or enter manually if not found"
+                "help_text": "Select your realm from the list, or type manually if not found"
             }
         )
 
@@ -375,7 +416,7 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
             }),
             description_placeholders={
                 "character_count": len(current_characters),
-                "feature_info": "Search-enabled realm selector with all realms available"
+                "compatibility": "Using Home Assistant version-compatible selectors"
             }
         )
 
