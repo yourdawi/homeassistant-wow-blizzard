@@ -400,20 +400,6 @@ We welcome contributions!
 ### Feature Requests
 - **GitHub Issues**: Report bugs, request features
 
-## 📊 Supported Content
-
-### Current Expansion: Dragonflight
-- **Raids**: Vault of Incarnates, Aberrus, Amirdrassil
-- **Dungeons**: Season 3 & 4 rotation
-- **PvP**: Seasons 1-4 support
-- **Features**: All current expansion content
-
-### Legacy Support
-- **Previous Expansions**: Limited data
-- **Classic**: Separate API (future support)
-- **Hardcore**: Character monitoring only
-
-
 ## 📈 Performance
 
 ### Resource Usage
