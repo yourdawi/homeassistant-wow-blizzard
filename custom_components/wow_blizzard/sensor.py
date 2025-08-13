@@ -77,7 +77,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             profile = await self.client.get_character_profile(realm, character_name)
             equipment = await self.client.get_character_equipment(realm, character_name)
             achievements = await self.client.get_character_achievements(realm, character_name)
-            # Itemlevel aus dem Charakter-Profile-Response
+            # Item level from character profile response
             item_level = profile.get("equipped_item_level", 0)
 
             # Get achievement points
@@ -201,7 +201,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             progress_mythic = 0
             total_kills = 0
 
-            # Zähle alle Boss-Kills aus allen Expansions
+            # Count all boss kills from all expansions
             if encounters and "expansions" in encounters:
                 for expansion in encounters["expansions"]:
                     for instance in expansion.get("instances", []):
@@ -252,13 +252,19 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             # Get current season data
             if season_data:
                 best_runs = season_data.get("best_runs", [])
+                all_runs = []
+                # Collect all runs from all dungeons
+                for run in best_runs:
+                    if "members" in run:
+                        all_runs.append(run)
+                # If the API provides additional fields for all runs, add here
                 if best_runs:
-                    # Get highest key level
                     best_run = max(run.get("keystone_level", 0) for run in best_runs)
-                    runs_completed = len(best_runs)
-                    runs_timed = sum(1 for run in best_runs if run.get("is_completed_within_time", False))
+                # Total number of all runs and timed runs
+                runs_completed = len(all_runs)
+                runs_timed = sum(1 for run in all_runs if run.get("is_completed_within_time", False))
 
-                # Blizzard-Score direkt verwenden
+                # Use Blizzard score directly
                 score = season_data.get("mythic_rating", {}).get("rating", 0)
 
             # Get weekly data if available
