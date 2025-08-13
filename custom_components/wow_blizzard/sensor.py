@@ -77,8 +77,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             profile = await self.client.get_character_profile(realm, character_name)
             equipment = await self.client.get_character_equipment(realm, character_name)
             achievements = await self.client.get_character_achievements(realm, character_name)
-            # Itemlevel direkt aus dem Equipment-Response
-            item_level = equipment.get("level", 0)
+            # Itemlevel aus dem Charakter-Profile-Response
+            item_level = profile.get("equipped_item_level", 0)
 
             # Get achievement points
             achievement_points = achievements.get("total_points", 0)
@@ -475,12 +475,17 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_info(self):
         """Return device info."""
+        char_data = self.coordinator.data.get(self._char_key, {})
         return {
             "identifiers": {(DOMAIN, f"{self._realm}_{self._character_name}")},
             "name": f"{self._character_name} ({self._realm})",
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Character",
             "sw_version": "The War Within",
+            "faction": char_data.get("faction"),
+            "race": char_data.get("character_race"),
+            "character_class": char_data.get("character_class"),
+            "active_spec": char_data.get("spec"),
         }
 
 
