@@ -10,4 +10,6 @@
   "config_flow": true,
   "dependencies": [],
   "after_dependencies": []
+  ,"icon": "icon.png"
+  ,"logo": "logo.png"
 }
