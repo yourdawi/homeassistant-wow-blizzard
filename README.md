@@ -8,8 +8,14 @@ Monitor multiple characters, server status, PvP ratings, raid progress, and Myth
 
 ### 📊 Character Monitoring
 - **Multiple Characters**: Monitor unlimited characters across different realms
-- **Real-time Stats**: Level, item level, guild, achievement points, gold
+- **Real-time Stats**: Level, item level, guild, achievement points
 - **Cross-Realm Support**: Characters from different servers in one integration
+
+### 🌐 Server Monitoring
+- **Realm Status**: Online/Offline status
+- **Population**: Low/Medium/High/Full
+- **Queue Times**: Login queue information
+- **Maintenance Tracking**: Scheduled downtime alerts
 
 ### ⚔️ PvP Statistics  
 - **Arena Ratings**: 2v2, 3v3 current season ratings
@@ -28,12 +34,6 @@ Monitor multiple characters, server status, PvP ratings, raid progress, and Myth
 - **Best Key Level**: Highest completed key
 - **Completion Stats**: Total runs, timed runs
 - **Weekly Progress**: Best weekly key completion
-
-### 🌐 Server Monitoring
-- **Realm Status**: Online/Offline status
-- **Population**: Low/Medium/High/Full
-- **Queue Times**: Login queue information
-- **Maintenance Tracking**: Scheduled downtime alerts
 
 ### 🎮 Multi-Region Support
 - **Americas (US)**: us.api.blizzard.com

@@ -128,18 +128,14 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             population = "Unknown"
             queue_time = 0
 
-            if realm_info:
-                status = realm_info.get("status", {}).get("name", "Unknown")
-                population = realm_info.get("population", {}).get("name", "Unknown")
-
             if connected_realm:
+                status = connected_realm.get("status", {}).get("name", "Unknown")
+                population = connected_realm.get("population", {}).get("name", "Unknown")
                 # Get queue information if available
                 if connected_realm.get("has_queue"):
                     queue_time = connected_realm.get("queue_time", 0)
 
             return {
-                "realm_status": status,
-                "realm_population": population,
                 "realm_queue": queue_time,
                 "realm_timezone": realm_info.get("timezone", "Unknown"),
                 "realm_locale": realm_info.get("locale", "Unknown"),

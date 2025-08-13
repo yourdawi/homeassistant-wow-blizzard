@@ -12,6 +12,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class WoWBlizzardAPIClient:
+    @staticmethod
+    def realm_to_slug(realm: str) -> str:
+        """Convert realm name to slug for Blizzard API."""
+        return realm.strip().lower().replace("'", "").replace(" ", "-").replace("ä", "a").replace("ö", "o").replace("ü", "u").replace("ß", "ss")
     """API client"""
 
     REGION_LOCALES = {
@@ -140,7 +144,8 @@ class WoWBlizzardAPIClient:
     
     async def get_character_profile(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character profile data."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}"
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}"
         params = {"namespace": f"profile-{self.region}"}
         profile = await self._make_request(endpoint, params)
         
@@ -153,26 +158,30 @@ class WoWBlizzardAPIClient:
 
     async def get_character_equipment(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character equipment data."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/equipment"
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/equipment"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
     async def get_character_achievements(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character achievements data."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/achievements"
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/achievements"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
     async def get_character_statistics(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character statistics (DEPRECATED - kept for compatibility)."""
         _LOGGER.warning("Character statistics endpoint is deprecated")
+        realm_slug = self.realm_to_slug(realm)
         return {}
 
     # === Realm/Server Methods ===
     
     async def get_realm_info(self, realm: str) -> Dict[str, Any]:
         """Get realm information."""
-        endpoint = f"/data/wow/realm/{realm.lower()}"
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/data/wow/realm/{realm_slug}"
         params = {"namespace": f"dynamic-{self.region}"}
         return await self._make_request(endpoint, params)
 
@@ -184,7 +193,8 @@ class WoWBlizzardAPIClient:
 
     async def get_connected_realm(self, realm: str) -> Dict[str, Any]:
         """Get connected realm info (for server status)."""
-        realm_info = await self.get_realm_info(realm)
+        realm_slug = self.realm_to_slug(realm)
+        realm_info = await self.get_realm_info(realm_slug)
         if not realm_info or "id" not in realm_info:
             return {}
         
@@ -196,13 +206,15 @@ class WoWBlizzardAPIClient:
     
     async def get_character_pvp_summary(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character PvP summary."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/pvp-summary"
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/pvp-summary"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
     async def get_character_pvp_bracket(self, realm: str, character_name: str, bracket: str) -> Dict[str, Any]:
         """Get character PvP bracket statistics."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/pvp-bracket/{bracket}"
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/pvp-bracket/{bracket}"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
@@ -227,7 +239,8 @@ class WoWBlizzardAPIClient:
     
     async def get_character_encounters_raids(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character raid encounters."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/encounters/raids"
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/encounters/raids"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
@@ -235,7 +248,8 @@ class WoWBlizzardAPIClient:
     
     async def get_character_mythicplus_profile(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character Mythic+ profile."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/mythic-keystone-profile"
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/mythic-keystone-profile"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
@@ -245,7 +259,8 @@ class WoWBlizzardAPIClient:
         if season_id is None:
             season_id = 13  # Season 4 of The War Within (August 2025)
             
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/mythic-keystone-profile/season/{season_id}"
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/mythic-keystone-profile/season/{season_id}"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
@@ -253,7 +268,8 @@ class WoWBlizzardAPIClient:
     
     async def get_guild_info(self, realm: str, guild_name: str) -> Dict[str, Any]:
         """Get guild information."""
-        endpoint = f"/data/wow/guild/{realm.lower()}/{guild_name.lower().replace(' ', '-')}"
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/data/wow/guild/{realm_slug}/{guild_name.lower().replace(' ', '-')}"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
