@@ -1,0 +1,138 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "WoW Blizzard API Setup",
+        "description": "Enter your Battle.net API credentials. You can create them at {setup_url}",
+        "data": {
+          "client_id": "Client ID",
+          "client_secret": "Client Secret",
+          "region": "Region"
+        }
+      },
+      "features": {
+        "title": "Feature Selection",
+        "description": "Choose which features to enable for region {region}. You can change these later in integration options.",
+        "data": {
+          "enable_server_status": "Enable Server Status",
+          "enable_pvp": "Enable PvP Statistics",
+          "enable_raids": "Enable Raid Progress",
+          "enable_mythic_plus": "Enable Mythic+ Data"
+        }
+      },
+      "character": {
+        "title": "Add Character",
+        "description": "Add a character to monitor. Current characters: {character_count}",
+        "data": {
+          "realm": "Realm",
+          "character_name": "Character Name"
+        }
+      },
+      "character_confirm": {
+        "title": "Character Added Successfully",
+        "description": "Added {character_name} (Level {character_level} {character_class} {character_race}) from {realm}. Total characters: {total_characters}. Would you like to add another character?",
+        "data": {
+          "add_another": "Add Another Character"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Battle.net API",
+      "invalid_auth": "Invalid authentication credentials", 
+      "character_not_found": "Character not found or not accessible",
+      "character_already_added": "This character has already been added",
+      "unknown": "Unknown error occurred"
+    },
+    "abort": {
+      "already_configured": "This character configuration is already set up",
+      "no_characters": "At least one character must be added"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Integration Options",
+        "description": "Manage features for your {character_count} character(s). Changes require a restart to take effect.",
+        "data": {
+          "enable_server_status": "Server Status & Maintenance",
+          "enable_pvp": "PvP Statistics & Ratings", 
+          "enable_raids": "Raid Progress & Boss Kills",
+          "enable_mythic_plus": "Mythic+ Scores & Runs"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "character_level": {
+        "name": "Level"
+      },
+      "character_item_level": {
+        "name": "Item Level"
+      },
+      "guild_name": {
+        "name": "Guild"
+      },
+      "achievement_points": {
+        "name": "Achievement Points"
+      },
+      "character_money": {
+        "name": "Gold"
+      },
+      "realm_status": {
+        "name": "Realm Status"
+      },
+      "realm_population": {
+        "name": "Population"
+      },
+      "realm_queue": {
+        "name": "Queue Time"
+      },
+      "pvp_2v2_rating": {
+        "name": "2v2 Arena Rating"
+      },
+      "pvp_3v3_rating": {
+        "name": "3v3 Arena Rating"
+      },
+      "pvp_rbg_rating": {
+        "name": "RBG Rating"
+      },
+      "pvp_honor_level": {
+        "name": "Honor Level"
+      },
+      "pvp_wins_season": {
+        "name": "PvP Wins (Season)"
+      },
+      "raid_progress_lfr": {
+        "name": "LFR Progress"
+      },
+      "raid_progress_normal": {
+        "name": "Normal Progress"
+      },
+      "raid_progress_heroic": {
+        "name": "Heroic Progress"
+      },
+      "raid_progress_mythic": {
+        "name": "Mythic Progress"
+      },
+      "raid_kills_total": {
+        "name": "Total Boss Kills"
+      },
+      "mythicplus_score": {
+        "name": "M+ Score"
+      },
+      "mythicplus_best_run": {
+        "name": "Best M+ Level"
+      },
+      "mythicplus_runs_completed": {
+        "name": "M+ Runs Completed"
+      },
+      "mythicplus_runs_timed": {
+        "name": "M+ Runs Timed"
+      },
+      "mythicplus_weekly_best": {
+        "name": "Weekly Best M+"
+      }
+    }
+  }
+}

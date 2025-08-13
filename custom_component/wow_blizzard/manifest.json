@@ -1,0 +1,13 @@
+{
+  "domain": "wow_blizzard",
+  "name": "World of Warcraft Blizzard API",
+  "documentation": "https://github.com/yourdawi/homeassistant-wow-blizzard",
+  "issue_tracker": "https://github.com/yourdawi/homeassistant-wow-blizzard/issues",
+  "requirements": ["aiohttp>=3.8.0"],
+  "codeowners": ["@yourdawi"],
+  "version": "2.0.0",
+  "iot_class": "cloud_polling",
+  "config_flow": true,
+  "dependencies": [],
+  "after_dependencies": []
+}
