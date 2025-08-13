@@ -77,8 +77,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             profile = await self.client.get_character_profile(realm, character_name)
             equipment = await self.client.get_character_equipment(realm, character_name)
             achievements = await self.client.get_character_achievements(realm, character_name)
-            statistics = await self.client.get_character_statistics(realm, character_name)
-
             # Calculate average item level
             item_level = 0
             if equipment.get("equipped_items"):
@@ -99,24 +97,11 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             if profile.get("guild"):
                 guild_name = profile["guild"]["name"]
 
-            # Get money (gold)
-            money_gold = 0
-            if statistics.get("statistics"):
-                for stat in statistics["statistics"]:
-                    if stat.get("category", {}).get("name") == "Character":
-                        for sub_stat in stat.get("sub_categories", []):
-                            if sub_stat.get("name") == "Currency":
-                                for currency_stat in sub_stat.get("statistics", []):
-                                    if "gold" in currency_stat.get("name", "").lower():
-                                        money_gold = currency_stat.get("quantity", 0)
-                                        break
-
             return {
                 "character_level": profile.get("level", 0),
                 "character_item_level": item_level,
                 "guild_name": guild_name,
                 "achievement_points": achievement_points,
-                "character_money": money_gold // 10000,  # Convert copper to gold
                 "last_login_timestamp": profile.get("last_login_timestamp"),
                 "character_class": profile.get("character_class", {}).get("name"),
                 "character_race": profile.get("race", {}).get("name"),
@@ -227,10 +212,11 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             progress_mythic = 0
             total_kills = 0
 
+            # Filter auf aktuelle Expansion "The War Within"
             if encounters and "expansions" in encounters:
                 for expansion in encounters["expansions"]:
-                    if expansion.get("expansion", {}).get("name") != "Dragonflight":
-                        continue  # Only current expansion
+                    if expansion.get("expansion", {}).get("name") != "The War Within":
+                        continue  # Nur aktuelle Expansion
 
                     for instance in expansion.get("instances", []):
                         for mode in instance.get("modes", []):
