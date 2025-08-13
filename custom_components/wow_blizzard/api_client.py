@@ -254,11 +254,16 @@ class WoWBlizzardAPIClient:
         return await self._make_request(endpoint, params)
 
     async def get_character_mythicplus_season(self, realm: str, character_name: str, season_id: int = None) -> Dict[str, Any]:
-        """Get character Mythic+ season data."""
-        # Auto-detect current season for 2025
+        """Get character Mythic+ season data. Holt automatisch die aktuelle Season-ID aus dem Keystone-Profile."""
         if season_id is None:
-            season_id = 13  # Season 4 of The War Within (August 2025)
-            
+            profile = await self.get_character_mythicplus_profile(realm, character_name)
+            seasons = profile.get("seasons", [])
+            if seasons:
+                # Nimm die höchste ID als aktuelle Season
+                season_id = max(s.get("id", 0) for s in seasons)
+            else:
+                # Fallback: Standard-Season-ID
+                season_id = 1
         realm_slug = self.realm_to_slug(realm)
         endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/mythic-keystone-profile/season/{season_id}"
         params = {"namespace": f"profile-{self.region}"}

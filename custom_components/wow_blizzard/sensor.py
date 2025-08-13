@@ -258,11 +258,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                     runs_completed = len(best_runs)
                     runs_timed = sum(1 for run in best_runs if run.get("is_completed_within_time", False))
 
-                # Calculate approximate score (simplified)
-                score = sum(
-                    run.get("keystone_level", 0) * (125 if run.get("is_completed_within_time") else 100)
-                    for run in best_runs
-                )
+                # Blizzard-Score direkt verwenden
+                score = season_data.get("mythic_rating", {}).get("rating", 0)
 
             # Get weekly data if available
             if profile and "current_period" in profile:
