@@ -1,4 +1,4 @@
-"""WoW Blizzard API Client"""
+"""API Client endpoints and data extraction."""
 import asyncio
 import aiohttp
 import logging
@@ -11,9 +11,8 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class WoWBlizzardAPIClient:
-    """Client for the WoW Blizzard API with all features."""
+    """API client with endpoints and data extraction."""
 
-    # Locale mapping based on region
     REGION_LOCALES = {
         "us": "en_US",
         "eu": "en_GB", 
@@ -37,7 +36,6 @@ class WoWBlizzardAPIClient:
         self.api_url = API_URLS.get(self.region)
         self.token_url = TOKEN_URLS.get(self.region)
         
-        # Use provided locale or auto-detect from region
         self.locale = locale or self.REGION_LOCALES.get(self.region, "en_US")
         
         self._session = session
@@ -54,7 +52,7 @@ class WoWBlizzardAPIClient:
         return self._session
 
     async def _get_access_token(self) -> str:
-        """Get a valid access token."""
+        """Get a valid access token with proper header authentication."""
         if (
             self._access_token
             and self._token_expires
@@ -64,45 +62,42 @@ class WoWBlizzardAPIClient:
 
         session = await self._get_session()
         
+        # Proper OAuth2 client credentials flow
         data = {
             "grant_type": "client_credentials",
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
+        }
+        
+        #Use Basic Auth Header
+        import base64
+        credentials = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode()).decode()
+        headers = {
+            "Authorization": f"Basic {credentials}",
+            "Content-Type": "application/x-www-form-urlencoded",
         }
 
         try:
-            async with session.post(self.token_url, data=data) as response:
+            async with session.post(self.token_url, data=data, headers=headers) as response:
                 if response.status == 200:
                     token_data = await response.json()
                     self._access_token = token_data["access_token"]
                     expires_in = token_data.get("expires_in", 3600)
                     self._token_expires = datetime.now() + timedelta(seconds=expires_in - 60)
+                    _LOGGER.info("Successfully obtained access token")
                     return self._access_token
                 else:
-                    _LOGGER.error(f"Failed to get access token: {response.status}")
+                    error_text = await response.text()
+                    _LOGGER.error(f"Failed to get access token: {response.status} - {error_text}")
                     raise Exception(f"Failed to get access token: {response.status}")
         except Exception as e:
             _LOGGER.error(f"Error getting access token: {e}")
             raise
 
-    async def _rate_limit_check(self):
-        """Simple rate limiting."""
-        now = datetime.now()
-        if (now - self._last_request_reset).total_seconds() >= 3600:
-            self._request_count = 0
-            self._last_request_reset = now
-        
-        if self._request_count >= 35000:  # Leave some buffer
-            _LOGGER.warning("Approaching rate limit, waiting...")
-            await asyncio.sleep(60)
-
     async def _make_request(self, endpoint: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Make an authenticated request to the API with rate limiting."""
-        await self._rate_limit_check()
-        
+        """Make an authenticated request to the API."""
         access_token = await self._get_access_token()
         session = await self._get_session()
         
+        # Use Bearer token in header
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
@@ -110,7 +105,6 @@ class WoWBlizzardAPIClient:
         
         url = f"{self.api_url}{endpoint}"
         
-        # Add locale to params if not already present
         if params is None:
             params = {}
         if "locale" not in params:
@@ -123,27 +117,21 @@ class WoWBlizzardAPIClient:
                 if response.status == 200:
                     return await response.json()
                 elif response.status == 404:
-                    # Not found - return empty dict
                     _LOGGER.debug(f"Resource not found: {endpoint}")
                     return {}
                 elif response.status == 429:
-                    # Rate limited - wait and retry
-                    _LOGGER.warning("Rate limited by API, waiting 30 seconds")
-                    await asyncio.sleep(30)
+                    _LOGGER.warning("Rate limited by API, waiting 60 seconds")
+                    await asyncio.sleep(60)
                     return await self._make_request(endpoint, params)
                 else:
-                    _LOGGER.error(f"API request failed: {response.status}")
-                    response_text = await response.text()
-                    _LOGGER.debug(f"Response: {response_text}")
+                    error_text = await response.text()
+                    _LOGGER.error(f"API request failed: {response.status} - {error_text}")
                     return {}
-        except asyncio.TimeoutError:
-            _LOGGER.warning("API request timeout")
-            return {}
         except Exception as e:
-            _LOGGER.error(f"Error making API request: {e}")
+            _LOGGER.error(f"Error making API request to {endpoint}: {e}")
             return {}
 
-    # === Basic Character Methods ===
+    # Character Profile
     
     async def get_character_profile(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character profile data."""
@@ -151,31 +139,61 @@ class WoWBlizzardAPIClient:
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
-    async def get_character_equipment(self, realm: str, character_name: str) -> Dict[str, Any]:
-        """Get character equipment data."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/equipment"
-        params = {"namespace": f"profile-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    async def get_character_achievements(self, realm: str, character_name: str) -> Dict[str, Any]:
-        """Get character achievements data."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/achievements"
-        params = {"namespace": f"profile-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    async def get_character_statistics(self, realm: str, character_name: str) -> Dict[str, Any]:
-        """Get character statistics data."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/statistics"
-        params = {"namespace": f"profile-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    # === Server Status Methods ===
+    def extract_character_gold(self, profile_data: Dict[str, Any]) -> int:
+        """Extract gold from character profile (in gold, not copper)."""
+        if not profile_data:
+            return 0
+            
+        # Gold is stored in copper, convert to gold
+        copper_amount = profile_data.get("money", 0)
+        gold_amount = copper_amount // 10000  # 10000 copper = 1 gold
+        
+        _LOGGER.debug(f"Character has {copper_amount} copper = {gold_amount} gold")
+        return gold_amount
     
     async def get_realm_info(self, realm: str) -> Dict[str, Any]:
-        """Get realm information and status."""
+        """Get realm information (needed to get connected realm ID)."""
         endpoint = f"/data/wow/realm/{realm.lower()}"
         params = {"namespace": f"dynamic-{self.region}"}
         return await self._make_request(endpoint, params)
+
+    async def get_connected_realm_status(self, realm: str) -> Dict[str, Any]:
+        """Get ACTUAL server status from connected realm."""
+        realm_info = await self.get_realm_info(realm)
+        if not realm_info or "id" not in realm_info:
+            _LOGGER.warning(f"Could not find realm info for {realm}")
+            return {}
+        
+        # Get connected realm info
+        endpoint = f"/data/wow/connected-realm/{realm_info['id']}"
+        params = {"namespace": f"dynamic-{self.region}"}
+        connected_realm = await self._make_request(endpoint, params)
+        
+        if not connected_realm:
+            return {}
+        
+        # Extract status information
+        status_info = {
+            "status": "Unknown",
+            "population": "Unknown", 
+            "queue_time": 0,
+            "has_queue": False,
+        }
+        
+        if "status" in connected_realm:
+            status_info["status"] = connected_realm["status"].get("name", "Unknown")
+        
+        # Population is often not available in API
+        if "population" in connected_realm:
+            status_info["population"] = connected_realm["population"].get("name", "Unknown")
+        
+        # Queue information (rarely available)
+        if connected_realm.get("has_queue", False):
+            status_info["has_queue"] = True
+            status_info["queue_time"] = connected_realm.get("queue_time", 0)
+        
+        _LOGGER.debug(f"Realm {realm} status: {status_info}")
+        return status_info
 
     async def get_all_realms(self) -> Dict[str, Any]:
         """Get all realms in region."""
@@ -183,80 +201,131 @@ class WoWBlizzardAPIClient:
         params = {"namespace": f"dynamic-{self.region}"}
         return await self._make_request(endpoint, params)
 
-    async def get_connected_realm(self, realm: str) -> Dict[str, Any]:
-        """Get connected realm info."""
-        # First get realm ID
-        realm_info = await self.get_realm_info(realm)
-        if not realm_info or "id" not in realm_info:
-            return {}
-        
-        endpoint = f"/data/wow/connected-realm/{realm_info['id']}"
-        params = {"namespace": f"dynamic-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    # === PvP Methods ===
     
-    async def get_character_pvp_bracket(self, realm: str, character_name: str, pvp_bracket: str) -> Dict[str, Any]:
-        """Get character PvP bracket statistics."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/pvp-bracket/{pvp_bracket}"
-        params = {"namespace": f"profile-{self.region}"}
-        return await self._make_request(endpoint, params)
-
     async def get_character_pvp_summary(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character PvP summary."""
         endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/pvp-summary"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
-    async def get_pvp_season(self, season_id: int = None) -> Dict[str, Any]:
-        """Get PvP season information."""
-        season = season_id or CURRENT_PVP_SEASON_ID
-        endpoint = f"/data/wow/pvp-season/{season}"
-        params = {"namespace": f"dynamic-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    async def get_all_pvp_data(self, realm: str, character_name: str) -> Dict[str, Dict[str, Any]]:
-        """Get all PvP data for a character."""
-        results = {}
+    async def get_character_pvp_bracket(self, realm: str, character_name: str, bracket: str) -> Dict[str, Any]:
+        """Get character PvP bracket data."""
+        bracket_map = {
+            "2v2": "2v2",
+            "3v3": "3v3", 
+            "rbg": "rbg",
+        }
         
-        # Get PvP summary first
-        results["summary"] = await self.get_character_pvp_summary(realm, character_name)
-        
-        # Get bracket data
-        for bracket_key, bracket_name in PVP_BRACKETS.items():
-            results[bracket_name] = await self.get_character_pvp_bracket(
-                realm, character_name, bracket_key.lower().replace("_", "-")
-            )
-        
-        return results
-
-    # === Raid Progress Methods ===
-    
-    async def get_character_encounters(self, realm: str, character_name: str) -> Dict[str, Any]:
-        """Get character encounter statistics."""
-        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/encounters"
+        api_bracket = bracket_map.get(bracket.lower(), bracket)
+        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/pvp-bracket/{api_bracket}"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
+    def extract_pvp_data(self, pvp_summary: Dict[str, Any], bracket_data: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """Extract PvP data with proper null handling."""
+        pvp_info = {
+            "pvp_2v2_rating": 0,
+            "pvp_3v3_rating": 0,
+            "pvp_rbg_rating": 0,
+            "pvp_honor_level": 0,
+            "pvp_wins_season": 0,
+        }
+        
+        # Honor level from summary
+        if pvp_summary and "honor_level" in pvp_summary:
+            pvp_info["pvp_honor_level"] = pvp_summary["honor_level"]
+        
+        # Ratings from bracket data
+        for bracket, data in bracket_data.items():
+            if not data or "rating" not in data:
+                continue
+                
+            rating = data["rating"]
+            wins = data.get("season_match_statistics", {}).get("won", 0)
+            pvp_info["pvp_wins_season"] += wins
+            
+            if bracket == "2v2":
+                pvp_info["pvp_2v2_rating"] = rating
+            elif bracket == "3v3":
+                pvp_info["pvp_3v3_rating"] = rating
+            elif bracket == "rbg":
+                pvp_info["pvp_rbg_rating"] = rating
+        
+        _LOGGER.debug(f"Extracted PvP data: {pvp_info}")
+        return pvp_info
+
+    async def get_all_pvp_data(self, realm: str, character_name: str) -> Dict[str, Any]:
+        """Get all PvP data for a character."""
+        try:
+            # Get PvP summary
+            pvp_summary = await self.get_character_pvp_summary(realm, character_name)
+            
+            # Get bracket data
+            bracket_data = {}
+            for bracket in ["2v2", "3v3", "rbg"]:
+                bracket_data[bracket] = await self.get_character_pvp_bracket(realm, character_name, bracket)
+                await asyncio.sleep(0.1)  # Rate limiting
+            
+            return self.extract_pvp_data(pvp_summary, bracket_data)
+            
+        except Exception as e:
+            _LOGGER.warning(f"Error getting PvP data for {character_name}-{realm}: {e}")
+            return {
+                "pvp_2v2_rating": 0,
+                "pvp_3v3_rating": 0,
+                "pvp_rbg_rating": 0,
+                "pvp_honor_level": 0,
+                "pvp_wins_season": 0,
+            }
+
+    async def get_character_equipment(self, realm: str, character_name: str) -> Dict[str, Any]:
+        """Get character equipment data."""
+        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/equipment"
+        params = {"namespace": f"profile-{self.region}"}
+        return await self._make_request(endpoint, params)
+
+    def calculate_item_level(self, equipment_data: Dict[str, Any]) -> int:
+        """Calculate average item level correctly."""
+        if not equipment_data or "equipped_items" not in equipment_data:
+            return 0
+        
+        items = equipment_data["equipped_items"]
+        if not items:
+            return 0
+        
+        total_item_level = 0
+        item_count = 0
+        
+        for item in items:
+            # Skip items without item level (like tabards)
+            if "item_level" in item:
+                total_item_level += item["item_level"]
+                item_count += 1
+        
+        if item_count == 0:
+            return 0
+        
+        avg_ilvl = round(total_item_level / item_count, 1)
+        _LOGGER.debug(f"Calculated item level: {avg_ilvl} from {item_count} items")
+        return int(avg_ilvl)
+
+    # === Character Statistics (for achievements only) ===
+    
+    async def get_character_achievements(self, realm: str, character_name: str) -> Dict[str, Any]:
+        """Get character achievements data."""
+        endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/achievements"
+        params = {"namespace": f"profile-{self.region}"}
+        return await self._make_request(endpoint, params)
+
+    # === Raid Progress ===
+    
     async def get_character_encounters_raids(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character raid encounters."""
         endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/encounters/raids"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
 
-    async def get_encounter_info(self, encounter_id: int) -> Dict[str, Any]:
-        """Get encounter information."""
-        endpoint = f"/data/wow/encounter/{encounter_id}"
-        params = {"namespace": f"static-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    async def get_raid_info(self, raid_slug: str) -> Dict[str, Any]:
-        """Get raid information."""
-        endpoint = f"/data/wow/raid/{raid_slug}"
-        params = {"namespace": f"static-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    # === Mythic+ Methods ===
+    # === Mythic+ ===
     
     async def get_character_mythicplus_profile(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character Mythic+ profile."""
@@ -270,74 +339,6 @@ class WoWBlizzardAPIClient:
         endpoint = f"/profile/wow/character/{realm.lower()}/{character_name.lower()}/mythic-keystone-profile/season/{season}"
         params = {"namespace": f"profile-{self.region}"}
         return await self._make_request(endpoint, params)
-
-    async def get_mythicplus_season_info(self, season_id: int = None) -> Dict[str, Any]:
-        """Get Mythic+ season information."""
-        season = season_id or CURRENT_SEASON_ID
-        endpoint = f"/data/wow/mythic-keystone/season/{season}"
-        params = {"namespace": f"dynamic-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    async def get_dungeon_info(self, dungeon_id: int) -> Dict[str, Any]:
-        """Get dungeon information."""
-        endpoint = f"/data/wow/mythic-keystone/dungeon/{dungeon_id}"
-        params = {"namespace": f"dynamic-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    # === Guild Methods ===
-    
-    async def get_guild_info(self, realm: str, guild_name: str) -> Dict[str, Any]:
-        """Get guild information."""
-        endpoint = f"/data/wow/guild/{realm.lower()}/{guild_name.lower().replace(' ', '-')}"
-        params = {"namespace": f"profile-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    async def get_guild_roster(self, realm: str, guild_name: str) -> Dict[str, Any]:
-        """Get guild roster."""
-        endpoint = f"/data/wow/guild/{realm.lower()}/{guild_name.lower().replace(' ', '-')}/roster"
-        params = {"namespace": f"profile-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    async def get_guild_activity(self, realm: str, guild_name: str) -> Dict[str, Any]:
-        """Get guild activity."""
-        endpoint = f"/data/wow/guild/{realm.lower()}/{guild_name.lower().replace(' ', '-')}/activity"
-        params = {"namespace": f"profile-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    async def get_guild_achievements(self, realm: str, guild_name: str) -> Dict[str, Any]:
-        """Get guild achievements."""
-        endpoint = f"/data/wow/guild/{realm.lower()}/{guild_name.lower().replace(' ', '-')}/achievements"
-        params = {"namespace": f"profile-{self.region}"}
-        return await self._make_request(endpoint, params)
-
-    # === Multiple Characters Support ===
-    
-    async def get_multiple_character_data(self, characters: List[Dict[str, str]]) -> Dict[str, Dict[str, Any]]:
-        """Get data for multiple characters."""
-        results = {}
-        
-        for char in characters:
-            realm = char["realm"]
-            name = char["name"]
-            char_key = f"{realm}-{name}"
-            
-            # Get basic data for each character
-            profile = await self.get_character_profile(realm, name)
-            equipment = await self.get_character_equipment(realm, name)
-            achievements = await self.get_character_achievements(realm, name)
-            
-            results[char_key] = {
-                "profile": profile,
-                "equipment": equipment, 
-                "achievements": achievements,
-                "realm": realm,
-                "name": name,
-            }
-            
-            # Small delay to avoid rate limiting
-            await asyncio.sleep(0.1)
-        
-        return results
 
     async def close(self):
         """Close the session."""

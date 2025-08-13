@@ -569,5 +569,5 @@ class WoWServerSensor(CoordinatorEntity, SensorEntity):
             "name": f"{self._realm.title()} Server",
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Realm",
-            "sw_version": "Dragonflight",
+            "sw_version": "The War Within",
         }
