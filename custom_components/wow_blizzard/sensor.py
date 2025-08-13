@@ -502,15 +502,13 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def device_info(self):
-        expansion = self.coordinator.client._current_expansion or {
-            "name": "Unknown"
-        }
+        """Return device info."""
         return {
             "identifiers": {(DOMAIN, f"{self._realm}_{self._character_name}")},
             "name": f"{self._character_name} ({self._realm})",
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Character",
-            "sw_version": expansion["name"],
+            "sw_version": "The War Within",
         }
 
 
