@@ -77,17 +77,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             profile = await self.client.get_character_profile(realm, character_name)
             equipment = await self.client.get_character_equipment(realm, character_name)
             achievements = await self.client.get_character_achievements(realm, character_name)
-            # Calculate average item level
-            item_level = 0
-            if equipment.get("equipped_items"):
-                total_item_level = 0
-                item_count = 0
-                for item in equipment["equipped_items"]:
-                    if "item_level" in item:
-                        total_item_level += item["item_level"]
-                        item_count += 1
-                if item_count > 0:
-                    item_level = round(total_item_level / item_count)
+            # Itemlevel direkt aus dem Equipment-Response
+            item_level = equipment.get("level", 0)
 
             # Get achievement points
             achievement_points = achievements.get("total_points", 0)
@@ -136,6 +127,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                     queue_time = connected_realm.get("queue_time", 0)
 
             return {
+                "realm_status": status,
+                "realm_population": population,
                 "realm_queue": queue_time,
                 "realm_timezone": realm_info.get("timezone", "Unknown"),
                 "realm_locale": realm_info.get("locale", "Unknown"),
@@ -208,12 +201,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             progress_mythic = 0
             total_kills = 0
 
-            # Filter auf aktuelle Expansion "The War Within"
+            # Zähle alle Boss-Kills aus allen Expansions
             if encounters and "expansions" in encounters:
                 for expansion in encounters["expansions"]:
-                    if expansion.get("expansion", {}).get("name") != "The War Within":
-                        continue  # Nur aktuelle Expansion
-
                     for instance in expansion.get("instances", []):
                         for mode in instance.get("modes", []):
                             difficulty = mode.get("difficulty", {}).get("name", "")
