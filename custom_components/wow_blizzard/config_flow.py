@@ -198,7 +198,7 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if "available_realms" in self.data:
                 realm_options = [
                     {"value": realm["slug"], "label": realm["name"]}
-                    for realm in self.data["available_realms"][:50]  # Limit to first 50
+                    for realm in self.data["available_realms"]
                 ]
             
             if realm_options:
