@@ -25,7 +25,7 @@ from .const import (
     CONF_ENABLE_MYTHIC_PLUS,
     DEFAULT_REGION,
 )
-from .api_client import WoWBlizzardAPIClientExtended
+from .api_client import WoWBlizzardAPIClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ STEP_CHARACTER_DATA_SCHEMA = vol.Schema(
 
 async def validate_api_credentials(hass: HomeAssistant, data: dict[str, any]) -> dict[str, any]:
     """Validate the API credentials by making a test call."""
-    client = WoWBlizzardAPIClientExtended(
+    client = WoWBlizzardAPIClient(
         data[CONF_CLIENT_ID], 
         data[CONF_CLIENT_SECRET], 
         data[CONF_REGION]
@@ -96,7 +96,7 @@ async def validate_api_credentials(hass: HomeAssistant, data: dict[str, any]) ->
 
 async def validate_character(hass: HomeAssistant, data: dict[str, any], character: dict[str, str]) -> dict[str, any]:
     """Validate that a character exists."""
-    client = WoWBlizzardAPIClientExtended(
+    client = WoWBlizzardAPIClient(
         data[CONF_CLIENT_ID], 
         data[CONF_CLIENT_SECRET], 
         data[CONF_REGION]
