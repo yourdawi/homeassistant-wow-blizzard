@@ -1,4 +1,4 @@
-"""Config flow for WoW Blizzard API integration with multiple characters."""
+"""Config flow"""
 import asyncio
 import logging
 import voluptuous as vol
@@ -25,7 +25,7 @@ from .const import (
     CONF_ENABLE_MYTHIC_PLUS,
     DEFAULT_REGION,
 )
-from .api_client import WoWBlizzardAPIClient
+from .api_client import WoWBlizzardAPIClientExtended
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,20 +67,25 @@ STEP_CHARACTER_DATA_SCHEMA = vol.Schema(
 
 async def validate_api_credentials(hass: HomeAssistant, data: dict[str, any]) -> dict[str, any]:
     """Validate the API credentials by making a test call."""
-    client = WoWBlizzardAPIClient(
+    client = WoWBlizzardAPIClientExtended(
         data[CONF_CLIENT_ID], 
         data[CONF_CLIENT_SECRET], 
         data[CONF_REGION]
     )
 
     try:
-        # Test connection by getting all realms - this doesn't require character data
+        # Get ALL realms (no limit!)
         realms = await client.get_all_realms()
         
         if not realms or "realms" not in realms:
             raise CannotConnect("Unable to fetch realms - API credentials may be invalid")
-            
-        return {"realms": realms.get("realms", [])}
+        
+        # Sort realms alphabetically for better UX
+        sorted_realms = sorted(realms.get("realms", []), key=lambda x: x.get("name", ""))
+        
+        _LOGGER.info(f"Loaded {len(sorted_realms)} realms for region {data[CONF_REGION]}")
+        
+        return {"realms": sorted_realms}
         
     except Exception as e:
         _LOGGER.error("Cannot connect to WoW API: %s", e)
@@ -91,7 +96,7 @@ async def validate_api_credentials(hass: HomeAssistant, data: dict[str, any]) ->
 
 async def validate_character(hass: HomeAssistant, data: dict[str, any], character: dict[str, str]) -> dict[str, any]:
     """Validate that a character exists."""
-    client = WoWBlizzardAPIClient(
+    client = WoWBlizzardAPIClientExtended(
         data[CONF_CLIENT_ID], 
         data[CONF_CLIENT_SECRET], 
         data[CONF_REGION]
@@ -191,34 +196,43 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_character(
         self, user_input: dict[str, any] | None = None
     ) -> FlowResult:
-        """Handle character addition step."""
+        """Handle character"""
         if user_input is None:
-            # Create realm selector from available realms
+            # Create SEARCHABLE realm selector from ALL available realms
             realm_options = []
             if "available_realms" in self.data:
                 realm_options = [
                     {"value": realm["slug"], "label": realm["name"]}
-                    for realm in self.data["available_realms"]
+                    for realm in self.data["available_realms"]  # ALL REALMS!
                 ]
+                
+                _LOGGER.info(f"Showing {len(realm_options)} searchable realms")
             
             if realm_options:
+                # 🔍 SEARCHABLE COMBOBOX with custom input support!
                 schema = vol.Schema({
                     vol.Required(CONF_REALM): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=realm_options,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
+                            mode=selector.SelectSelectorMode.COMBOBOX,  # ✅ SEARCH MODE!
+                            custom_value=True,  # ✅ Allow manual input if realm not found
+                            sort=True,          # ✅ Extra sorting 
                         )
                     ),
                     vol.Required(CONF_CHARACTER_NAME): str,
                 })
             else:
+                # Fallback to text input if no realms loaded
                 schema = STEP_CHARACTER_DATA_SCHEMA
+                _LOGGER.warning("No realms loaded, falling back to text input")
 
             return self.async_show_form(
                 step_id="character",
                 data_schema=schema,
                 description_placeholders={
-                    "character_count": len(self.characters)
+                    "character_count": len(self.characters),
+                    "total_realms": len(self.data.get("available_realms", [])),
+                    "search_help": "Type to search realms, or enter manually if not found"
                 }
             )
 
@@ -261,7 +275,9 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=STEP_CHARACTER_DATA_SCHEMA,
             errors=errors,
             description_placeholders={
-                "character_count": len(self.characters)
+                "character_count": len(self.characters),
+                "total_realms": len(self.data.get("available_realms", [])),
+                "search_help": "Type to search realms, or enter manually if not found"
             }
         )
 
@@ -359,6 +375,7 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
             }),
             description_placeholders={
                 "character_count": len(current_characters),
+                "feature_info": "Search-enabled realm selector with all realms available"
             }
         )
 
