@@ -454,6 +454,8 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
             "character_race": char_data.get("character_race"),
             "character_level": char_data.get("character_level"),
             "last_update": self.coordinator.last_update_success,
+            "faction": char_data.get("faction"),
+            "active_spec": char_data.get("spec"),
         }
         
         # Add class color if available
@@ -475,17 +477,12 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_info(self):
         """Return device info."""
-        char_data = self.coordinator.data.get(self._char_key, {})
         return {
             "identifiers": {(DOMAIN, f"{self._realm}_{self._character_name}")},
             "name": f"{self._character_name} ({self._realm})",
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Character",
             "sw_version": "The War Within",
-            "faction": char_data.get("faction"),
-            "race": char_data.get("character_race"),
-            "character_class": char_data.get("character_class"),
-            "active_spec": char_data.get("spec"),
         }
 
 
