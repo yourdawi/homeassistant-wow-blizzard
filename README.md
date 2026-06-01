@@ -10,6 +10,8 @@ Monitor multiple characters, server status, PvP ratings, raid progress, and Myth
 - **Multiple Characters**: Monitor unlimited characters across different realms
 - **Real-time Stats**: Level, item level, guild, achievement points
 - **Cross-Realm Support**: Characters from different servers in one integration
+- **Multiple Game Versions**: Full support for Retail, Classic Progression (e.g., Cataclysm Classic), and Classic Era (Vanilla)
+- **Character Portraits**: Live avatar renders automatically loaded as `entity_picture` and updated dynamically
 
 ### 🌐 Server Monitoring
 - **Realm Status**: Online/Offline status
@@ -74,7 +76,10 @@ config/
 │       ├── api_client.py
 │       ├── sensor.py
 │       ├── config_flow.py
-│       └── strings.json
+│       ├── strings.json
+│       └── brand/
+│           ├── icon.png
+│           └── logo.png
 ```
 3. **Restart Home Assistant**
 
@@ -108,11 +113,12 @@ Choose which features to enable:
 
 ### 4. Add Characters
 
-1. **Select Realm**: Choose from dropdown list
-2. **Enter Character Name**: Case-sensitive
-3. **Validate**: Integration checks character exists
-4. **Add More**: Repeat for additional characters
-5. **Finish**: Complete setup
+1. **Choose Game Version**: Select **Retail**, **Classic Progression** (e.g., Cataclysm Classic), or **Classic Era** (Vanilla)
+2. **Select Realm**: Choose from the alphabetically sorted dynamic dropdown/combobox (retrieved in real-time from the Blizzard API)
+3. **Enter Character Name**: Case-insensitive
+4. **Validate**: Integration checks character existence on the selected game version
+5. **Add More**: Repeat to configure multiple characters across different versions
+6. **Finish**: Complete the setup
 
 ## 📱 Created Sensors
 
