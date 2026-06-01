@@ -13,6 +13,7 @@ CONF_ENABLE_SERVER_STATUS = "enable_server_status"
 CONF_ENABLE_PVP = "enable_pvp"
 CONF_ENABLE_RAIDS = "enable_raids"
 CONF_ENABLE_MYTHIC_PLUS = "enable_mythic_plus"
+CONF_GAME_VERSION = "game_version"
 
 # API URLs
 API_URLS = {

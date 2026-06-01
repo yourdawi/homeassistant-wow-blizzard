@@ -24,6 +24,7 @@ from .const import (
     CONF_ENABLE_RAIDS,
     CONF_ENABLE_MYTHIC_PLUS,
     DEFAULT_REGION,
+    CONF_GAME_VERSION,
 )
 from .api_client import WoWBlizzardAPIClient
 
@@ -54,6 +55,21 @@ STEP_FEATURES_DATA_SCHEMA = vol.Schema(
         vol.Optional(CONF_ENABLE_PVP, default=True): bool,
         vol.Optional(CONF_ENABLE_RAIDS, default=True): bool,
         vol.Optional(CONF_ENABLE_MYTHIC_PLUS, default=True): bool,
+    }
+)
+
+STEP_GAME_VERSION_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_GAME_VERSION, default="retail"): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    {"value": "retail", "label": "Retail"},
+                    {"value": "classic", "label": "Classic Progression (e.g. Cataclysm)"},
+                    {"value": "classic1x", "label": "Classic Era (Vanilla)"},
+                ],
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        ),
     }
 )
 
@@ -135,7 +151,7 @@ async def validate_api_credentials(hass: HomeAssistant, data: dict[str, any]) ->
         await client.close()
 
 
-async def validate_character(hass: HomeAssistant, data: dict[str, any], character: dict[str, str]) -> dict[str, any]:
+async def validate_character(hass: HomeAssistant, data: dict[str, any], character: dict[str, str], game_version: str) -> dict[str, any]:
     """Validate that a character exists."""
     client = WoWBlizzardAPIClient(
         data[CONF_CLIENT_ID], 
@@ -147,7 +163,8 @@ async def validate_character(hass: HomeAssistant, data: dict[str, any], characte
         # Test connection by getting character profile
         character_data = await client.get_character_profile(
             character[CONF_REALM], 
-            character[CONF_CHARACTER_NAME]
+            character[CONF_CHARACTER_NAME],
+            game_version=game_version
         )
         
         if not character_data or "name" not in character_data:
@@ -237,50 +254,86 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_character(
         self, user_input: dict[str, any] | None = None
     ) -> FlowResult:
-        """Handle character addition step with COMPATIBLE realm selector."""
+        """Handle character game version selection step."""
+        if user_input is not None:
+            self.current_character = {
+                CONF_GAME_VERSION: user_input[CONF_GAME_VERSION]
+            }
+            return await self.async_step_character_details()
+
+        return self.async_show_form(
+            step_id="character",
+            data_schema=STEP_GAME_VERSION_SCHEMA,
+            description_placeholders={
+                "character_count": len(self.characters),
+            }
+        )
+
+    async def async_step_character_details(
+        self, user_input: dict[str, any] | None = None
+    ) -> FlowResult:
+        """Handle character details addition step."""
+        game_version = self.current_character[CONF_GAME_VERSION]
+        
         if user_input is None:
-            # Create realm selector from ALL available realms
+            errors = {}
             realm_options = []
-            if "available_realms" in self.data:
+            
+            # Cache realms on self.data to avoid repeated slow fetches
+            cache_key = f"realms_{game_version}"
+            if cache_key not in self.data:
+                client = WoWBlizzardAPIClient(
+                    self.data[CONF_CLIENT_ID],
+                    self.data[CONF_CLIENT_SECRET],
+                    self.data[CONF_REGION]
+                )
+                try:
+                    realms_data = await client.get_all_realms(game_version=game_version)
+                    if realms_data and "realms" in realms_data:
+                        sorted_realms = sorted(realms_data["realms"], key=lambda x: x.get("name", ""))
+                        self.data[cache_key] = sorted_realms
+                    else:
+                        self.data[cache_key] = []
+                except Exception as e:
+                    _LOGGER.error(f"Error loading realms for {game_version}: {e}")
+                    errors["base"] = "cannot_connect"
+                    self.data[cache_key] = []
+                finally:
+                    await client.close()
+            
+            realms_list = self.data.get(cache_key, [])
+            if realms_list:
                 realm_options = [
                     {"value": realm["slug"], "label": realm["name"]}
-                    for realm in self.data["available_realms"]  # ALL REALMS!
+                    for realm in realms_list
                 ]
-                
-                _LOGGER.info(f"Showing {len(realm_options)} realms with compatible selector")
             
             if realm_options:
-                # Use version-compatible selector
                 try:
                     selector_config = create_realm_selector_config(realm_options)
                     schema = vol.Schema({
                         vol.Required(CONF_REALM): selector.SelectSelector(selector_config),
                         vol.Required(CONF_CHARACTER_NAME): str,
                     })
-                    _LOGGER.info("Using enhanced realm selector")
                 except Exception as e:
-                    # Ultimate fallback to text input
                     _LOGGER.warning(f"Selector creation failed ({e}), using text input")
                     schema = STEP_CHARACTER_DATA_SCHEMA
             else:
-                # Fallback to text input if no realms loaded
                 schema = STEP_CHARACTER_DATA_SCHEMA
-                _LOGGER.warning("No realms loaded, falling back to text input")
 
             return self.async_show_form(
-                step_id="character",
+                step_id="character_details",
                 data_schema=schema,
+                errors=errors,
                 description_placeholders={
-                    "character_count": len(self.characters),
-                    "total_realms": len(self.data.get("available_realms", [])),
-                    "help_text": "Select your realm from the list, or type manually if not found"
+                    "game_version": "Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else "Classic Era")
                 }
             )
 
         errors = {}
 
         try:
-            character_info = await validate_character(self.hass, self.data, user_input)
+            character_info = await validate_character(self.hass, self.data, user_input, game_version)
             
             # Check if character already exists
             char_key = f"{user_input[CONF_REALM]}-{user_input[CONF_CHARACTER_NAME]}"
@@ -295,7 +348,8 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 character_data = {
                     CONF_REALM: user_input[CONF_REALM],
                     CONF_CHARACTER_NAME: user_input[CONF_CHARACTER_NAME],
-                    "display_name": f"{character_info['name']} - {character_info['realm']}",
+                    CONF_GAME_VERSION: game_version,
+                    "display_name": f"{character_info['name']} - {character_info['realm']} (" + ("Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else "Classic Era")) + ")",
                     "level": character_info["level"],
                     "character_class": character_info["character_class"],
                     "race": character_info["race"],
@@ -311,14 +365,31 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Unexpected exception validating character")
             errors["base"] = "unknown"
 
+        # Re-create selector schema on error
+        cache_key = f"realms_{game_version}"
+        realms_list = self.data.get(cache_key, [])
+        realm_options = [
+            {"value": realm["slug"], "label": realm["name"]}
+            for realm in realms_list
+        ]
+        if realm_options:
+            try:
+                selector_config = create_realm_selector_config(realm_options)
+                schema = vol.Schema({
+                    vol.Required(CONF_REALM): selector.SelectSelector(selector_config),
+                    vol.Required(CONF_CHARACTER_NAME): str,
+                })
+            except Exception:
+                schema = STEP_CHARACTER_DATA_SCHEMA
+        else:
+            schema = STEP_CHARACTER_DATA_SCHEMA
+
         return self.async_show_form(
-            step_id="character",
-            data_schema=STEP_CHARACTER_DATA_SCHEMA,
+            step_id="character_details",
+            data_schema=schema,
             errors=errors,
             description_placeholders={
-                "character_count": len(self.characters),
-                "total_realms": len(self.data.get("available_realms", [])),
-                "help_text": "Select your realm from the list, or type manually if not found"
+                "game_version": "Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else "Classic Era")
             }
         )
 

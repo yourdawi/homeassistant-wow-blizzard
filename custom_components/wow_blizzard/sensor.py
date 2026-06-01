@@ -71,22 +71,37 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
 
-    async def _fetch_basic_character_data(self, realm: str, character_name: str) -> Dict[str, Any]:
+    async def _fetch_basic_character_data(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
         """Fetch basic character data."""
         try:
-            profile = await self.client.get_character_profile(realm, character_name)
-            equipment = await self.client.get_character_equipment(realm, character_name)
-            achievements = await self.client.get_character_achievements(realm, character_name)
+            profile = await self.client.get_character_profile(realm, character_name, game_version=game_version)
+            equipment = await self.client.get_character_equipment(realm, character_name, game_version=game_version)
+            
+            # Achievements exist in Retail & Classic progression, but not in Classic Era (vanilla 1.x)
+            achievement_points = 0
+            if game_version != "classic1x":
+                achievements = await self.client.get_character_achievements(realm, character_name, game_version=game_version)
+                achievement_points = achievements.get("total_points", 0)
+
             # Item level from character profile response
             item_level = profile.get("equipped_item_level", 0)
-
-            # Get achievement points
-            achievement_points = achievements.get("total_points", 0)
 
             # Get guild information
             guild_name = None
             if profile.get("guild"):
                 guild_name = profile["guild"]["name"]
+
+            # Fetch character media (portrait)
+            avatar_url = None
+            try:
+                media = await self.client.get_character_media(realm, character_name, game_version=game_version)
+                if media and "assets" in media:
+                    for asset in media["assets"]:
+                        if asset.get("key") == "avatar":
+                            avatar_url = asset.get("value")
+                            break
+            except Exception as media_err:
+                _LOGGER.debug(f"Could not fetch media for {character_name}-{realm}: {media_err}")
 
             return {
                 "character_level": profile.get("level", 0),
@@ -100,20 +115,21 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 "faction": profile.get("faction", {}).get("name"),
                 "gender": profile.get("gender", {}).get("name"),
                 "spec": profile.get("active_spec", {}).get("name"),
+                "avatar_url": avatar_url,
             }
 
         except Exception as err:
             _LOGGER.error(f"Error fetching basic data for {character_name}-{realm}: {err}")
             return {}
 
-    async def _fetch_server_data(self, realm: str) -> Dict[str, Any]:
+    async def _fetch_server_data(self, realm: str, game_version: str = "retail") -> Dict[str, Any]:
         """Fetch server status data."""
         if not self.features.get(CONF_ENABLE_SERVER_STATUS, False):
             return {}
 
         try:
-            realm_info = await self.client.get_realm_info(realm)
-            connected_realm = await self.client.get_connected_realm(realm)
+            realm_info = await self.client.get_realm_info(realm, game_version=game_version)
+            connected_realm = await self.client.get_connected_realm(realm, game_version=game_version)
 
             status = "Unknown"
             population = "Unknown"
@@ -138,13 +154,13 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"Error fetching server data for {realm}: {err}")
             return {}
 
-    async def _fetch_pvp_data(self, realm: str, character_name: str) -> Dict[str, Any]:
+    async def _fetch_pvp_data(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
         """Fetch PvP data for a character."""
-        if not self.features.get(CONF_ENABLE_PVP, False):
+        if not self.features.get(CONF_ENABLE_PVP, False) or game_version == "classic1x":
             return {}
 
         try:
-            pvp_data = await self.client.get_all_pvp_data(realm, character_name)
+            pvp_data = await self.client.get_all_pvp_data(realm, character_name, game_version=game_version)
 
             # Extract ratings and stats
             ratings_2v2 = 0
@@ -187,13 +203,13 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"Error fetching PvP data for {character_name}-{realm}: {err}")
             return {}
 
-    async def _fetch_raid_data(self, realm: str, character_name: str) -> Dict[str, Any]:
+    async def _fetch_raid_data(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
         """Fetch raid progress data."""
         if not self.features.get(CONF_ENABLE_RAIDS, False):
             return {}
 
         try:
-            encounters = await self.client.get_character_encounters_raids(realm, character_name)
+            encounters = await self.client.get_character_encounters_raids(realm, character_name, game_version=game_version)
 
             progress_lfr = 0
             progress_normal = 0
@@ -234,9 +250,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"Error fetching raid data for {character_name}-{realm}: {err}")
             return {}
 
-    async def _fetch_mythicplus_data(self, realm: str, character_name: str) -> Dict[str, Any]:
+    async def _fetch_mythicplus_data(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
         """Fetch Mythic+ data."""
-        if not self.features.get(CONF_ENABLE_MYTHIC_PLUS, False):
+        if not self.features.get(CONF_ENABLE_MYTHIC_PLUS, False) or game_version != "retail":
             return {}
 
         try:
@@ -296,13 +312,14 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             for character in self.characters:
                 realm = character["realm"]
                 name = character["character_name"]
+                game_version = character.get("game_version", "retail")
                 char_key = f"{realm}-{name}"
                 
                 # Fetch all character data
-                basic_data = await self._fetch_basic_character_data(realm, name)
-                pvp_data = await self._fetch_pvp_data(realm, name)
-                raid_data = await self._fetch_raid_data(realm, name)
-                mythicplus_data = await self._fetch_mythicplus_data(realm, name)
+                basic_data = await self._fetch_basic_character_data(realm, name, game_version=game_version)
+                pvp_data = await self._fetch_pvp_data(realm, name, game_version=game_version)
+                raid_data = await self._fetch_raid_data(realm, name, game_version=game_version)
+                mythicplus_data = await self._fetch_mythicplus_data(realm, name, game_version=game_version)
                 
                 # Combine all character data
                 character_data = {
@@ -319,8 +336,10 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
             # Fetch server data for each unique realm
             server_data = {}
+            realm_versions = {char["realm"]: char.get("game_version", "retail") for char in self.characters}
             for realm in self.realms:
-                realm_data = await self._fetch_server_data(realm)
+                game_version = realm_versions.get(realm, "retail")
+                realm_data = await self._fetch_server_data(realm, game_version=game_version)
                 server_data[realm] = realm_data
                 await asyncio.sleep(0.1)
 
@@ -368,33 +387,34 @@ async def async_setup_entry(
     for character in characters:
         realm = character["realm"]
         name = character["character_name"]
+        game_version = character.get("game_version", "retail")
         char_key = f"{realm}-{name}"
         
         # Basic character sensors (always enabled)
         for sensor_type in BASIC_SENSOR_TYPES:
             entities.append(
-                WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm)
+                WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm, game_version)
             )
         
         # PvP sensors
-        if features[CONF_ENABLE_PVP]:
+        if features[CONF_ENABLE_PVP] and game_version != "classic1x":
             for sensor_type in PVP_SENSOR_TYPES:
                 entities.append(
-                    WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm)
+                    WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm, game_version)
                 )
         
         # Raid sensors
         if features[CONF_ENABLE_RAIDS]:
             for sensor_type in RAID_SENSOR_TYPES:
                 entities.append(
-                    WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm)
+                    WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm, game_version)
                 )
         
         # Mythic+ sensors
-        if features[CONF_ENABLE_MYTHIC_PLUS]:
+        if features[CONF_ENABLE_MYTHIC_PLUS] and game_version == "retail":
             for sensor_type in MYTHICPLUS_SENSOR_TYPES:
                 entities.append(
-                    WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm)
+                    WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm, game_version)
                 )
 
     # Server sensors
@@ -418,7 +438,8 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
         sensor_type: str,
         char_key: str,
         character_name: str,
-        realm: str
+        realm: str,
+        game_version: str = "retail"
     ):
         """Initialize the sensor."""
         super().__init__(coordinator)
@@ -426,6 +447,7 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
         self._char_key = char_key
         self._character_name = character_name
         self._realm = realm
+        self._game_version = game_version
         
         sensor_config = ALL_SENSOR_TYPES[sensor_type]
         
@@ -441,6 +463,13 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
         if not self.coordinator.data or self._char_key not in self.coordinator.data:
             return None
         return self.coordinator.data[self._char_key].get(self._sensor_type)
+
+    @property
+    def entity_picture(self):
+        """Return the entity picture."""
+        if not self.coordinator.data or self._char_key not in self.coordinator.data:
+            return None
+        return self.coordinator.data[self._char_key].get("avatar_url")
 
     @property
     def extra_state_attributes(self):
@@ -459,6 +488,7 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
             "last_update": self.coordinator.last_update_success,
             "faction": char_data.get("faction"),
             "active_spec": char_data.get("spec"),
+            "game_version": self._game_version,
         }
         
         # Add class color if available
@@ -480,12 +510,18 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_info(self):
         """Return device info."""
+        sw_version = "The War Within"
+        if self._game_version == "classic":
+            sw_version = "Cataclysm Classic"
+        elif self._game_version == "classic1x":
+            sw_version = "Classic Era"
+
         return {
             "identifiers": {(DOMAIN, f"{self._realm}_{self._character_name}")},
             "name": f"{self._character_name} ({self._realm})",
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Character",
-            "sw_version": "The War Within",
+            "sw_version": sw_version,
         }
 
 

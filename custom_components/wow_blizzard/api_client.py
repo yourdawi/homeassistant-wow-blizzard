@@ -49,6 +49,14 @@ class WoWBlizzardAPIClient:
         self._request_count = 0
         self._last_request_reset = datetime.now()
 
+    def get_namespace(self, base_type: str, game_version: str = "retail") -> str:
+        """Get the correct namespace based on game version and region."""
+        if game_version == "classic":
+            return f"{base_type}-classic-{self.region}"
+        elif game_version == "classic1x":
+            return f"{base_type}-classic1x-{self.region}"
+        return f"{base_type}-{self.region}"
+
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
         if self._session is None:
@@ -96,7 +104,7 @@ class WoWBlizzardAPIClient:
         except Exception as e:
             _LOGGER.error(f"Error getting access token: {e}")
             raise
-
+ 
     async def _make_request(self, endpoint: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
         """Make authenticated API request."""
         access_token = await self._get_access_token()
@@ -142,11 +150,11 @@ class WoWBlizzardAPIClient:
 
     # === Character Profile Methods ===
     
-    async def get_character_profile(self, realm: str, character_name: str) -> Dict[str, Any]:
+    async def get_character_profile(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
         """Get character profile data."""
         realm_slug = self.realm_to_slug(realm)
         endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}"
-        params = {"namespace": f"profile-{self.region}"}
+        params = {"namespace": self.get_namespace("profile", game_version)}
         profile = await self._make_request(endpoint, params)
         
         if profile:
@@ -156,80 +164,95 @@ class WoWBlizzardAPIClient:
             
         return profile
 
-    async def get_character_equipment(self, realm: str, character_name: str) -> Dict[str, Any]:
+    async def get_character_equipment(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
         """Get character equipment data."""
         realm_slug = self.realm_to_slug(realm)
         endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/equipment"
-        params = {"namespace": f"profile-{self.region}"}
+        params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(endpoint, params)
 
-    async def get_character_achievements(self, realm: str, character_name: str) -> Dict[str, Any]:
+    async def get_character_achievements(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
         """Get character achievements data."""
         realm_slug = self.realm_to_slug(realm)
         endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/achievements"
-        params = {"namespace": f"profile-{self.region}"}
+        params = {"namespace": self.get_namespace("profile", game_version)}
+        return await self._make_request(endpoint, params)
+
+    async def get_character_media(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
+        """Get character media data (portrait renders)."""
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/character-media"
+        params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(endpoint, params)
 
     async def get_character_statistics(self, realm: str, character_name: str) -> Dict[str, Any]:
         """Get character statistics (DEPRECATED - kept for compatibility)."""
         _LOGGER.warning("Character statistics endpoint is deprecated")
-        realm_slug = self.realm_to_slug(realm)
         return {}
 
     # === Realm/Server Methods ===
     
-    async def get_realm_info(self, realm: str) -> Dict[str, Any]:
+    async def get_realm_info(self, realm: str, game_version: str = "retail") -> Dict[str, Any]:
         """Get realm information."""
         realm_slug = self.realm_to_slug(realm)
         endpoint = f"/data/wow/realm/{realm_slug}"
-        params = {"namespace": f"dynamic-{self.region}"}
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
         return await self._make_request(endpoint, params)
 
-    async def get_all_realms(self) -> Dict[str, Any]:
+    async def get_all_realms(self, game_version: str = "retail") -> Dict[str, Any]:
         """Get all realms in region."""
         endpoint = "/data/wow/realm/index"
-        params = {"namespace": f"dynamic-{self.region}"}
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
         return await self._make_request(endpoint, params)
 
-    async def get_connected_realm(self, realm: str) -> Dict[str, Any]:
+    async def get_connected_realm(self, realm: str, game_version: str = "retail") -> Dict[str, Any]:
         """Get connected realm info (for server status)."""
         realm_slug = self.realm_to_slug(realm)
-        realm_info = await self.get_realm_info(realm_slug)
+        realm_info = await self.get_realm_info(realm_slug, game_version)
         if not realm_info or "id" not in realm_info:
             return {}
         
-        endpoint = f"/data/wow/connected-realm/{realm_info['id']}"
-        params = {"namespace": f"dynamic-{self.region}"}
+        # Extract connected realm ID from href, e.g. "https://us.api.blizzard.com/data/wow/connected-realm/11?namespace=dynamic-us"
+        connected_realm_href = realm_info.get("connected_realm", {}).get("href", "")
+        import re
+        match = re.search(r"connected-realm/(\d+)", connected_realm_href)
+        if match:
+            connected_realm_id = int(match.group(1))
+        else:
+            connected_realm_id = realm_info["id"]
+        
+        endpoint = f"/data/wow/connected-realm/{connected_realm_id}"
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
         return await self._make_request(endpoint, params)
 
     # === PvP Methods ===
     
-    async def get_character_pvp_summary(self, realm: str, character_name: str) -> Dict[str, Any]:
+    async def get_character_pvp_summary(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
         """Get character PvP summary."""
         realm_slug = self.realm_to_slug(realm)
         endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/pvp-summary"
-        params = {"namespace": f"profile-{self.region}"}
+        params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(endpoint, params)
 
-    async def get_character_pvp_bracket(self, realm: str, character_name: str, bracket: str) -> Dict[str, Any]:
+    async def get_character_pvp_bracket(self, realm: str, character_name: str, bracket: str, game_version: str = "retail") -> Dict[str, Any]:
         """Get character PvP bracket statistics."""
         realm_slug = self.realm_to_slug(realm)
         endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/pvp-bracket/{bracket}"
-        params = {"namespace": f"profile-{self.region}"}
+        params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(endpoint, params)
 
-    async def get_all_pvp_data(self, realm: str, character_name: str) -> Dict[str, Dict[str, Any]]:
+    async def get_all_pvp_data(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Dict[str, Any]]:
         """Get all PvP data for character."""
         results = {}
         
         # Get PvP summary
-        summary = await self.get_character_pvp_summary(realm, character_name)
+        summary = await self.get_character_pvp_summary(realm, character_name, game_version)
         results["summary"] = summary
         
         # Get bracket data
         brackets = ["2v2", "3v3", "rbg"]
         for bracket in brackets:
-            bracket_data = await self.get_character_pvp_bracket(realm, character_name, bracket)
+            bracket_data = await self.get_character_pvp_bracket(realm, character_name, bracket, game_version)
             results[bracket] = bracket_data
             await asyncio.sleep(0.1)  # Rate limiting
         
@@ -237,11 +260,11 @@ class WoWBlizzardAPIClient:
 
     # === Raid Methods ===
     
-    async def get_character_encounters_raids(self, realm: str, character_name: str) -> Dict[str, Any]:
+    async def get_character_encounters_raids(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
         """Get character raid encounters."""
         realm_slug = self.realm_to_slug(realm)
         endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/encounters/raids"
-        params = {"namespace": f"profile-{self.region}"}
+        params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(endpoint, params)
 
     # === Mythic+ Methods ===
@@ -287,17 +310,20 @@ class WoWBlizzardAPIClient:
         for char in characters:
             realm = char["realm"]
             name = char["character_name"]  # Fixed key name
+            game_version = char.get("game_version", "retail")
             char_key = f"{realm}-{name}"
             
             try:
-                profile = await self.get_character_profile(realm, name)
-                equipment = await self.get_character_equipment(realm, name)
-                achievements = await self.get_character_achievements(realm, name)
+                profile = await self.get_character_profile(realm, name, game_version=game_version)
+                equipment = await self.get_character_equipment(realm, name, game_version=game_version)
+                achievements = await self.get_character_achievements(realm, name, game_version=game_version)
+                media = await self.get_character_media(realm, name, game_version=game_version)
                 
                 results[char_key] = {
                     "profile": profile,
                     "equipment": equipment, 
                     "achievements": achievements,
+                    "media": media,
                     "realm": realm,
                     "name": name,
                 }
@@ -311,6 +337,7 @@ class WoWBlizzardAPIClient:
                     "profile": {},
                     "equipment": {},
                     "achievements": {},
+                    "media": {},
                     "realm": realm,
                     "name": name,
                     "error": str(e)

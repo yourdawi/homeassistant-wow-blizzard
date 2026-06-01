@@ -21,8 +21,15 @@
         }
       },
       "character": {
-        "title": "Add Character",
-        "description": "Add a character to monitor. Current characters: {character_count}",
+        "title": "Add Character - Game Version",
+        "description": "Select the World of Warcraft game version for the character you want to add. Current characters: {character_count}",
+        "data": {
+          "game_version": "Game Version"
+        }
+      },
+      "character_details": {
+        "title": "Add Character - Details",
+        "description": "Select the realm and enter the character name for your {game_version} character.",
         "data": {
           "realm": "Realm",
           "character_name": "Character Name"
