@@ -10,7 +10,7 @@ Monitor multiple characters, server status, PvP ratings, raid progress, and Myth
 - **Multiple Characters**: Monitor unlimited characters across different realms
 - **Real-time Stats**: Level, item level, guild, achievement points
 - **Cross-Realm Support**: Characters from different servers in one integration
-- **Multiple Game Versions**: Full support for Retail, Classic Progression (e.g., Cataclysm Classic), and Classic Era (Vanilla)
+- **Multiple Game Versions**: Full support for Retail, Classic Progression (e.g., Cataclysm Classic), Classic Era (Vanilla), and Classic Anniversary (Burning Crusade Anniversary)
 - **Character Portraits**: Live avatar renders automatically loaded as `entity_picture` and updated dynamically
 
 ### 🌐 Server Monitoring
@@ -113,7 +113,7 @@ Choose which features to enable:
 
 ### 4. Add Characters
 
-1. **Choose Game Version**: Select **Retail**, **Classic Progression** (e.g., Cataclysm Classic), or **Classic Era** (Vanilla)
+1. **Choose Game Version**: Select **Retail**, **Classic Progression** (e.g., Cataclysm Classic), **Classic Era** (Vanilla), or **Classic Anniversary (Burning Crusade)**
 2. **Select Realm**: Choose from the alphabetically sorted dynamic dropdown/combobox (retrieved in real-time from the Blizzard API)
 3. **Enter Character Name**: Case-insensitive
 4. **Validate**: Integration checks character existence on the selected game version
@@ -129,7 +129,6 @@ Choose which features to enable:
 - `sensor.charactername_item_level` 
 - `sensor.charactername_guild`
 - `sensor.charactername_achievement_points`
-- `sensor.charactername_gold`
 
 **PvP Stats** (If enabled):
 - `sensor.charactername_2v2_arena_rating`
@@ -321,17 +320,18 @@ The integration uses smart update intervals:
 
 ### Multiple Characters Management
 
-Add/remove characters through:
-1. **Integration Options**: Settings → Devices & Services → WoW Integration → Configure
-2. **Reconfigure**: Remove and re-add integration
-3. **YAML** (Advanced): Direct configuration editing
+Add, remove, or modify characters dynamically at any time without re-entering client credentials:
+1. Go to **Settings** → **Devices & Services** → **World of Warcraft Blizzard API**
+2. Click **Configure**
+3. Select **Add a Character** or **Remove Character(s)**
+4. If you change your mind while entering character details, simply submit the form empty to cancel and return to the options menu.
 
 ### Feature Toggle
 
-Enable/disable features without recreating sensors:
-- Go to integration **Options**
-- Toggle feature checkboxes
-- **Restart** Home Assistant
+Enable or disable specific features (Server Status, PvP, Raids, Mythic+) without recreating your sensors:
+1. Go to the integration **Options** (Configure button)
+2. Select **Configure Features**
+3. Toggle the desired feature checkboxes and submit. The integration will automatically reload to apply the changes immediately without requiring a Home Assistant restart.
 
 ## 🚨 Troubleshooting
 

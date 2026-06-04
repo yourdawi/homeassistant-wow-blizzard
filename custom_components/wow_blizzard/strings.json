@@ -35,11 +35,18 @@
           "character_name": "Character Name"
         }
       },
-      "character_confirm": {
-        "title": "Character Added Successfully",
-        "description": "Added {character_name} (Level {character_level} {character_class} {character_race}) from {realm}. Total characters: {total_characters}. Would you like to add another character?",
+      "character_menu": {
+        "title": "WoW Characters Manager",
+        "description": "Currently added characters ({character_count}):<br>{character_list}<br><br>Choose your next action.",
         "data": {
-          "add_another": "Add Another Character"
+          "action": "Next Action"
+        }
+      },
+      "remove_character": {
+        "title": "Remove Character(s)",
+        "description": "Select which character(s) you would like to remove from monitoring. You currently have {character_count} character(s) configured.",
+        "data": {
+          "characters_to_remove": "Select Characters to Remove"
         }
       }
     },
@@ -52,19 +59,48 @@
     },
     "abort": {
       "already_configured": "This character configuration is already set up",
-      "no_characters": "At least one character must be added"
+      "no_characters": "At least one character must be kept"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Integration Options",
-        "description": "Manage features for your {character_count} character(s). Changes require a restart to take effect.",
+        "title": "World of Warcraft Integration Options",
+        "description": "Select the action you want to perform. You currently have {character_count} character(s) configured.",
+        "data": {
+          "action": "Select Action"
+        }
+      },
+      "features": {
+        "title": "Configure Integration Features",
+        "description": "Toggle which features are enabled. These changes will reload the integration automatically.",
         "data": {
           "enable_server_status": "Server Status & Maintenance",
           "enable_pvp": "PvP Statistics & Ratings", 
           "enable_raids": "Raid Progress & Boss Kills",
           "enable_mythic_plus": "Mythic+ Scores & Runs"
+        }
+      },
+      "add_character": {
+        "title": "Add Character - Game Version",
+        "description": "Select the game version of the character you want to add.",
+        "data": {
+          "game_version": "Game Version"
+        }
+      },
+      "add_character_details": {
+        "title": "Add Character - Details",
+        "description": "Select the realm and name for your {game_version} character.",
+        "data": {
+          "realm": "Realm",
+          "character_name": "Character Name"
+        }
+      },
+      "remove_character": {
+        "title": "Remove Character(s)",
+        "description": "Select the character(s) you want to remove. You must keep at least 1 character configured.",
+        "data": {
+          "characters_to_remove": "Select Characters to Remove"
         }
       }
     }
@@ -82,9 +118,6 @@
       },
       "achievement_points": {
         "name": "Achievement Points"
-      },
-      "character_money": {
-        "name": "Gold"
       },
       "realm_status": {
         "name": "Realm Status"

@@ -362,12 +362,12 @@ async def async_setup_entry(
     region = entry.data[CONF_REGION]
     characters = entry.data.get(CONF_CHARACTERS, [])
     
-    # Feature flags
+    # Feature flags from options with data as fallback
     features = {
-        CONF_ENABLE_SERVER_STATUS: entry.data.get(CONF_ENABLE_SERVER_STATUS, True),
-        CONF_ENABLE_PVP: entry.data.get(CONF_ENABLE_PVP, True),
-        CONF_ENABLE_RAIDS: entry.data.get(CONF_ENABLE_RAIDS, True),
-        CONF_ENABLE_MYTHIC_PLUS: entry.data.get(CONF_ENABLE_MYTHIC_PLUS, True),
+        CONF_ENABLE_SERVER_STATUS: entry.options.get(CONF_ENABLE_SERVER_STATUS, entry.data.get(CONF_ENABLE_SERVER_STATUS, True)),
+        CONF_ENABLE_PVP: entry.options.get(CONF_ENABLE_PVP, entry.data.get(CONF_ENABLE_PVP, True)),
+        CONF_ENABLE_RAIDS: entry.options.get(CONF_ENABLE_RAIDS, entry.data.get(CONF_ENABLE_RAIDS, True)),
+        CONF_ENABLE_MYTHIC_PLUS: entry.options.get(CONF_ENABLE_MYTHIC_PLUS, entry.data.get(CONF_ENABLE_MYTHIC_PLUS, True)),
     }
 
     if not characters:
@@ -515,6 +515,8 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
             sw_version = "Cataclysm Classic"
         elif self._game_version == "classic1x":
             sw_version = "Classic Era"
+        elif self._game_version == "classicann":
+            sw_version = "Burning Crusade Classic (Anniversary)"
 
         return {
             "identifiers": {(DOMAIN, f"{self._realm}_{self._character_name}")},

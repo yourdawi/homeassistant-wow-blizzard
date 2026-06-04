@@ -55,6 +55,8 @@ class WoWBlizzardAPIClient:
             return f"{base_type}-classic-{self.region}"
         elif game_version == "classic1x":
             return f"{base_type}-classic1x-{self.region}"
+        elif game_version == "classicann":
+            return f"{base_type}-classicann-{self.region}"
         return f"{base_type}-{self.region}"
 
     async def _get_session(self) -> aiohttp.ClientSession:

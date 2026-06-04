@@ -66,6 +66,7 @@ STEP_GAME_VERSION_SCHEMA = vol.Schema(
                     {"value": "retail", "label": "Retail"},
                     {"value": "classic", "label": "Classic Progression (e.g. Cataclysm)"},
                     {"value": "classic1x", "label": "Classic Era (Vanilla)"},
+                    {"value": "classicann", "label": "Classic Anniversary (Burning Crusade)"},
                 ],
                 mode=selector.SelectSelectorMode.DROPDOWN,
             )
@@ -275,6 +276,12 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle character details addition step."""
         game_version = self.current_character[CONF_GAME_VERSION]
         
+        if user_input is not None:
+            realm = user_input.get(CONF_REALM)
+            char_name = user_input.get(CONF_CHARACTER_NAME)
+            if not realm or not char_name:
+                return await self.async_step_character_menu()
+
         if user_input is None:
             errors = {}
             realm_options = []
@@ -312,21 +319,27 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     selector_config = create_realm_selector_config(realm_options)
                     schema = vol.Schema({
-                        vol.Required(CONF_REALM): selector.SelectSelector(selector_config),
-                        vol.Required(CONF_CHARACTER_NAME): str,
+                        vol.Optional(CONF_REALM): selector.SelectSelector(selector_config),
+                        vol.Optional(CONF_CHARACTER_NAME): str,
                     })
                 except Exception as e:
                     _LOGGER.warning(f"Selector creation failed ({e}), using text input")
-                    schema = STEP_CHARACTER_DATA_SCHEMA
+                    schema = vol.Schema({
+                        vol.Optional(CONF_REALM): str,
+                        vol.Optional(CONF_CHARACTER_NAME): str,
+                    })
             else:
-                schema = STEP_CHARACTER_DATA_SCHEMA
+                schema = vol.Schema({
+                    vol.Optional(CONF_REALM): str,
+                    vol.Optional(CONF_CHARACTER_NAME): str,
+                })
 
             return self.async_show_form(
                 step_id="character_details",
                 data_schema=schema,
                 errors=errors,
                 description_placeholders={
-                    "game_version": "Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else "Classic Era")
+                    "game_version": "Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else ("Classic Era" if game_version == "classic1x" else "Classic Anniversary"))
                 }
             )
 
@@ -345,17 +358,18 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "character_already_added"
             else:
                 # Add character to list
+                version_label = "Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else ("Classic Era" if game_version == "classic1x" else "Classic Anniversary"))
                 character_data = {
                     CONF_REALM: user_input[CONF_REALM],
                     CONF_CHARACTER_NAME: user_input[CONF_CHARACTER_NAME],
                     CONF_GAME_VERSION: game_version,
-                    "display_name": f"{character_info['name']} - {character_info['realm']} (" + ("Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else "Classic Era")) + ")",
+                    "display_name": f"{character_info['name']} - {character_info['realm']} ({version_label})",
                     "level": character_info["level"],
                     "character_class": character_info["character_class"],
                     "race": character_info["race"],
                 }
                 self.characters.append(character_data)
-                return await self.async_step_character_confirm()
+                return await self.async_step_character_menu()
                 
         except CharacterNotFound:
             errors["base"] = "character_not_found"
@@ -376,48 +390,103 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 selector_config = create_realm_selector_config(realm_options)
                 schema = vol.Schema({
-                    vol.Required(CONF_REALM): selector.SelectSelector(selector_config),
-                    vol.Required(CONF_CHARACTER_NAME): str,
+                    vol.Optional(CONF_REALM): selector.SelectSelector(selector_config),
+                    vol.Optional(CONF_CHARACTER_NAME): str,
                 })
             except Exception:
-                schema = STEP_CHARACTER_DATA_SCHEMA
+                schema = vol.Schema({
+                    vol.Optional(CONF_REALM): str,
+                    vol.Optional(CONF_CHARACTER_NAME): str,
+                })
         else:
-            schema = STEP_CHARACTER_DATA_SCHEMA
+            schema = vol.Schema({
+                vol.Optional(CONF_REALM): str,
+                vol.Optional(CONF_CHARACTER_NAME): str,
+            })
 
         return self.async_show_form(
             step_id="character_details",
             data_schema=schema,
             errors=errors,
             description_placeholders={
-                "game_version": "Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else "Classic Era")
+                "game_version": "Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else ("Classic Era" if game_version == "classic1x" else "Classic Anniversary"))
             }
         )
 
-    async def async_step_character_confirm(
+    async def async_step_character_menu(
         self, user_input: dict[str, any] | None = None
     ) -> FlowResult:
-        """Confirm character addition and ask for more."""
-        if user_input is None:
-            current_char = self.characters[-1]
-            
-            return self.async_show_form(
-                step_id="character_confirm",
-                data_schema=vol.Schema({
-                    vol.Optional("add_another", default=False): bool,
-                }),
-                description_placeholders={
-                    "character_name": current_char["display_name"],
-                    "character_level": current_char["level"],
-                    "character_class": current_char["character_class"],
-                    "character_race": current_char["race"],
-                    "total_characters": len(self.characters),
-                }
-            )
-
-        if user_input.get("add_another", False):
+        """Manage added characters list and actions."""
+        if len(self.characters) == 0:
             return await self.async_step_character()
-        else:
-            return await self.async_step_final()
+
+        if user_input is not None:
+            action = user_input["action"]
+            if action == "add":
+                return await self.async_step_character()
+            elif action == "remove":
+                return await self.async_step_remove_character()
+            elif action == "finish":
+                return await self.async_step_final()
+
+        char_list = "<br>".join([f"• {c['display_name']} (Lv {c['level']})" for c in self.characters])
+
+        menu_options = [
+            {"value": "add", "label": "Add another character"},
+            {"value": "finish", "label": "Finish and save configuration"},
+        ]
+        if len(self.characters) > 0:
+            menu_options.insert(1, {"value": "remove", "label": "Remove a character"})
+
+        schema = vol.Schema({
+            vol.Required("action", default="finish"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=menu_options,
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            )
+        })
+
+        return self.async_show_form(
+            step_id="character_menu",
+            data_schema=schema,
+            description_placeholders={
+                "character_list": char_list,
+                "character_count": len(self.characters),
+            }
+        )
+
+    async def async_step_remove_character(
+        self, user_input: dict[str, any] | None = None
+    ) -> FlowResult:
+        """Remove a character in initial setup."""
+        if user_input is not None:
+            to_remove = user_input["characters_to_remove"]
+            self.characters = [c for c in self.characters if f"{c[CONF_REALM]}-{c[CONF_CHARACTER_NAME]}" not in to_remove]
+            return await self.async_step_character_menu()
+
+        options = [
+            {"value": f"{c[CONF_REALM]}-{c[CONF_CHARACTER_NAME]}", "label": c["display_name"]}
+            for c in self.characters
+        ]
+
+        schema = vol.Schema({
+            vol.Required("characters_to_remove"): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.LIST,
+                    multiple=True,
+                )
+            )
+        })
+
+        return self.async_show_form(
+            step_id="remove_character",
+            data_schema=schema,
+            description_placeholders={
+                "character_count": len(self.characters)
+            }
+        )
 
     async def async_step_final(
         self, user_input: dict[str, any] | None = None
@@ -456,38 +525,305 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry):
         """Initialize options flow."""
-        self.config_entry = config_entry
+        super().__init__()
+        self._config_entry = config_entry
+        self._current_character = {}
 
     async def async_step_init(self, user_input=None):
-        """Manage the options."""
+        """Manage the options flow main menu."""
+        if user_input is not None:
+            action = user_input["action"]
+            if action == "features":
+                return await self.async_step_features()
+            elif action == "add_character":
+                return await self.async_step_add_character()
+            elif action == "remove_character":
+                return await self.async_step_remove_character()
+
+        current_characters = self.config_entry.data.get(CONF_CHARACTERS, [])
+        options = [
+            {"value": "add_character", "label": "Add a Character"},
+            {"value": "features", "label": "Configure Features"},
+        ]
+        if len(current_characters) > 1:
+            options.append({"value": "remove_character", "label": "Remove Character(s)"})
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required("action", default="add_character"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                )
+            }),
+            description_placeholders={
+                "character_count": len(current_characters),
+            }
+        )
+
+    async def async_step_features(self, user_input=None):
+        """Manage the options features toggles."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
         current_characters = self.config_entry.data.get(CONF_CHARACTERS, [])
         
         return self.async_show_form(
-            step_id="init",
+            step_id="features",
             data_schema=vol.Schema({
                 vol.Optional(
                     CONF_ENABLE_SERVER_STATUS,
-                    default=self.config_entry.data.get(CONF_ENABLE_SERVER_STATUS, True)
+                    default=self.config_entry.options.get(
+                        CONF_ENABLE_SERVER_STATUS,
+                        self.config_entry.data.get(CONF_ENABLE_SERVER_STATUS, True)
+                    )
                 ): bool,
                 vol.Optional(
                     CONF_ENABLE_PVP,
-                    default=self.config_entry.data.get(CONF_ENABLE_PVP, True)
+                    default=self.config_entry.options.get(
+                        CONF_ENABLE_PVP,
+                        self.config_entry.data.get(CONF_ENABLE_PVP, True)
+                    )
                 ): bool,
                 vol.Optional(
                     CONF_ENABLE_RAIDS,
-                    default=self.config_entry.data.get(CONF_ENABLE_RAIDS, True)
+                    default=self.config_entry.options.get(
+                        CONF_ENABLE_RAIDS,
+                        self.config_entry.data.get(CONF_ENABLE_RAIDS, True)
+                    )
                 ): bool,
                 vol.Optional(
                     CONF_ENABLE_MYTHIC_PLUS,
-                    default=self.config_entry.data.get(CONF_ENABLE_MYTHIC_PLUS, True)
+                    default=self.config_entry.options.get(
+                        CONF_ENABLE_MYTHIC_PLUS,
+                        self.config_entry.data.get(CONF_ENABLE_MYTHIC_PLUS, True)
+                    )
                 ): bool,
             }),
             description_placeholders={
                 "character_count": len(current_characters),
-                "compatibility": "Using Home Assistant version-compatible selectors"
+            }
+        )
+
+    async def async_step_add_character(self, user_input=None):
+        """Handle character game version selection step in options."""
+        if user_input is not None:
+            self._current_character = {
+                CONF_GAME_VERSION: user_input[CONF_GAME_VERSION]
+            }
+            return await self.async_step_add_character_details()
+
+        return self.async_show_form(
+            step_id="add_character",
+            data_schema=STEP_GAME_VERSION_SCHEMA,
+            description_placeholders={}
+        )
+
+    async def async_step_add_character_details(self, user_input=None):
+        """Handle character details addition step in options."""
+        game_version = self._current_character[CONF_GAME_VERSION]
+        
+        if user_input is not None:
+            realm = user_input.get(CONF_REALM)
+            char_name = user_input.get(CONF_CHARACTER_NAME)
+            if not realm or not char_name:
+                return await self.async_step_init()
+
+        if user_input is None:
+            errors = {}
+            realm_options = []
+            
+            cache_key = f"realms_{game_version}"
+            if cache_key not in self.hass.data.setdefault(DOMAIN, {}):
+                client = WoWBlizzardAPIClient(
+                    self.config_entry.data[CONF_CLIENT_ID],
+                    self.config_entry.data[CONF_CLIENT_SECRET],
+                    self.config_entry.data[CONF_REGION]
+                )
+                try:
+                    realms_data = await client.get_all_realms(game_version=game_version)
+                    if realms_data and "realms" in realms_data:
+                        sorted_realms = sorted(realms_data["realms"], key=lambda x: x.get("name", ""))
+                        self.hass.data[DOMAIN][cache_key] = sorted_realms
+                    else:
+                        self.hass.data[DOMAIN][cache_key] = []
+                except Exception as e:
+                    _LOGGER.error(f"Error loading realms for {game_version}: {e}")
+                    errors["base"] = "cannot_connect"
+                    self.hass.data[DOMAIN][cache_key] = []
+                finally:
+                    await client.close()
+            
+            realms_list = self.hass.data[DOMAIN].get(cache_key, [])
+            if realms_list:
+                realm_options = [
+                    {"value": realm["slug"], "label": realm["name"]}
+                    for realm in realms_list
+                ]
+            
+            if realm_options:
+                try:
+                    selector_config = create_realm_selector_config(realm_options)
+                    schema = vol.Schema({
+                        vol.Optional(CONF_REALM): selector.SelectSelector(selector_config),
+                        vol.Optional(CONF_CHARACTER_NAME): str,
+                    })
+                except Exception as e:
+                    schema = vol.Schema({
+                        vol.Optional(CONF_REALM): str,
+                        vol.Optional(CONF_CHARACTER_NAME): str,
+                    })
+            else:
+                schema = vol.Schema({
+                    vol.Optional(CONF_REALM): str,
+                    vol.Optional(CONF_CHARACTER_NAME): str,
+                })
+
+            return self.async_show_form(
+                step_id="add_character_details",
+                data_schema=schema,
+                errors=errors,
+                description_placeholders={
+                    "game_version": "Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else ("Classic Era" if game_version == "classic1x" else "Classic Anniversary"))
+                }
+            )
+
+        errors = {}
+
+        try:
+            character_info = await validate_character(self.hass, self.config_entry.data, user_input, game_version)
+            
+            # Check if character already exists
+            char_key = f"{user_input[CONF_REALM]}-{user_input[CONF_CHARACTER_NAME]}"
+            existing_chars = [
+                f"{c[CONF_REALM]}-{c[CONF_CHARACTER_NAME]}" for c in self.config_entry.data.get(CONF_CHARACTERS, [])
+            ]
+            
+            if char_key in existing_chars:
+                errors["base"] = "character_already_added"
+            else:
+                # Add character to list and update config entry data
+                version_label = "Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else ("Classic Era" if game_version == "classic1x" else "Classic Anniversary"))
+                character_data = {
+                    CONF_REALM: user_input[CONF_REALM],
+                    CONF_CHARACTER_NAME: user_input[CONF_CHARACTER_NAME],
+                    CONF_GAME_VERSION: game_version,
+                    "display_name": f"{character_info['name']} - {character_info['realm']} ({version_label})",
+                    "level": character_info["level"],
+                    "character_class": character_info["character_class"],
+                    "race": character_info["race"],
+                }
+                
+                new_data = dict(self.config_entry.data)
+                new_characters = list(new_data.get(CONF_CHARACTERS, []))
+                new_characters.append(character_data)
+                new_data[CONF_CHARACTERS] = new_characters
+                
+                # Check if we should update entry title
+                if len(new_characters) == 1:
+                    title = new_characters[0]["display_name"]
+                else:
+                    title = f"WoW API ({len(new_characters)} characters)"
+                
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    title=title,
+                    data=new_data
+                )
+                
+                # Close the options flow and reload the integration
+                return self.async_create_entry(title="", data={})
+                
+        except CharacterNotFound:
+            errors["base"] = "character_not_found"
+        except CannotConnect:
+            errors["base"] = "cannot_connect"
+        except Exception:
+            _LOGGER.exception("Unexpected exception validating character")
+            errors["base"] = "unknown"
+
+        # Re-create selector schema on error
+        cache_key = f"realms_{game_version}"
+        realms_list = self.hass.data[DOMAIN].get(cache_key, [])
+        realm_options = [
+            {"value": realm["slug"], "label": realm["name"]}
+            for realm in realms_list
+        ]
+        if realm_options:
+            try:
+                selector_config = create_realm_selector_config(realm_options)
+                schema = vol.Schema({
+                    vol.Optional(CONF_REALM): selector.SelectSelector(selector_config),
+                    vol.Optional(CONF_CHARACTER_NAME): str,
+                })
+            except Exception:
+                schema = vol.Schema({
+                    vol.Optional(CONF_REALM): str,
+                    vol.Optional(CONF_CHARACTER_NAME): str,
+                })
+        else:
+            schema = vol.Schema({
+                vol.Optional(CONF_REALM): str,
+                vol.Optional(CONF_CHARACTER_NAME): str,
+            })
+
+        return self.async_show_form(
+            step_id="add_character_details",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "game_version": "Retail" if game_version == "retail" else ("Classic" if game_version == "classic" else ("Classic Era" if game_version == "classic1x" else "Classic Anniversary"))
+            }
+        )
+
+    async def async_step_remove_character(self, user_input=None):
+        """Handle character removal in options flow."""
+        current_characters = self.config_entry.data.get(CONF_CHARACTERS, [])
+
+        if user_input is not None:
+            to_remove = user_input["characters_to_remove"]
+            
+            # Enforce keeping at least 1 character
+            if len(to_remove) >= len(current_characters):
+                return self.async_abort(reason="no_characters")
+                
+            new_characters = [c for c in current_characters if f"{c[CONF_REALM]}-{c[CONF_CHARACTER_NAME]}" not in to_remove]
+            new_data = dict(self.config_entry.data)
+            new_data[CONF_CHARACTERS] = new_characters
+            
+            # Update title
+            if len(new_characters) == 1:
+                title = new_characters[0]["display_name"]
+            else:
+                title = f"WoW API ({len(new_characters)} characters)"
+                
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                title=title,
+                data=new_data
+            )
+            return self.async_create_entry(title="", data={})
+
+        options = [
+            {"value": f"{c[CONF_REALM]}-{c[CONF_CHARACTER_NAME]}", "label": c["display_name"]}
+            for c in current_characters
+        ]
+
+        return self.async_show_form(
+            step_id="remove_character",
+            data_schema=vol.Schema({
+                vol.Required("characters_to_remove"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options,
+                        mode=selector.SelectSelectorMode.LIST,
+                        multiple=True,
+                    )
+                )
+            }),
+            description_placeholders={
+                "character_count": len(current_characters),
             }
         )
 

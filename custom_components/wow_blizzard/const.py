@@ -69,12 +69,6 @@ BASIC_SENSOR_TYPES = {
         "unit": "points",
         "device_class": None,
     },
-    "character_money": {
-        "name": "Gold",
-        "icon": "mdi:gold",
-        "unit": "gold",
-        "device_class": None,
-    },
 }
 
 # Server Status Sensors
