@@ -25,6 +25,7 @@ from .const import (
     CONF_ENABLE_MYTHIC_PLUS,
     DEFAULT_REGION,
     CONF_GAME_VERSION,
+    CONF_LOCALE,
 )
 from .api_client import WoWBlizzardAPIClient
 
@@ -44,6 +45,27 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
                     {"value": "cn", "label": "China (CN)"},
                 ],
                 mode=selector.SelectSelectorMode.DROPDOWN,
+                translation_key="regions",
+            )
+        ),
+        vol.Required(CONF_LOCALE, default="en_US"): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    {"value": "en_US", "label": "English (United States)"},
+                    {"value": "es_MX", "label": "Spanish (Mexico)"},
+                    {"value": "pt_BR", "label": "Portuguese"},
+                    {"value": "de_DE", "label": "German"},
+                    {"value": "en_GB", "label": "English (Great Britain)"},
+                    {"value": "es_ES", "label": "Spanish (Spain)"},
+                    {"value": "fr_FR", "label": "French"},
+                    {"value": "it_IT", "label": "Italian"},
+                    {"value": "ru_RU", "label": "Russian"},
+                    {"value": "ko_KR", "label": "Korean"},
+                    {"value": "zh_TW", "label": "Chinese (Traditional)"},
+                    {"value": "zh_CN", "label": "Chinese (Simplified)"},
+                ],
+                mode=selector.SelectSelectorMode.DROPDOWN,
+                translation_key="locales",
             )
         ),
     }
@@ -69,6 +91,7 @@ STEP_GAME_VERSION_SCHEMA = vol.Schema(
                     {"value": "classicann", "label": "Classic Anniversary (Burning Crusade)"},
                 ],
                 mode=selector.SelectSelectorMode.DROPDOWN,
+                translation_key="game_versions",
             )
         ),
     }
@@ -128,7 +151,8 @@ async def validate_api_credentials(hass: HomeAssistant, data: dict[str, any]) ->
     client = WoWBlizzardAPIClient(
         data[CONF_CLIENT_ID], 
         data[CONF_CLIENT_SECRET], 
-        data[CONF_REGION]
+        data[CONF_REGION],
+        locale=data.get(CONF_LOCALE)
     )
 
     try:
@@ -157,7 +181,8 @@ async def validate_character(hass: HomeAssistant, data: dict[str, any], characte
     client = WoWBlizzardAPIClient(
         data[CONF_CLIENT_ID], 
         data[CONF_CLIENT_SECRET], 
-        data[CONF_REGION]
+        data[CONF_REGION],
+        locale=data.get(CONF_LOCALE)
     )
 
     try:
@@ -292,7 +317,8 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 client = WoWBlizzardAPIClient(
                     self.data[CONF_CLIENT_ID],
                     self.data[CONF_CLIENT_SECRET],
-                    self.data[CONF_REGION]
+                    self.data[CONF_REGION],
+                    locale=self.data.get(CONF_LOCALE)
                 )
                 try:
                     realms_data = await client.get_all_realms(game_version=game_version)
@@ -443,6 +469,7 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 selector.SelectSelectorConfig(
                     options=menu_options,
                     mode=selector.SelectSelectorMode.LIST,
+                    translation_key="character_menu_actions",
                 )
             )
         })
@@ -555,6 +582,7 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
                     selector.SelectSelectorConfig(
                         options=options,
                         mode=selector.SelectSelectorMode.LIST,
+                        translation_key="options_menu_actions",
                     )
                 )
             }),
@@ -640,7 +668,8 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
                 client = WoWBlizzardAPIClient(
                     self.config_entry.data[CONF_CLIENT_ID],
                     self.config_entry.data[CONF_CLIENT_SECRET],
-                    self.config_entry.data[CONF_REGION]
+                    self.config_entry.data[CONF_REGION],
+                    locale=self.config_entry.data.get(CONF_LOCALE)
                 )
                 try:
                     realms_data = await client.get_all_realms(game_version=game_version)

@@ -7,7 +7,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import DOMAIN, CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_REGION
+from .const import DOMAIN, CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_REGION, CONF_LOCALE
 from .api_client import WoWBlizzardAPIClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,7 +23,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     client = WoWBlizzardAPIClient(
         entry.data[CONF_CLIENT_ID],
         entry.data[CONF_CLIENT_SECRET], 
-        entry.data[CONF_REGION]
+        entry.data[CONF_REGION],
+        locale=entry.data.get(CONF_LOCALE)
     )
     
     try:

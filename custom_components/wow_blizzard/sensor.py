@@ -30,6 +30,7 @@ from .const import (
     CONF_ENABLE_PVP,
     CONF_ENABLE_RAIDS,
     CONF_ENABLE_MYTHIC_PLUS,
+    CONF_LOCALE,
     ALL_SENSOR_TYPES,
     BASIC_SENSOR_TYPES,
     SERVER_SENSOR_TYPES,
@@ -374,7 +375,8 @@ async def async_setup_entry(
         _LOGGER.error("No characters configured")
         return
 
-    client = WoWBlizzardAPIClient(client_id, client_secret, region)
+    locale = entry.data.get(CONF_LOCALE)
+    client = WoWBlizzardAPIClient(client_id, client_secret, region, locale=locale)
     coordinator = WoWDataUpdateCoordinator(hass, client, characters, features)
 
     # Fetch initial data
@@ -451,7 +453,8 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
         
         sensor_config = ALL_SENSOR_TYPES[sensor_type]
         
-        self._attr_name = f"{character_name} {sensor_config['name']}"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = sensor_type
         self._attr_unique_id = f"{DOMAIN}_{realm}_{character_name}_{sensor_type}"
         self._attr_icon = sensor_config["icon"]
         self._attr_native_unit_of_measurement = sensor_config.get("unit")
@@ -543,7 +546,8 @@ class WoWServerSensor(CoordinatorEntity, SensorEntity):
         
         sensor_config = ALL_SENSOR_TYPES[sensor_type]
         
-        self._attr_name = f"{realm.title()} {sensor_config['name']}"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = sensor_type
         self._attr_unique_id = f"{DOMAIN}_server_{realm}_{sensor_type}"
         self._attr_icon = sensor_config["icon"]
         self._attr_native_unit_of_measurement = sensor_config.get("unit")

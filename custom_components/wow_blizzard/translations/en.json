@@ -175,5 +175,54 @@
         "name": "Weekly Best M+"
       }
     }
+  },
+  "selector": {
+    "regions": {
+      "options": {
+        "us": "Americas (US)",
+        "eu": "Europe (EU)",
+        "kr": "Korea (KR)",
+        "tw": "Taiwan (TW)",
+        "cn": "China (CN)"
+      }
+    },
+    "locales": {
+      "options": {
+        "en_US": "English (United States)",
+        "es_MX": "Spanish (Mexico)",
+        "pt_BR": "Portuguese",
+        "de_DE": "German",
+        "en_GB": "English (Great Britain)",
+        "es_ES": "Spanish (Spain)",
+        "fr_FR": "French",
+        "it_IT": "Italian",
+        "ru_RU": "Russian",
+        "ko_KR": "Korean",
+        "zh_TW": "Chinese (Traditional)",
+        "zh_CN": "Chinese (Simplified)"
+      }
+    },
+    "game_versions": {
+      "options": {
+        "retail": "Retail",
+        "classic": "Classic Progression (e.g. Cataclysm)",
+        "classic1x": "Classic Era (Vanilla)",
+        "classicann": "Classic Anniversary (Burning Crusade)"
+      }
+    },
+    "character_menu_actions": {
+      "options": {
+        "add": "Add another character",
+        "finish": "Finish and save configuration",
+        "remove": "Remove a character"
+      }
+    },
+    "options_menu_actions": {
+      "options": {
+        "add_character": "Add a Character",
+        "features": "Configure Features",
+        "remove_character": "Remove Character(s)"
+      }
+    }
   }
 }

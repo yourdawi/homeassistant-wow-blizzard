@@ -1,0 +1,228 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "WoW Blizzard API Einrichtung",
+        "description": "Gib deine Battle.net API Anmeldedaten ein. Du kannst diese unter {setup_url} erstellen.",
+        "data": {
+          "client_id": "Client-ID",
+          "client_secret": "Client-Secret",
+          "region": "Region",
+          "locale": "API Locale / Sprache"
+        }
+      },
+      "features": {
+        "title": "Feature-Auswahl",
+        "description": "Wähle aus, welche Features für die Region {region} aktiviert werden sollen. Du kannst diese später in den Integrationsoptionen ändern.",
+        "data": {
+          "enable_server_status": "Serverstatus aktivieren",
+          "enable_pvp": "PvP-Statistiken aktivieren",
+          "enable_raids": "Schlachtzugsfortschritt aktivieren",
+          "enable_mythic_plus": "Mythic+ Daten aktivieren"
+        }
+      },
+      "character": {
+        "title": "Charakter hinzufügen - Spielversion",
+        "description": "Wähle die World of Warcraft Spielversion des Charakters aus, den du hinzufügen möchtest. Aktuelle Charaktere: {character_count}",
+        "data": {
+          "game_version": "Spielversion"
+        }
+      },
+      "character_details": {
+        "title": "Charakter hinzufügen - Details",
+        "description": "Wähle den Realm aus und gib den Charakternamen für deinen {game_version} Charakter ein.",
+        "data": {
+          "realm": "Realm",
+          "character_name": "Charaktername"
+        }
+      },
+      "character_menu": {
+        "title": "WoW Charakter-Manager",
+        "description": "Aktuell hinzugefügte Charaktere ({character_count}):<br>{character_list}<br><br>Wähle deine nächste Aktion.",
+        "data": {
+          "action": "Nächste Aktion"
+        }
+      },
+      "remove_character": {
+        "title": "Charakter(e) entfernen",
+        "description": "Wähle aus, welche(n) Charakter(e) du aus der Überwachung entfernen möchtest. Du hast aktuell {character_count} Charakter(e) konfiguriert.",
+        "data": {
+          "characters_to_remove": "Zu entfernende Charaktere auswählen"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung mit der Battle.net-API fehlgeschlagen",
+      "invalid_auth": "Ungültige Authentifizierungsdaten",
+      "character_not_found": "Charakter nicht gefunden oder nicht zugänglich",
+      "character_already_added": "Dieser Charakter wurde bereits hinzugefügt",
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten"
+    },
+    "abort": {
+      "already_configured": "Diese Charakterkonfiguration existiert bereits",
+      "no_characters": "Mindestens ein Charakter muss konfiguriert bleiben"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "World of Warcraft Integrationsoptionen",
+        "description": "Wähle die Aktion aus, die du ausführen möchtest. Du hast aktuell {character_count} Charakter(e) konfiguriert.",
+        "data": {
+          "action": "Aktion auswählen"
+        }
+      },
+      "features": {
+        "title": "Integrationsfeatures konfigurieren",
+        "description": "Schalte die gewünschten Features ein oder aus. Diese Änderungen laden die Integration automatisch neu.",
+        "data": {
+          "enable_server_status": "Serverstatus & Wartung",
+          "enable_pvp": "PvP-Statistiken & Wertungen",
+          "enable_raids": "Raid-Fortschritt & Boss-Kills",
+          "enable_mythic_plus": "Mythic+ Wertungen & Durchläufe"
+        }
+      },
+      "add_character": {
+        "title": "Charakter hinzufügen - Spielversion",
+        "description": "Wähle die Spielversion des Charakters aus, den du hinzufügen möchtest.",
+        "data": {
+          "game_version": "Spielversion"
+        }
+      },
+      "add_character_details": {
+        "title": "Charakter hinzufügen - Details",
+        "description": "Wähle den Realm und den Namen für deinen {game_version} Charakter aus.",
+        "data": {
+          "realm": "Realm",
+          "character_name": "Charaktername"
+        }
+      },
+      "remove_character": {
+        "title": "Charakter(e) entfernen",
+        "description": "Wähle die Charaktere aus, die du entfernen möchtest. Mindestens 1 Charakter muss konfiguriert bleiben.",
+        "data": {
+          "characters_to_remove": "Zu entfernende Charaktere auswählen"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "character_level": {
+        "name": "Stufe"
+      },
+      "character_item_level": {
+        "name": "Gegenstandsstufe"
+      },
+      "guild_name": {
+        "name": "Gilde"
+      },
+      "achievement_points": {
+        "name": "Erfolgspunkte"
+      },
+      "realm_status": {
+        "name": "Realm-Status"
+      },
+      "realm_population": {
+        "name": "Bevölkerung"
+      },
+      "realm_queue": {
+        "name": "Wartezeit"
+      },
+      "pvp_2v2_rating": {
+        "name": "2v2 Arena-Wertung"
+      },
+      "pvp_3v3_rating": {
+        "name": "3v3 Arena-Wertung"
+      },
+      "pvp_rbg_rating": {
+        "name": "RBG-Wertung"
+      },
+      "pvp_honor_level": {
+        "name": "Ehrenstufe"
+      },
+      "pvp_wins_season": {
+        "name": "PvP-Siege (Saison)"
+      },
+      "raid_progress_lfr": {
+        "name": "LFR-Fortschritt"
+      },
+      "raid_progress_normal": {
+        "name": "Normaler Fortschritt"
+      },
+      "raid_progress_heroic": {
+        "name": "Heroischer Fortschritt"
+      },
+      "raid_progress_mythic": {
+        "name": "Mythischer Fortschritt"
+      },
+      "raid_kills_total": {
+        "name": "Boss-Kills insgesamt"
+      },
+      "mythicplus_score": {
+        "name": "M+ Wertung"
+      },
+      "mythicplus_best_run": {
+        "name": "Beste M+ Stufe"
+      },
+      "mythicplus_runs_completed": {
+        "name": "M+ Durchläufe abgeschlossen"
+      },
+      "mythicplus_runs_timed": {
+        "name": "M+ Durchläufe in Zeit"
+      },
+      "mythicplus_weekly_best": {
+        "name": "Wöchentliche beste M+"
+      }
+    }
+  },
+  "selector": {
+    "regions": {
+      "options": {
+        "us": "Amerika (US)",
+        "eu": "Europa (EU)",
+        "kr": "Korea (KR)",
+        "tw": "Taiwan (TW)",
+        "cn": "China (CN)"
+      }
+    },
+    "locales": {
+      "options": {
+        "en_US": "Englisch (USA)",
+        "es_MX": "Spanisch (Mexiko)",
+        "pt_BR": "Portugiesisch",
+        "de_DE": "Deutsch",
+        "en_GB": "Englisch (Großbritannien)",
+        "es_ES": "Spanisch (Spanien)",
+        "fr_FR": "Französisch",
+        "it_IT": "Italienisch",
+        "ru_RU": "Russisch",
+        "ko_KR": "Koreanisch",
+        "zh_TW": "Chinesisch (Traditionell)",
+        "zh_CN": "Chinesisch (Vereinfacht)"
+      }
+    },
+    "game_versions": {
+      "options": {
+        "retail": "Retail",
+        "classic": "Classic Progression (z. B. Cataclysm)",
+        "classic1x": "Classic Era (Vanilla)",
+        "classicann": "Classic Anniversary (Burning Crusade)"
+      }
+    },
+    "character_menu_actions": {
+      "options": {
+        "add": "Weiteren Charakter hinzufügen",
+        "finish": "Einrichtung abschließen und speichern",
+        "remove": "Einen Charakter entfernen"
+      }
+    },
+    "options_menu_actions": {
+      "options": {
+        "add_character": "Charakter hinzufügen",
+        "features": "Features konfigurieren",
+        "remove_character": "Charakter(e) entfernen"
+      }
+    }
+  }
+}
