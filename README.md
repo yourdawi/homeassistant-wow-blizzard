@@ -31,6 +31,14 @@ Monitor multiple characters, server status, PvP ratings, raid progress, and Myth
 - **Total Kill Counter**: Lifetime boss defeats
 - **Weekly Progress**: Fresh raid lockouts
 
+### 🏆 Mythic Raid Leaderboards / Hall of Fame
+- **GraphQL Engine**: Powered by the public WoW GraphQL endpoint for global, real-time standings
+- **Region-Independent**: Track global ranks (covering US, EU, KR, TW, CN) regardless of the integration's region
+- **Auto-Discovery**: Dynamically scans and creates sensors for raids in the latest current expansion (e.g., Midnight)
+- **World First Tracking**: Sensor state directly displays the name of the World First guild (e.g., `"Liquid"`), or `"Pending"` if the raid is not yet cleared
+- **Unified Leaderboard Sensors**: Created as a single sensor per raid (grouped under a clean `WoW Leaderboards` device) to align with Blizzard's unified faction-less Hall of Fame
+- **Clickable standings URL**: Detailed state attributes provide a direct localized link to the official WoW Mythic Hall of Fame page (e.g., `https://worldofwarcraft.blizzard.com/de-de/game/hall-of-fame/mythic-raid/...`) for detailed standings
+
 ### 🗝️ Mythic+ Dungeons
 - **Season Score**: Current Mythic+ rating
 - **Best Key Level**: Highest completed key
@@ -102,6 +110,7 @@ config/
    - Client ID from step 1
    - Client Secret from step 1
    - Your region (US/EU/KR/TW/CN)
+   - Your API Locale (Language for returned data, e.g. German, French, English)
 
 ### 3. Select Features
 
@@ -157,6 +166,11 @@ Choose which features to enable:
 - `sensor.realmname_realm_status`
 - `sensor.realmname_population`
 - `sensor.realmname_queue_time`
+
+### 🏆 Leaderboard Sensors
+
+**Per Raid** (If enabled):
+- `sensor.wow_leaderboards_[raid_slug]_hof` (Displays World First guild name or `"Pending"`)
 
 ## 🏠 Dashboard Examples
 
@@ -223,6 +237,17 @@ entities:
     name: "Population"
   - entity: sensor.stormrage_queue_time
     name: "Queue"
+```
+
+### Leaderboards Tracking Card
+```yaml
+type: entities
+title: WoW Mythic Leaderboards
+entities:
+  - entity: sensor.wow_leaderboards_the_dreamrift_hof
+    name: "Der Traumriss"
+  - entity: sensor.wow_leaderboards_march_on_queldanas_hof
+    name: "Marsch auf Quel'Danas"
 ```
 
 ## 🤖 Automation Examples
@@ -332,6 +357,7 @@ Enable or disable specific features (Server Status, PvP, Raids, Mythic+) without
 1. Go to the integration **Options** (Configure button)
 2. Select **Configure Features**
 3. Toggle the desired feature checkboxes and submit. The integration will automatically reload to apply the changes immediately without requiring a Home Assistant restart.
+
 
 ## 🚨 Troubleshooting
 

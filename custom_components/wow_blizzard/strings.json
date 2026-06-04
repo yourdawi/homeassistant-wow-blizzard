@@ -18,7 +18,8 @@
           "enable_server_status": "Enable Server Status",
           "enable_pvp": "Enable PvP Statistics",
           "enable_raids": "Enable Raid Progress",
-          "enable_mythic_plus": "Enable Mythic+ Data"
+          "enable_mythic_plus": "Enable Mythic+ Data",
+          "enable_hall_of_fame": "Enable Raid Hall of Fame"
         }
       },
       "character": {
@@ -38,7 +39,7 @@
       },
       "character_menu": {
         "title": "WoW Characters Manager",
-        "description": "Currently added characters ({character_count}):<br>{character_list}<br><br>Choose your next action.",
+        "description": "Currently added characters ({character_count}):<br/>{character_list}<br/><br/>Choose your next action.",
         "data": {
           "action": "Next Action"
         }
@@ -79,7 +80,8 @@
           "enable_server_status": "Server Status & Maintenance",
           "enable_pvp": "PvP Statistics & Ratings", 
           "enable_raids": "Raid Progress & Boss Kills",
-          "enable_mythic_plus": "Mythic+ Scores & Runs"
+          "enable_mythic_plus": "Mythic+ Scores & Runs",
+          "enable_hall_of_fame": "Raid Hall of Fame / Leaderboards"
         }
       },
       "add_character": {
@@ -173,6 +175,9 @@
       },
       "mythicplus_weekly_best": {
         "name": "Weekly Best M+"
+      },
+      "hall_of_fame": {
+        "name": "Hall of Fame"
       }
     }
   }

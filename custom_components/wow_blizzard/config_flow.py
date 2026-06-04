@@ -23,6 +23,7 @@ from .const import (
     CONF_ENABLE_PVP,
     CONF_ENABLE_RAIDS,
     CONF_ENABLE_MYTHIC_PLUS,
+    CONF_ENABLE_HALL_OF_FAME,
     DEFAULT_REGION,
     CONF_GAME_VERSION,
     CONF_LOCALE,
@@ -77,6 +78,7 @@ STEP_FEATURES_DATA_SCHEMA = vol.Schema(
         vol.Optional(CONF_ENABLE_PVP, default=True): bool,
         vol.Optional(CONF_ENABLE_RAIDS, default=True): bool,
         vol.Optional(CONF_ENABLE_MYTHIC_PLUS, default=True): bool,
+        vol.Optional(CONF_ENABLE_HALL_OF_FAME, default=True): bool,
     }
 )
 
@@ -323,7 +325,7 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     realms_data = await client.get_all_realms(game_version=game_version)
                     if realms_data and "realms" in realms_data:
-                        sorted_realms = sorted(realms_data["realms"], key=lambda x: x.get("name", ""))
+                        sorted_realms = sorted(realms_data["realms"], key=lambda x: x.get("name") or x.get("slug", "").replace("-", " ").title())
                         self.data[cache_key] = sorted_realms
                     else:
                         self.data[cache_key] = []
@@ -337,7 +339,7 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             realms_list = self.data.get(cache_key, [])
             if realms_list:
                 realm_options = [
-                    {"value": realm["slug"], "label": realm["name"]}
+                    {"value": realm["slug"], "label": realm.get("name") or realm.get("slug", "").replace("-", " ").title()}
                     for realm in realms_list
                 ]
             
@@ -409,7 +411,7 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         cache_key = f"realms_{game_version}"
         realms_list = self.data.get(cache_key, [])
         realm_options = [
-            {"value": realm["slug"], "label": realm["name"]}
+            {"value": realm["slug"], "label": realm.get("name") or realm.get("slug", "").replace("-", " ").title()}
             for realm in realms_list
         ]
         if realm_options:
@@ -455,7 +457,7 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             elif action == "finish":
                 return await self.async_step_final()
 
-        char_list = "<br>".join([f"• {c['display_name']} (Lv {c['level']})" for c in self.characters])
+        char_list = "<br/>".join([f"• {c['display_name']} (Lv {c['level']})" for c in self.characters])
 
         menu_options = [
             {"value": "add", "label": "Add another character"},
@@ -629,6 +631,13 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
                         self.config_entry.data.get(CONF_ENABLE_MYTHIC_PLUS, True)
                     )
                 ): bool,
+                vol.Optional(
+                    CONF_ENABLE_HALL_OF_FAME,
+                    default=self.config_entry.options.get(
+                        CONF_ENABLE_HALL_OF_FAME,
+                        self.config_entry.data.get(CONF_ENABLE_HALL_OF_FAME, True)
+                    )
+                ): bool,
             }),
             description_placeholders={
                 "character_count": len(current_characters),
@@ -674,7 +683,7 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
                 try:
                     realms_data = await client.get_all_realms(game_version=game_version)
                     if realms_data and "realms" in realms_data:
-                        sorted_realms = sorted(realms_data["realms"], key=lambda x: x.get("name", ""))
+                        sorted_realms = sorted(realms_data["realms"], key=lambda x: x.get("name") or x.get("slug", "").replace("-", " ").title())
                         self.hass.data[DOMAIN][cache_key] = sorted_realms
                     else:
                         self.hass.data[DOMAIN][cache_key] = []
@@ -688,7 +697,7 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
             realms_list = self.hass.data[DOMAIN].get(cache_key, [])
             if realms_list:
                 realm_options = [
-                    {"value": realm["slug"], "label": realm["name"]}
+                    {"value": realm["slug"], "label": realm.get("name") or realm.get("slug", "").replace("-", " ").title()}
                     for realm in realms_list
                 ]
             
@@ -777,7 +786,7 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
         cache_key = f"realms_{game_version}"
         realms_list = self.hass.data[DOMAIN].get(cache_key, [])
         realm_options = [
-            {"value": realm["slug"], "label": realm["name"]}
+            {"value": realm["slug"], "label": realm.get("name") or realm.get("slug", "").replace("-", " ").title()}
             for realm in realms_list
         ]
         if realm_options:

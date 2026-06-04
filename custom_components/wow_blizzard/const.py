@@ -13,6 +13,7 @@ CONF_ENABLE_SERVER_STATUS = "enable_server_status"
 CONF_ENABLE_PVP = "enable_pvp"
 CONF_ENABLE_RAIDS = "enable_raids"
 CONF_ENABLE_MYTHIC_PLUS = "enable_mythic_plus"
+CONF_ENABLE_HALL_OF_FAME = "enable_hall_of_fame"
 CONF_GAME_VERSION = "game_version"
 CONF_LOCALE = "locale"
 
@@ -196,6 +197,16 @@ MYTHICPLUS_SENSOR_TYPES = {
     },
 }
 
+# Hall of Fame Leaderboard Sensors
+HOF_SENSOR_TYPES = {
+    "hall_of_fame": {
+        "name": "Hall of Fame",
+        "icon": "mdi:crown",
+        "unit": None,
+        "device_class": None,
+    },
+}
+
 # Combine all sensor types
 ALL_SENSOR_TYPES = {
     **BASIC_SENSOR_TYPES,
@@ -203,6 +214,7 @@ ALL_SENSOR_TYPES = {
     **PVP_SENSOR_TYPES,
     **RAID_SENSOR_TYPES,
     **MYTHICPLUS_SENSOR_TYPES,
+    **HOF_SENSOR_TYPES,
 }
 
 # Current raid tiers (update when new raids release)
@@ -282,9 +294,79 @@ CLASS_COLORS = {
     "Warrior": "#C79C6E",
 }
 
-# API Rate limits
-API_RATE_LIMIT_PER_SECOND = 36000
-API_RATE_LIMIT_PER_HOUR = 36000
-
 # Error codes that should trigger re-authentication
 AUTH_ERROR_CODES = [401, 403]
+
+
+def get_sensor_types_for_version(game_version: str) -> dict:
+    """Return the sensor type groups applicable for a given game version.
+
+    Returns a dict with keys: basic, pvp, raid, mythicplus
+    Each value is a dict of sensor_type -> config (subset of the full dicts above).
+
+    Feature availability per version (based on Blizzard API documentation):
+      - retail:     all endpoints available
+      - classic:    no /encounters/raids, no M+, no RBG/Honor Level
+      - classicann: like classic, plus no Item Level from API
+      - classic1x:  no Item Level, no Achievements, no rated PvP brackets, no raids, no M+
+
+    Note: The /character/encounters/raids endpoint is ONLY available for Retail.
+    Classic versions do not have this endpoint in the Blizzard API.
+    """
+    if game_version == "retail":
+        return {
+            "basic": dict(BASIC_SENSOR_TYPES),
+            "pvp": dict(PVP_SENSOR_TYPES),
+            "raid": dict(RAID_SENSOR_TYPES),
+            "mythicplus": dict(MYTHICPLUS_SENSOR_TYPES),
+        }
+
+    if game_version == "classic":
+        # Mists of Pandaria Classic (Progression): has ilvl, achievements, 2v2/3v3
+        # No raid encounters endpoint, no M+, no RBG/Honor Level
+        return {
+            "basic": dict(BASIC_SENSOR_TYPES),
+            "pvp": {
+                k: v for k, v in PVP_SENSOR_TYPES.items()
+                if k in ("pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season")
+            },
+            "raid": {},
+            "mythicplus": {},
+        }
+
+    if game_version == "classicann":
+        # Burning Crusade Classic (Anniversary): no ilvl, has achievements, 2v2/3v3
+        # No raid encounters endpoint, no M+, no RBG/Honor Level
+        return {
+            "basic": {
+                k: v for k, v in BASIC_SENSOR_TYPES.items()
+                if k in ("character_level", "guild_name", "achievement_points")
+            },
+            "pvp": {
+                k: v for k, v in PVP_SENSOR_TYPES.items()
+                if k in ("pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season")
+            },
+            "raid": {},
+            "mythicplus": {},
+        }
+
+    if game_version == "classic1x":
+        # Classic Era (Vanilla): no ilvl, no achievements, limited PvP (no rated brackets)
+        # No raid encounters endpoint, no M+
+        return {
+            "basic": {
+                k: v for k, v in BASIC_SENSOR_TYPES.items()
+                if k in ("character_level", "guild_name")
+            },
+            "pvp": {},
+            "raid": {},
+            "mythicplus": {},
+        }
+
+    # Unknown version fallback: basic only
+    return {
+        "basic": dict(BASIC_SENSOR_TYPES),
+        "pvp": {},
+        "raid": {},
+        "mythicplus": {},
+    }

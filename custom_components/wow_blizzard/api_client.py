@@ -347,6 +347,143 @@ class WoWBlizzardAPIClient:
         
         return results
 
+    # === Hall of Fame and expansions ===
+
+    async def get_all_mythic_raids_graphql(self) -> Dict[str, Any]:
+        """Get all mythic raids and expansions from the public GraphQL endpoint."""
+        session = await self._get_session()
+        url = "https://worldofwarcraft.blizzard.com/graphql"
+        
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": self.locale.replace("_", "-"),
+        }
+        
+        payload = {
+            "operationName": "GetAllMythicRaids",
+            "variables": {},
+            "extensions": {
+                "persistedQuery": {
+                    "version": 1,
+                    "sha256Hash": "453e0d84617011f2d0cb484f8ad5e4a2f7804adcea06c06c2b1ebb9d33b82c7c"
+                }
+            }
+        }
+        
+        try:
+            async with session.post(url, json=payload, headers=headers) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    _LOGGER.error(f"GraphQL GetAllMythicRaids failed: {response.status}")
+                    return {}
+        except Exception as e:
+            _LOGGER.error(f"Failed to fetch GraphQL GetAllMythicRaids: {e}")
+            return {}
+
+    async def get_hall_of_fame_graphql(self, raid_slug: str) -> Dict[str, Any]:
+        """Get Hall of Fame data using the public World of Warcraft GraphQL endpoint."""
+        session = await self._get_session()
+        url = "https://worldofwarcraft.blizzard.com/graphql"
+        
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": self.locale.replace("_", "-"),
+        }
+        
+        payload = {
+            "operationName": "GetMythicRaidLeaderboard",
+            "variables": {
+                "leaderboard": {
+                    "zoneSlug": raid_slug
+                }
+            },
+            "extensions": {
+                "persistedQuery": {
+                    "version": 1,
+                    "sha256Hash": "f5e84323b0ee6f94b597ce503c186b07bc8c64303bc07476e058d3fd8a38ece1"
+                }
+            }
+        }
+        
+        try:
+            async with session.post(url, json=payload, headers=headers) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    _LOGGER.error(f"GraphQL GetMythicRaidLeaderboard failed for {raid_slug}: {response.status}")
+                    return {}
+        except Exception as e:
+            _LOGGER.error(f"Failed to fetch GraphQL GetMythicRaidLeaderboard for {raid_slug}: {e}")
+            return {}
+
+    async def get_hall_of_fame(self, raid_slug: str, faction: str) -> Dict[str, Any]:
+        """Get Hall of Fame leaderboard data normalized from the public GraphQL endpoint."""
+        graphql_data = await self.get_hall_of_fame_graphql(raid_slug)
+        if not graphql_data or "data" not in graphql_data:
+            return {}
+            
+        leaderboard_data = graphql_data["data"].get("MythicRaidLeaderboard")
+        if not leaderboard_data:
+            return {}
+            
+        leaderboards = leaderboard_data.get("leaderboards", [])
+        if not leaderboards:
+            return {}
+            
+        # Find the leaderboard matching the requested faction
+        target_leaderboard = None
+        if len(leaderboards) == 1:
+            # Unified leaderboard (e.g. Horde containing top 200 global entries)
+            target_leaderboard = leaderboards[0]
+        else:
+            # Split leaderboards (Alliance and Horde)
+            for lb in leaderboards:
+                if lb.get("factionEnum", "").lower() == faction.lower() or lb.get("factionName", "").lower() == faction.lower():
+                    target_leaderboard = lb
+                    break
+                    
+        if not target_leaderboard:
+            return {}
+            
+        # Normalize entries to REST structure
+        normalized_entries = []
+        for entry in target_leaderboard.get("entries", []):
+            guild = entry.get("guild", {})
+            realm = guild.get("realm", {})
+            
+            # Parse realm slug from guild URL or fallback to slugification
+            guild_url = guild.get("url") or ""
+            parts = [p for p in guild_url.split("/") if p]
+            if len(parts) >= 4 and parts[1] == "guild":
+                realm_slug = parts[3]
+            else:
+                realm_slug = self.realm_to_slug(realm.get("name", ""))
+                
+            # Parse region slug
+            region_val = entry.get("region")
+            if isinstance(region_val, dict):
+                region_slug = region_val.get("slug")
+            else:
+                region_slug = region_val or self.region
+                
+            normalized_entries.append({
+                "rank": entry.get("rank"),
+                "guild": {
+                    "name": guild.get("name"),
+                    "realm": {
+                        "name": realm.get("name") or realm_slug.replace("-", " ").title(),
+                        "slug": realm_slug,
+                    }
+                },
+                "region": region_slug,
+                "timestamp": entry.get("timestamp"),
+            })
+            
+        return {"entries": normalized_entries}
+
     async def close(self):
         """Close the session."""
         if self._session:

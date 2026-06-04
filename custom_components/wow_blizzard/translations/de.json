@@ -18,7 +18,8 @@
           "enable_server_status": "Serverstatus aktivieren",
           "enable_pvp": "PvP-Statistiken aktivieren",
           "enable_raids": "Schlachtzugsfortschritt aktivieren",
-          "enable_mythic_plus": "Mythic+ Daten aktivieren"
+          "enable_mythic_plus": "Mythic+ Daten aktivieren",
+          "enable_hall_of_fame": "Raid-Ruhmeshalle aktivieren"
         }
       },
       "character": {
@@ -38,7 +39,7 @@
       },
       "character_menu": {
         "title": "WoW Charakter-Manager",
-        "description": "Aktuell hinzugefügte Charaktere ({character_count}):<br>{character_list}<br><br>Wähle deine nächste Aktion.",
+        "description": "Aktuell hinzugefügte Charaktere ({character_count}):<br/>{character_list}<br/><br/>Wähle deine nächste Aktion.",
         "data": {
           "action": "Nächste Aktion"
         }
@@ -79,7 +80,8 @@
           "enable_server_status": "Serverstatus & Wartung",
           "enable_pvp": "PvP-Statistiken & Wertungen",
           "enable_raids": "Raid-Fortschritt & Boss-Kills",
-          "enable_mythic_plus": "Mythic+ Wertungen & Durchläufe"
+          "enable_mythic_plus": "Mythic+ Wertungen & Durchläufe",
+          "enable_hall_of_fame": "Raid-Ruhmeshalle / Leaderboards"
         }
       },
       "add_character": {
@@ -173,6 +175,9 @@
       },
       "mythicplus_weekly_best": {
         "name": "Wöchentliche beste M+"
+      },
+      "hall_of_fame": {
+        "name": "Ruhmeshalle"
       }
     }
   },
