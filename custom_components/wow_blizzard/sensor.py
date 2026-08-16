@@ -46,6 +46,7 @@ from .const import (
     PVP_BRACKETS,
     CURRENT_RAIDS,
     CLASS_COLORS,
+    ITEM_QUALITY_COLORS,
     get_sensor_types_for_version,
 )
 from .api_client import WoWBlizzardAPIClient
@@ -110,17 +111,69 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             if profile.get("guild"):
                 guild_name = profile["guild"]["name"]
 
-            # Fetch character media (portrait)
+            # Fetch character media (avatar & full-body render)
             avatar_url = None
+            full_body_url = None
             try:
                 media = await self.client.get_character_media(realm, character_name, game_version=game_version)
-                if media and "assets" in media:
-                    for asset in media["assets"]:
-                        if asset.get("key") == "avatar":
-                            avatar_url = asset.get("value")
-                            break
+                if media:
+                    if "assets" in media and isinstance(media["assets"], list):
+                        assets_dict = {asset.get("key"): asset.get("value") for asset in media["assets"] if isinstance(asset, dict)}
+                        avatar_url = assets_dict.get("avatar")
+                        full_body_url = (
+                            assets_dict.get("main-raw")
+                            or assets_dict.get("main")
+                            or assets_dict.get("inset")
+                            or avatar_url
+                        )
+                    else:
+                        avatar_url = media.get("avatar_url")
+                        full_body_url = media.get("render_url") or avatar_url
             except Exception as media_err:
                 _LOGGER.debug(f"Could not fetch media for {character_name}-{realm}: {media_err}")
+
+            # Process equipment details & stats
+            equipped_items = {}
+            equipped_items_list = []
+            if equipment and isinstance(equipment.get("equipped_items"), list):
+                for item in equipment["equipped_items"]:
+                    if not isinstance(item, dict):
+                        continue
+                    slot_type = item.get("slot", {}).get("type", "UNKNOWN")
+                    slot_name = item.get("slot", {}).get("name", slot_type.title())
+                    item_name = item.get("name", "Unknown Item")
+                    item_id = item.get("item", {}).get("id")
+                    ilvl = item.get("level", {}).get("value", 0)
+                    quality_type = item.get("quality", {}).get("type", "")
+                    quality_name = item.get("quality", {}).get("name", quality_type.title())
+                    
+                    quality_color = "#FFFFFF"
+                    q_val = item.get("quality", {}).get("value")
+                    if quality_type and quality_type.upper() in ITEM_QUALITY_COLORS:
+                        quality_color = ITEM_QUALITY_COLORS[quality_type.upper()]
+                    elif isinstance(q_val, int) and q_val in ITEM_QUALITY_COLORS:
+                        quality_color = ITEM_QUALITY_COLORS[q_val]
+
+                    stats_dict = {}
+                    for stat in item.get("stats", []):
+                        if isinstance(stat, dict):
+                            stat_type = stat.get("type", {}).get("name") or stat.get("type", {}).get("type")
+                            stat_val = stat.get("value", 0)
+                            if stat_type:
+                                stats_dict[stat_type] = stat_val
+
+                    item_info = {
+                        "slot": slot_name,
+                        "slot_type": slot_type,
+                        "name": item_name,
+                        "item_id": item_id,
+                        "item_level": ilvl,
+                        "quality": quality_name,
+                        "quality_color": quality_color,
+                        "stats": stats_dict,
+                    }
+                    equipped_items[slot_type.lower()] = item_info
+                    equipped_items_list.append(item_info)
 
             result = {
                 "character_level": profile.get("level", 0),
@@ -133,6 +186,11 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 "gender": profile.get("gender", {}).get("name"),
                 "spec": profile.get("active_spec", {}).get("name"),
                 "avatar_url": avatar_url,
+                "full_body_url": full_body_url,
+                "character_full_body_render": full_body_url or avatar_url,
+                "character_equipment": len(equipped_items_list),
+                "equipped_items": equipped_items,
+                "equipped_items_list": equipped_items_list,
             }
 
             # Only include values for sensors this version supports
@@ -630,6 +688,8 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
         self._attr_icon = sensor_config["icon"]
         self._attr_native_unit_of_measurement = sensor_config.get("unit")
         self._attr_device_class = sensor_config.get("device_class")
+        if "enabled_default" in sensor_config:
+            self._attr_entity_registry_enabled_default = sensor_config["enabled_default"]
 
     @property
     def native_value(self):
@@ -663,12 +723,18 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
             "faction": char_data.get("faction"),
             "active_spec": char_data.get("spec"),
             "game_version": self._game_version,
+            "avatar_url": char_data.get("avatar_url"),
+            "full_body_url": char_data.get("full_body_url"),
         }
         
         # Add class color if available
         if char_data.get("character_class") in CLASS_COLORS:
             attributes["class_color"] = CLASS_COLORS[char_data["character_class"]]
-        
+            
+        if self._sensor_type == "character_equipment":
+            attributes["equipped_items"] = char_data.get("equipped_items", {})
+            attributes["equipped_items_list"] = char_data.get("equipped_items_list", [])
+
         # Add specific attributes based on sensor type
         if self._sensor_type in PVP_SENSOR_TYPES:
             attributes["category"] = "pvp"

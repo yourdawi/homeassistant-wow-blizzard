@@ -109,6 +109,11 @@
     }
   },
   "entity": {
+    "image": {
+      "character_full_body_render": {
+        "name": "Full Body Render"
+      }
+    },
     "sensor": {
       "character_level": {
         "name": "Level"
@@ -121,6 +126,9 @@
       },
       "achievement_points": {
         "name": "Achievement Points"
+      },
+      "character_equipment": {
+        "name": "Equipment Details"
       },
       "realm_status": {
         "name": "Realm Status"

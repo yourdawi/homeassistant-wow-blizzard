@@ -109,6 +109,11 @@
     }
   },
   "entity": {
+    "image": {
+      "character_full_body_render": {
+        "name": "Ganzkörper-Render"
+      }
+    },
     "sensor": {
       "character_level": {
         "name": "Stufe"
@@ -121,6 +126,9 @@
       },
       "achievement_points": {
         "name": "Erfolgspunkte"
+      },
+      "character_equipment": {
+        "name": "Ausrüstungsdetails"
       },
       "realm_status": {
         "name": "Realm-Status"

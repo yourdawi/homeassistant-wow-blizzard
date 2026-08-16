@@ -71,6 +71,12 @@ BASIC_SENSOR_TYPES = {
         "unit": "points",
         "device_class": None,
     },
+    "character_equipment": {
+        "name": "Equipment Details",
+        "icon": "mdi:shield-account",
+        "unit": "items",
+        "device_class": None,
+    },
 }
 
 # Server Status Sensors
@@ -275,6 +281,14 @@ ITEM_QUALITY_COLORS = {
     5: "#FF8000",  # Legendary (Orange)
     6: "#E6CC80",  # Artifact (Light Orange)
     7: "#00CCFF",  # Heirloom (Light Blue)
+    "POOR": "#9D9D9D",
+    "COMMON": "#FFFFFF",
+    "UNCOMMON": "#1EFF00",
+    "RARE": "#0070DD",
+    "EPIC": "#A335EE",
+    "LEGENDARY": "#FF8000",
+    "ARTIFACT": "#E6CC80",
+    "HEIRLOOM": "#00CCFF",
 }
 
 # Class colors for UI

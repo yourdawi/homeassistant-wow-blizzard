@@ -139,6 +139,10 @@ Choose which features to enable:
 - `sensor.charactername_guild`
 - `sensor.charactername_achievement_points`
 
+**Advanced Renders & Gear**:
+- `image.charactername_full_body_render`: Native Home Assistant Image Entity with full-body character render (`main-raw`/`main`/`inset` PNG image) and interactive zoom preview
+- `sensor.charactername_equipment_details`: Gear breakdown across all slots (Head, Chest, Trinkets, Weapons, etc.) with Item Levels, Quality colors, and Stat bonuses
+
 **PvP Stats** (If enabled):
 - `sensor.charactername_2v2_arena_rating`
 - `sensor.charactername_3v3_arena_rating`
