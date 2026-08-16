@@ -98,7 +98,7 @@ config/
 1. Visit https://develop.battle.net/access/clients
 2. **Sign in** with your Battle.net account
 3. **Create new client**:
-   - **Name**: "Home Assistant WoW Integration"
+   - **Name**: Choose a unique Client Name (e.g. "HA-WoW-YourUsername" - Blizzard requires Client Names to be unique globally across their portal, otherwise creation will fail with a 500 error)
    - **Redirect URLs**: `https://my.home-assistant.io/redirect/oauth`
 4. **Save** your Client ID and Client Secret
 
@@ -362,6 +362,12 @@ Enable or disable specific features (Server Status, PvP, Raids, Mythic+) without
 ## 🚨 Troubleshooting
 
 ### Common Issues
+
+**Battle.net API Client Creation Error (HTTP 500)**:
+- If creating an API client on Battle.net fails with an HTTP 500 internal server error, your **Client Name** is likely already taken.
+- Blizzard requires **Client Names to be unique** across their entire developer platform, but fails to show a clear validation error.
+- Change the client name to something unique (e.g., `HA-WoW-YourUsername123`).
+- See [Blizzard Developer Forum](https://us.forums.blizzard.com/en/blizzard/t/creating-an-api-client-returns-500/56603/6) for reference.
 
 **Authentication Errors (401/403)**:
 - Verify Client ID and Client Secret
