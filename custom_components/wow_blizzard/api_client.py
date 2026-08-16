@@ -15,6 +15,8 @@ class WoWBlizzardAPIClient:
     @staticmethod
     def realm_to_slug(realm: str) -> str:
         """Convert realm name to slug for Blizzard API."""
+        if not realm or not isinstance(realm, str):
+            return ""
         return realm.strip().lower().replace("'", "").replace(" ", "-").replace("ä", "a").replace("ö", "o").replace("ü", "u").replace("ß", "ss")
     """API client"""
 
@@ -61,7 +63,7 @@ class WoWBlizzardAPIClient:
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
-        if self._session is None:
+        if self._session is None or self._session.closed:
             timeout = aiohttp.ClientTimeout(total=30)
             self._session = aiohttp.ClientSession(timeout=timeout)
         return self._session
@@ -284,8 +286,8 @@ class WoWBlizzardAPIClient:
             profile = await self.get_character_mythicplus_profile(realm, character_name)
             seasons = profile.get("seasons", [])
             if seasons:
-                # Nimm die höchste ID als aktuelle Season
-                season_id = max(s.get("id", 0) for s in seasons)
+                season_ids = [s.get("id") for s in seasons if isinstance(s, dict) and s.get("id") is not None]
+                season_id = max(season_ids) if season_ids else 1
             else:
                 # Fallback: Standard-Season-ID
                 season_id = 1
@@ -298,6 +300,8 @@ class WoWBlizzardAPIClient:
     
     async def get_guild_info(self, realm: str, guild_name: str) -> Dict[str, Any]:
         """Get guild information."""
+        if not guild_name or not isinstance(guild_name, str):
+            return {}
         realm_slug = self.realm_to_slug(realm)
         endpoint = f"/data/wow/guild/{realm_slug}/{guild_name.lower().replace(' ', '-')}"
         params = {"namespace": f"profile-{self.region}"}
@@ -460,7 +464,7 @@ class WoWBlizzardAPIClient:
             if len(parts) >= 4 and parts[1] == "guild":
                 realm_slug = parts[3]
             else:
-                realm_slug = self.realm_to_slug(realm.get("name", ""))
+                realm_slug = self.realm_to_slug(realm.get("name") or "")
                 
             # Parse region slug
             region_val = entry.get("region")
@@ -486,5 +490,6 @@ class WoWBlizzardAPIClient:
 
     async def close(self):
         """Close the session."""
-        if self._session:
+        if self._session and not self._session.closed:
             await self._session.close()
+        self._session = None

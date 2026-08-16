@@ -533,6 +533,8 @@ async def async_setup_entry(
     locale = entry.data.get(CONF_LOCALE)
     client = WoWBlizzardAPIClient(client_id, client_secret, region, locale=locale)
     coordinator = WoWDataUpdateCoordinator(hass, client, characters, features)
+    if isinstance(hass.data[DOMAIN].get(entry.entry_id), dict):
+        hass.data[DOMAIN][entry.entry_id]["coordinator"] = coordinator
 
     # Fetch initial data
     await coordinator.async_config_entry_first_refresh()
@@ -853,9 +855,9 @@ class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
             if first_ts:
                 try:
                     from datetime import timezone
-                    dt = datetime.fromtimestamp(first_ts / 1000, timezone.utc)
+                    dt = datetime.fromtimestamp(float(first_ts) / 1000, timezone.utc)
                     attributes["world_first_timestamp_formatted"] = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-                except:
+                except Exception:
                     attributes["world_first_timestamp_formatted"] = None
             
             last_entry = entries[-1]
@@ -867,9 +869,9 @@ class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
             if last_ts:
                 try:
                     from datetime import timezone
-                    dt = datetime.fromtimestamp(last_ts / 1000, timezone.utc)
+                    dt = datetime.fromtimestamp(float(last_ts) / 1000, timezone.utc)
                     attributes["last_guild_timestamp_formatted"] = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-                except:
+                except Exception:
                     attributes["last_guild_timestamp_formatted"] = None
 
         # Map configured retail characters to their guild rank

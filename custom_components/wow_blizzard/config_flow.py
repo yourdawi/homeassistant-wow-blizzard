@@ -148,6 +148,37 @@ def create_realm_selector_config(realm_options: List[Dict[str, str]]) -> selecto
             )
 
 
+def get_realm_display_name(realm: dict[str, any]) -> str:
+    """Get display name for a realm safely."""
+    if not isinstance(realm, dict):
+        return ""
+    name = realm.get("name")
+    if isinstance(name, str) and name:
+        return name
+    slug = realm.get("slug")
+    if isinstance(slug, str) and slug:
+        return slug.replace("-", " ").title()
+    realm_id = realm.get("id")
+    if realm_id is not None:
+        return str(realm_id)
+    return ""
+
+
+def build_realm_options(realms_list: list[dict[str, any]]) -> list[dict[str, str]]:
+    """Build select options for realms safely."""
+    options = []
+    for realm in realms_list:
+        if not isinstance(realm, dict):
+            continue
+        slug = realm.get("slug") or (str(realm.get("id")) if realm.get("id") is not None else None)
+        if slug:
+            options.append({
+                "value": slug,
+                "label": get_realm_display_name(realm) or slug,
+            })
+    return options
+
+
 async def validate_api_credentials(hass: HomeAssistant, data: dict[str, any]) -> dict[str, any]:
     """Validate the API credentials by making a test call."""
     client = WoWBlizzardAPIClient(
@@ -165,7 +196,7 @@ async def validate_api_credentials(hass: HomeAssistant, data: dict[str, any]) ->
             raise CannotConnect("Unable to fetch realms - API credentials may be invalid")
         
         # Sort realms alphabetically for better UX
-        sorted_realms = sorted(realms.get("realms", []), key=lambda x: x.get("name", ""))
+        sorted_realms = sorted(realms.get("realms", []), key=get_realm_display_name)
         
         _LOGGER.info(f"Loaded {len(sorted_realms)} realms for region {data[CONF_REGION]}")
         
@@ -325,7 +356,7 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     realms_data = await client.get_all_realms(game_version=game_version)
                     if realms_data and "realms" in realms_data:
-                        sorted_realms = sorted(realms_data["realms"], key=lambda x: x.get("name") or x.get("slug", "").replace("-", " ").title())
+                        sorted_realms = sorted(realms_data["realms"], key=get_realm_display_name)
                         self.data[cache_key] = sorted_realms
                     else:
                         self.data[cache_key] = []
@@ -337,11 +368,7 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     await client.close()
             
             realms_list = self.data.get(cache_key, [])
-            if realms_list:
-                realm_options = [
-                    {"value": realm["slug"], "label": realm.get("name") or realm.get("slug", "").replace("-", " ").title()}
-                    for realm in realms_list
-                ]
+            realm_options = build_realm_options(realms_list)
             
             if realm_options:
                 try:
@@ -410,10 +437,7 @@ class WoWBlizzardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Re-create selector schema on error
         cache_key = f"realms_{game_version}"
         realms_list = self.data.get(cache_key, [])
-        realm_options = [
-            {"value": realm["slug"], "label": realm.get("name") or realm.get("slug", "").replace("-", " ").title()}
-            for realm in realms_list
-        ]
+        realm_options = build_realm_options(realms_list)
         if realm_options:
             try:
                 selector_config = create_realm_selector_config(realm_options)
@@ -683,7 +707,7 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
                 try:
                     realms_data = await client.get_all_realms(game_version=game_version)
                     if realms_data and "realms" in realms_data:
-                        sorted_realms = sorted(realms_data["realms"], key=lambda x: x.get("name") or x.get("slug", "").replace("-", " ").title())
+                        sorted_realms = sorted(realms_data["realms"], key=get_realm_display_name)
                         self.hass.data[DOMAIN][cache_key] = sorted_realms
                     else:
                         self.hass.data[DOMAIN][cache_key] = []
@@ -695,11 +719,7 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
                     await client.close()
             
             realms_list = self.hass.data[DOMAIN].get(cache_key, [])
-            if realms_list:
-                realm_options = [
-                    {"value": realm["slug"], "label": realm.get("name") or realm.get("slug", "").replace("-", " ").title()}
-                    for realm in realms_list
-                ]
+            realm_options = build_realm_options(realms_list)
             
             if realm_options:
                 try:
@@ -785,10 +805,7 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
         # Re-create selector schema on error
         cache_key = f"realms_{game_version}"
         realms_list = self.hass.data[DOMAIN].get(cache_key, [])
-        realm_options = [
-            {"value": realm["slug"], "label": realm.get("name") or realm.get("slug", "").replace("-", " ").title()}
-            for realm in realms_list
-        ]
+        realm_options = build_realm_options(realms_list)
         if realm_options:
             try:
                 selector_config = create_realm_selector_config(realm_options)
