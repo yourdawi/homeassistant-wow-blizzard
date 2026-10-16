@@ -6,13 +6,13 @@ from typing import Any
 
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
-from .sensor import WoWDataUpdateCoordinator
+from .const import DOMAIN, CONF_REALM, CONF_CHARACTER_NAME, CONF_GAME_VERSION
+from .sensor import WoWDataUpdateCoordinator, _game_version_label
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,23 +21,18 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up WoW Blizzard image entities based on a config entry."""
-    entry_data = hass.data[DOMAIN].get(entry.entry_id, {})
-    coordinator: WoWDataUpdateCoordinator = entry_data.get("coordinator")
-    if not coordinator:
-        return
+    coordinator: WoWDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
 
-    entities = []
-    for character in coordinator.characters:
-        realm = character["realm"]
-        name = character["character_name"]
-        game_version = character.get("game_version", "retail")
-        char_key = f"{realm}-{name}"
-
-        entities.append(
-            WoWCharacterRenderImage(coordinator, char_key, name, realm, game_version)
+    async_add_entities(
+        WoWCharacterRenderImage(
+            coordinator,
+            character["key"],
+            character[CONF_CHARACTER_NAME],
+            character[CONF_REALM],
+            character[CONF_GAME_VERSION],
         )
-
-    async_add_entities(entities)
+        for character in coordinator.characters
+    )
 
 
 class WoWCharacterRenderImage(CoordinatorEntity, ImageEntity):
@@ -58,31 +53,42 @@ class WoWCharacterRenderImage(CoordinatorEntity, ImageEntity):
         self._character_name = character_name
         self._realm = realm
         self._game_version = game_version
+        # Same device/ID scheme as the character sensors
+        self._id_base = char_key.replace(f"{realm}-{character_name}", f"{realm}_{character_name}", 1)
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "character_full_body_render"
-        self._attr_unique_id = f"{DOMAIN}_{realm}_{character_name}_full_body_image"
+        self._attr_unique_id = f"{DOMAIN}_{self._id_base}_full_body_image"
         self._attr_icon = "mdi:account-box"
+        self._attr_image_url = self._current_url()
+        self._attr_image_last_updated = dt_util.utcnow()
 
     @property
-    def image_url(self) -> str | None:
-        """Return the URL of the image."""
-        if not self.coordinator.data or self._char_key not in self.coordinator.data:
-            return None
-        char_data = self.coordinator.data[self._char_key]
+    def _char_data(self) -> dict[str, Any]:
+        if not self.coordinator.data:
+            return {}
+        return self.coordinator.data.get(self._char_key) or {}
+
+    def _current_url(self) -> str | None:
+        char_data = self._char_data
         return char_data.get("full_body_url") or char_data.get("avatar_url")
 
-    @property
-    def image_last_updated(self):
-        """Return when the image was last updated."""
-        return dt_util.utcnow()
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Only invalidate the cached image when the render URL changes."""
+        url = self._current_url()
+        if url != self._attr_image_url:
+            self._attr_image_url = url
+            self._cached_image = None
+            self._attr_image_last_updated = dt_util.utcnow()
+        super()._handle_coordinator_update()
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
-        if not self.coordinator.data or self._char_key not in self.coordinator.data:
+        char_data = self._char_data
+        if not char_data:
             return {}
-        char_data = self.coordinator.data[self._char_key]
         return {
             "character_name": self._character_name,
             "realm": self._realm,
@@ -100,8 +106,9 @@ class WoWCharacterRenderImage(CoordinatorEntity, ImageEntity):
     def device_info(self):
         """Return device info."""
         return {
-            "identifiers": {(DOMAIN, f"{self._realm}_{self._character_name}")},
+            "identifiers": {(DOMAIN, self._id_base)},
             "name": f"{self._character_name} ({self._realm})",
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Character",
+            "sw_version": _game_version_label(self._game_version),
         }

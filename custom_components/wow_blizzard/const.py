@@ -37,13 +37,35 @@ TOKEN_URLS = {
 # Default values
 DEFAULT_REGION = "us"
 DEFAULT_SCAN_INTERVAL = 300  # 5 minutes
-FAST_SCAN_INTERVAL = 60     # 1 minute for PvP/M+ data
-SLOW_SCAN_INTERVAL = 900    # 15 minutes for server status
 
-# Current expansion/season IDs (update these when new content releases)
-CURRENT_EXPANSION_ID = 10  # Dragonflight
-CURRENT_SEASON_ID = 12     # Current M+ season
-CURRENT_PVP_SEASON_ID = 37 # Current PvP season
+# Game versions and their Blizzard API namespace suffixes.
+# The namespace is built as "{type}{suffix}-{region}", e.g. "profile-classic1x-eu".
+# Versions with more than one candidate are probed in order during setup and the
+# first suffix that returns a realm index is stored with the character.
+GAME_VERSIONS = {
+    "retail": {"label": "Retail", "namespaces": [""]},
+    "classic": {"label": "Classic Progression", "namespaces": ["-classic"]},
+    "classic1x": {"label": "Classic Era", "namespaces": ["-classic1x"]},
+    "classicann": {"label": "Classic Anniversary", "namespaces": ["-classicann"]},
+    # WoW: Forever (launch 2026-11-04). Blizzard has not documented its API
+    # namespace yet, so these are candidates; update once it is published.
+    "forever": {"label": "WoW Forever", "namespaces": ["-forever", "-camelot"]},
+}
+CONF_NAMESPACE_SUFFIX = "namespace_suffix"
+
+# Hall of Fame (public worldofwarcraft.blizzard.com GraphQL endpoint).
+# Known persisted query hashes; if Blizzard rotates them, the client re-reads
+# the current ones from the leaderboard JS bundle.
+HOF_SITE_URL = "https://worldofwarcraft.blizzard.com"
+HOF_QUERY_HASHES = {
+    "GetAllMythicRaids": "b0c38f74f1ea2fcc1e6ac8e1a46b3f5606d6fcba7a9e41593808beb43fc41511",
+    "GetMythicRaidLeaderboard": "f5e84323b0ee6f94b597ce503c186b07bc8c64303bc07476e058d3fd8a38ece1",
+}
+HOF_VARIANT = "worldsoul"
+# The Hall of Fame is global; the site only serves it under the "us" path.
+HOF_REGION = "us"
+# Any existing raid page embeds the leaderboard bundle that holds the hashes.
+HOF_PROBE_RAID = "nerubar-palace"
 
 # Sensor types - Basic Character Data
 BASIC_SENSOR_TYPES = {
@@ -52,12 +74,14 @@ BASIC_SENSOR_TYPES = {
         "icon": "mdi:star",
         "unit": "level",
         "device_class": None,
+        "state_class": "measurement",
     },
     "character_item_level": {
         "name": "Item Level",
         "icon": "mdi:sword",
         "unit": "ilvl",
         "device_class": None,
+        "state_class": "measurement",
     },
     "guild_name": {
         "name": "Guild",
@@ -70,6 +94,7 @@ BASIC_SENSOR_TYPES = {
         "icon": "mdi:trophy",
         "unit": "points",
         "device_class": None,
+        "state_class": "measurement",
     },
     "character_equipment": {
         "name": "Equipment Details",
@@ -94,9 +119,9 @@ SERVER_SENSOR_TYPES = {
         "device_class": None,
     },
     "realm_queue": {
-        "name": "Queue Time",
+        "name": "Queue",
         "icon": "mdi:clock-outline",
-        "unit": "minutes",
+        "unit": None,
         "device_class": None,
     },
 }
@@ -108,30 +133,35 @@ PVP_SENSOR_TYPES = {
         "icon": "mdi:sword-cross",
         "unit": "rating",
         "device_class": None,
+        "state_class": "measurement",
     },
     "pvp_3v3_rating": {
         "name": "3v3 Arena Rating", 
         "icon": "mdi:sword-cross",
         "unit": "rating",
         "device_class": None,
+        "state_class": "measurement",
     },
     "pvp_rbg_rating": {
         "name": "RBG Rating",
         "icon": "mdi:flag",
         "unit": "rating",
         "device_class": None,
+        "state_class": "measurement",
     },
     "pvp_honor_level": {
         "name": "Honor Level",
         "icon": "mdi:shield-star",
         "unit": "level",
         "device_class": None,
+        "state_class": "measurement",
     },
     "pvp_wins_season": {
         "name": "PvP Wins (Season)",
         "icon": "mdi:trophy-award",
         "unit": "wins",
         "device_class": None,
+        "state_class": "measurement",
     },
 }
 
@@ -142,30 +172,35 @@ RAID_SENSOR_TYPES = {
         "icon": "mdi:castle",
         "unit": "bosses",
         "device_class": None,
+        "state_class": "measurement",
     },
     "raid_progress_normal": {
         "name": "Normal Progress",
         "icon": "mdi:castle",
         "unit": "bosses", 
         "device_class": None,
+        "state_class": "measurement",
     },
     "raid_progress_heroic": {
         "name": "Heroic Progress",
         "icon": "mdi:castle",
         "unit": "bosses",
         "device_class": None,
+        "state_class": "measurement",
     },
     "raid_progress_mythic": {
         "name": "Mythic Progress",
         "icon": "mdi:castle",
         "unit": "bosses",
         "device_class": None,
+        "state_class": "measurement",
     },
     "raid_kills_total": {
         "name": "Total Boss Kills",
         "icon": "mdi:skull",
         "unit": "kills",
         "device_class": None,
+        "state_class": "measurement",
     },
 }
 
@@ -176,30 +211,35 @@ MYTHICPLUS_SENSOR_TYPES = {
         "icon": "mdi:diamond-stone",
         "unit": "score",
         "device_class": None,
+        "state_class": "measurement",
     },
     "mythicplus_best_run": {
         "name": "Best M+ Level",
         "icon": "mdi:trending-up",
         "unit": "level",
         "device_class": None,
+        "state_class": "measurement",
     },
     "mythicplus_runs_completed": {
         "name": "M+ Runs Completed",
         "icon": "mdi:run-fast",
         "unit": "runs",
         "device_class": None,
+        "state_class": "measurement",
     },
     "mythicplus_runs_timed": {
         "name": "M+ Runs Timed",
         "icon": "mdi:timer",
         "unit": "runs", 
         "device_class": None,
+        "state_class": "measurement",
     },
     "mythicplus_weekly_best": {
         "name": "Weekly Best M+",
         "icon": "mdi:calendar-week",
         "unit": "level",
         "device_class": None,
+        "state_class": "measurement",
     },
 }
 
@@ -223,64 +263,8 @@ ALL_SENSOR_TYPES = {
     **HOF_SENSOR_TYPES,
 }
 
-# Current raid tiers (update when new raids release)
-CURRENT_RAIDS = {
-    "aberrus-the-shadowed-crucible": {
-        "name": "Aberrus, the Shadowed Crucible",
-        "total_bosses": 9,
-        "expansion": "dragonflight",
-    },
-    "amirdrassil-the-dreams-hope": {
-        "name": "Amirdrassil, the Dream's Hope", 
-        "total_bosses": 9,
-        "expansion": "dragonflight",
-    },
-    "vault-of-the-incarnates": {
-        "name": "Vault of the Incarnates",
-        "total_bosses": 8,
-        "expansion": "dragonflight",
-    },
-}
-
-# PvP Bracket mappings
-PVP_BRACKETS = {
-    "ARENA_2v2": "2v2",
-    "ARENA_3v3": "3v3", 
-    "BATTLEGROUNDS": "rbg",
-}
-
-# Mythic+ dungeons for current season
-CURRENT_MYTHICPLUS_DUNGEONS = [
-    "temple-of-the-jade-serpent",
-    "brackenhide-hollow",
-    "halls-of-infusion", 
-    "uldaman-legacy-of-tyr",
-    "neltharus",
-    "freehold",
-    "underrot",
-    "everbloom",
-]
-
-# Difficulty mappings
-DIFFICULTY_MAPPING = {
-    1: "Normal",
-    2: "Heroic", 
-    3: "Raid Finder",
-    4: "Mythic",
-    5: "Normal (Dungeon)",
-    23: "Mythic (Dungeon)",
-}
-
-# Item quality colors for UI
+# Item quality colors for UI, keyed by the API's quality type
 ITEM_QUALITY_COLORS = {
-    0: "#9D9D9D",  # Poor (Gray)
-    1: "#FFFFFF",  # Common (White)
-    2: "#1EFF00",  # Uncommon (Green)
-    3: "#0070DD",  # Rare (Blue)
-    4: "#A335EE",  # Epic (Purple)
-    5: "#FF8000",  # Legendary (Orange)
-    6: "#E6CC80",  # Artifact (Light Orange)
-    7: "#00CCFF",  # Heirloom (Light Blue)
     "POOR": "#9D9D9D",
     "COMMON": "#FFFFFF",
     "UNCOMMON": "#1EFF00",
@@ -291,25 +275,22 @@ ITEM_QUALITY_COLORS = {
     "HEIRLOOM": "#00CCFF",
 }
 
-# Class colors for UI
+# Class colors for UI, keyed by playable class ID (names are localized by the API)
 CLASS_COLORS = {
-    "Death Knight": "#C41F3B",
-    "Demon Hunter": "#A330C9", 
-    "Druid": "#FF7D0A",
-    "Evoker": "#33937F",
-    "Hunter": "#ABD473",
-    "Mage": "#69CCF0",
-    "Monk": "#00FF96",
-    "Paladin": "#F58CBA",
-    "Priest": "#FFFFFF",
-    "Rogue": "#FFF569",
-    "Shaman": "#0070DE",
-    "Warlock": "#9482C9",
-    "Warrior": "#C79C6E",
+    1: "#C79C6E",   # Warrior
+    2: "#F58CBA",   # Paladin
+    3: "#ABD473",   # Hunter
+    4: "#FFF569",   # Rogue
+    5: "#FFFFFF",   # Priest
+    6: "#C41F3B",   # Death Knight
+    7: "#0070DE",   # Shaman
+    8: "#69CCF0",   # Mage
+    9: "#9482C9",   # Warlock
+    10: "#00FF96",  # Monk
+    11: "#FF7D0A",  # Druid
+    12: "#A330C9",  # Demon Hunter
+    13: "#33937F",  # Evoker
 }
-
-# Error codes that should trigger re-authentication
-AUTH_ERROR_CODES = [401, 403]
 
 
 def get_sensor_types_for_version(game_version: str) -> dict:
@@ -323,6 +304,7 @@ def get_sensor_types_for_version(game_version: str) -> dict:
       - classic:    no /encounters/raids, no M+, no RBG/Honor Level
       - classicann: like classic, plus no Item Level from API
       - classic1x:  no Item Level, no Achievements, no rated PvP brackets, no raids, no M+
+      - forever:    basic profile data only (API not documented yet)
 
     Note: The /character/encounters/raids endpoint is ONLY available for Retail.
     Classic versions do not have this endpoint in the Blizzard API.
@@ -336,7 +318,7 @@ def get_sensor_types_for_version(game_version: str) -> dict:
         }
 
     if game_version == "classic":
-        # Mists of Pandaria Classic (Progression): has ilvl, achievements, 2v2/3v3
+        # Classic Progression (currently Mists of Pandaria Classic): has ilvl, achievements, 2v2/3v3
         # No raid encounters endpoint, no M+, no RBG/Honor Level
         return {
             "basic": dict(BASIC_SENSOR_TYPES),
@@ -360,6 +342,16 @@ def get_sensor_types_for_version(game_version: str) -> dict:
                 k: v for k, v in PVP_SENSOR_TYPES.items()
                 if k in ("pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season")
             },
+            "raid": {},
+            "mythicplus": {},
+        }
+
+    if game_version == "forever":
+        # WoW: Forever: API coverage is unknown until launch, so only the
+        # profile-based basics are exposed. Missing values stay unknown.
+        return {
+            "basic": dict(BASIC_SENSOR_TYPES),
+            "pvp": {},
             "raid": {},
             "mythicplus": {},
         }

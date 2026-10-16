@@ -1,408 +1,343 @@
-# World of Warcraft Blizzard API Home Assistant Integration
+# World of Warcraft Blizzard API for Home Assistant
 
-**The most comprehensive World of Warcraft integration for Home Assistant!**
+A custom integration that brings World of Warcraft character, realm and Hall of Fame data into Home Assistant, using the official Blizzard Battle.net API.
 
-Monitor multiple characters, server status, PvP ratings, raid progress, and Mythic+ scores directly in your smart home dashboard.
+Use it to track levels and item level over time, watch realm status on reset day, follow PvP and Mythic+ progress, or see which guilds have cleared the current Mythic raids.
 
-## 🚀 Features
+## Contents
 
-### 📊 Character Monitoring
-- **Multiple Characters**: Monitor unlimited characters across different realms
-- **Real-time Stats**: Level, item level, guild, achievement points
-- **Cross-Realm Support**: Characters from different servers in one integration
-- **Multiple Game Versions**: Full support for Retail, Classic Progression (e.g., Cataclysm Classic), Classic Era (Vanilla), and Classic Anniversary (Burning Crusade Anniversary)
-- **Character Portraits**: Live avatar renders automatically loaded as `entity_picture` and updated dynamically
+- [Features](#features)
+- [Supported game versions](#supported-game-versions)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Entities](#entities)
+- [Hall of Fame](#hall-of-fame)
+- [Examples](#examples)
+- [Update behavior](#update-behavior)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+- [Contributing](#contributing)
+- [License](#license)
 
-### 🌐 Server Monitoring
-- **Realm Status**: Online/Offline status
-- **Population**: Low/Medium/High/Full
-- **Queue Times**: Login queue information
-- **Maintenance Tracking**: Scheduled downtime alerts
+## Features
 
-### ⚔️ PvP Statistics  
-- **Arena Ratings**: 2v2, 3v3 current season ratings
-- **Rated Battlegrounds**: RBG rating and wins
-- **Honor System**: Honor level and seasonal statistics
-- **Win/Loss Tracking**: Season performance metrics
+| Area | What you get |
+| --- | --- |
+| Characters | Level, item level, guild, achievement points, portrait as entity picture, full-body render as image entity, equipment per slot. Any number of characters across realms and game versions. |
+| Realms | Realm status, population and whether a login queue is active. |
+| PvP | 2v2, 3v3 and RBG ratings, honor level and season wins. |
+| Raids | Bosses defeated per difficulty in the current expansion, plus a lifetime total. |
+| Mythic+ | Season score, highest key, best runs, timed runs, weekly best key. |
+| Hall of Fame | One sensor per raid of the current expansion with the world first guild and the ranks of your own guilds. |
 
-### 🏰 Raid Progress
-- **Current Tier Tracking**: Aberrus, Amirdrassil, Vault progress
-- **All Difficulties**: LFR, Normal, Heroic, Mythic boss kills
-- **Total Kill Counter**: Lifetime boss defeats
-- **Weekly Progress**: Fresh raid lockouts
+Numeric sensors have the `measurement` state class, so Home Assistant keeps long-term statistics and you can graph them (for example a leveling race).
 
-### 🏆 Mythic Raid Leaderboards / Hall of Fame
-- **GraphQL Engine**: Powered by the public WoW GraphQL endpoint for global, real-time standings
-- **Region-Independent**: Track global ranks (covering US, EU, KR, TW, CN) regardless of the integration's region
-- **Auto-Discovery**: Dynamically scans and creates sensors for raids in the latest current expansion (e.g., Midnight)
-- **World First Tracking**: Sensor state directly displays the name of the World First guild (e.g., `"Liquid"`), or `"Pending"` if the raid is not yet cleared
-- **Unified Leaderboard Sensors**: Created as a single sensor per raid (grouped under a clean `WoW Leaderboards` device) to align with Blizzard's unified faction-less Hall of Fame
-- **Clickable standings URL**: Detailed state attributes provide a direct localized link to the official WoW Mythic Hall of Fame page (e.g., `https://worldofwarcraft.blizzard.com/de-de/game/hall-of-fame/mythic-raid/...`) for detailed standings
+## Supported game versions
 
-### 🗝️ Mythic+ Dungeons
-- **Season Score**: Current Mythic+ rating
-- **Best Key Level**: Highest completed key
-- **Completion Stats**: Total runs, timed runs
-- **Weekly Progress**: Best weekly key completion
+Each character is added with its game version. The integration only creates the sensors that the Blizzard API supports for that version.
 
-### 🎮 Multi-Region Support
-- **Americas (US)**: us.api.blizzard.com
-- **Europe (EU)**: eu.api.blizzard.com  
-- **Korea (KR)**: kr.api.blizzard.com
-- **Taiwan (TW)**: tw.api.blizzard.com
-- **China (CN)**: gateway.battlenet.com.cn
+| Game version | API namespace | Basic | PvP | Raids | Mythic+ | Hall of Fame |
+| --- | --- | --- | --- | --- | --- | --- |
+| Retail | `profile-{region}` | All | All | Yes | Yes | Yes |
+| Classic Progression (currently Mists of Pandaria) | `profile-classic-{region}` | All | 2v2, 3v3, wins | No | No | No |
+| Classic Anniversary (Burning Crusade) | `profile-classicann-{region}` | No item level | 2v2, 3v3, wins | No | No | No |
+| Classic Era (Vanilla) | `profile-classic1x-{region}` | Level, guild | No | No | No | No |
+| WoW Forever | detected at setup | All | No | No | No | No |
 
-## 📋 Prerequisites
+### WoW Forever
 
-1. **Battle.net Developer Account**: https://develop.battle.net/access/clients
-2. **API Client Credentials**: Client ID & Client Secret
-3. **Home Assistant 2023.8+**: Latest stable release
-4. **HACS (Recommended)**: For easy installation and updates
+WoW Forever launches on November 4, 2026. As of this release Blizzard has not documented an API namespace for it. The integration ships with candidate namespaces and probes them when you add a Forever character:
 
-## 🔧 Installation
+- If one of them answers, it is stored with the character and used from then on.
+- If none answers, setup shows "This game version is not available in the Blizzard API yet". Try again after Blizzard enables the API. If it still fails, please open an issue.
 
-### Via HACS (Recommended)
+Forever support starts with the basic sensors (level, item level, guild, achievement points). More will follow once the API is known.
 
-1. Open **HACS** → **Integrations**
-2. Click **⋮** → **Custom repositories** 
-3. Add: `https://github.com/yourdawi/homeassistant-wow-blizzard`
-4. Category: **Integration**
-5. Install **"World of Warcraft Blizzard API"**
-6. **Restart Home Assistant**
+## Requirements
 
-### Manual Installation
+- Home Assistant 2024.11 or newer
+- A Battle.net API client (free): https://develop.battle.net/access/clients
+- HACS (recommended)
 
-1. Download all files to `config/custom_components/wow_blizzard/`
-2. Ensure folder structure matches:
+## Installation
+
+### HACS
+
+1. Open HACS and select **Integrations**.
+2. Open the menu and select **Custom repositories**.
+3. Add `https://github.com/yourdawi/homeassistant-wow-blizzard` with the category **Integration**.
+4. Install **World of Warcraft Blizzard API**.
+5. Restart Home Assistant.
+
+### Manual
+
+1. Copy `custom_components/wow_blizzard` into `config/custom_components/` of your Home Assistant installation.
+2. Restart Home Assistant.
+
 ```
 config/
-├── custom_components/
-│   └── wow_blizzard/
-│       ├── __init__.py
-│       ├── manifest.json
-│       ├── const.py
-│       ├── api_client.py
-│       ├── sensor.py
-│       ├── config_flow.py
-│       ├── strings.json
-│       └── brand/
-│           ├── icon.png
-│           └── logo.png
+  custom_components/
+    wow_blizzard/
+      __init__.py
+      api_client.py
+      config_flow.py
+      const.py
+      manifest.json
+      image.py
+      sensor.py
+      strings.json
+      translations/
+      brand/
 ```
-3. **Restart Home Assistant**
 
-## ⚙️ Configuration
+## Configuration
 
-### 1. Create Battle.net API Application
+### 1. Create a Battle.net API client
 
-1. Visit https://develop.battle.net/access/clients
-2. **Sign in** with your Battle.net account
-3. **Create new client**:
-   - **Name**: Choose a unique Client Name (e.g. "HA-WoW-YourUsername" - Blizzard requires Client Names to be unique globally across their portal, otherwise creation will fail with a 500 error)
-   - **Redirect URLs**: `https://my.home-assistant.io/redirect/oauth`
-4. **Save** your Client ID and Client Secret
+1. Sign in at https://develop.battle.net/access/clients.
+2. Create a new client. The client name must be unique across the whole Blizzard developer portal (for example `HA-WoW-<yourname>`); a name that is already taken makes the creation fail with an HTTP 500 error. The redirect URL is not used by this integration, but the form requires one; `https://my.home-assistant.io/redirect/oauth` works.
+3. Copy the **Client ID** and **Client Secret**.
 
-### 2. Add Integration
+### 2. Add the integration
 
-1. **Settings** → **Devices & Services**
-2. **Add Integration** → Search **"WoW Blizzard API"**
-3. **Enter API Credentials**:
-   - Client ID from step 1
-   - Client Secret from step 1
-   - Your region (US/EU/KR/TW/CN)
-   - Your API Locale (Language for returned data, e.g. German, French, English)
+1. Go to **Settings > Devices & Services > Add Integration** and search for **World of Warcraft Blizzard API**.
+2. Enter the client ID and secret, select your **region** (US, EU, KR, TW, CN) and the **API locale**. The locale sets the language of names returned by the API, such as classes, realm status and raid names.
+3. Choose which feature groups to enable: realm status, PvP, raids, Mythic+ and Hall of Fame.
 
-### 3. Select Features
+### 3. Add characters
 
-Choose which features to enable:
-- ✅ **Server Status**: Realm monitoring
-- ✅ **PvP Statistics**: Arena/RBG ratings  
-- ✅ **Raid Progress**: Boss kill tracking
-- ✅ **Mythic+ Data**: Dungeon scores
+1. Select the game version.
+2. Pick the realm from the list (you can type to search) and enter the character name. Upper and lower case do not matter.
+3. The integration checks that the character exists, then shows the character list. Add more characters or finish.
 
-### 4. Add Characters
+Submitting the realm form empty takes you back to the menu.
 
-1. **Choose Game Version**: Select **Retail**, **Classic Progression** (e.g., Cataclysm Classic), **Classic Era** (Vanilla), or **Classic Anniversary (Burning Crusade)**
-2. **Select Realm**: Choose from the alphabetically sorted dynamic dropdown/combobox (retrieved in real-time from the Blizzard API)
-3. **Enter Character Name**: Case-insensitive
-4. **Validate**: Integration checks character existence on the selected game version
-5. **Add More**: Repeat to configure multiple characters across different versions
-6. **Finish**: Complete the setup
+### Changing the configuration later
 
-## 📱 Created Sensors
+Open **Settings > Devices & Services > World of Warcraft Blizzard API > Configure**:
 
-### Per Character Sensors
+- **Add a Character** adds another character, in any game version.
+- **Remove Character(s)** removes characters. At least one has to remain.
+- **Configure Features** turns feature groups on or off.
 
-**Basic Stats** (Always enabled):
-- `sensor.charactername_level`
-- `sensor.charactername_item_level` 
-- `sensor.charactername_guild`
-- `sensor.charactername_achievement_points`
+The integration reloads on its own after every change.
 
-**Advanced Renders & Gear**:
-- `image.charactername_full_body_render`: Native Home Assistant Image Entity with full-body character render (`main-raw`/`main`/`inset` PNG image) and interactive zoom preview
-- `sensor.charactername_equipment_details`: Gear breakdown across all slots (Head, Chest, Trinkets, Weapons, etc.) with Item Levels, Quality colors, and Stat bonuses
+## Entities
 
-**PvP Stats** (If enabled):
-- `sensor.charactername_2v2_arena_rating`
-- `sensor.charactername_3v3_arena_rating`
-- `sensor.charactername_rbg_rating`
-- `sensor.charactername_honor_level`
-- `sensor.charactername_pvp_wins_season`
+Each character becomes a device named `<Character> (<realm>)`, each realm becomes `<Realm> Server`, and all Hall of Fame sensors share the device `WoW Leaderboards`. Home Assistant builds entity IDs from the device name and the sensor name in your system language at the time the entity is created. With English as the system language, the character "Thrall" on "stormrage" gets IDs like `sensor.thrall_stormrage_level`. You can rename any entity ID in the UI.
 
-**Raid Progress** (If enabled):
-- `sensor.charactername_lfr_progress`
-- `sensor.charactername_normal_progress`
-- `sensor.charactername_heroic_progress`
-- `sensor.charactername_mythic_progress`
-- `sensor.charactername_total_boss_kills`
+### Character sensors
 
-**Mythic+ Stats** (If enabled):
-- `sensor.charactername_m_score`
-- `sensor.charactername_best_m_level`
-- `sensor.charactername_m_runs_completed`
-- `sensor.charactername_m_runs_timed`
-- `sensor.charactername_weekly_best_m`
+| Sensor | Example entity ID (English) | Notes |
+| --- | --- | --- |
+| Level | `sensor.thrall_stormrage_level` | |
+| Item Level | `sensor.thrall_stormrage_item_level` | Equipped item level |
+| Guild | `sensor.thrall_stormrage_guild` | |
+| Achievement Points | `sensor.thrall_stormrage_achievement_points` | |
+| Equipment Details | `sensor.thrall_stormrage_equipment_details` | Number of equipped items; gear per slot in attributes |
+| 2v2 Arena Rating | `sensor.thrall_stormrage_2v2_arena_rating` | PvP |
+| 3v3 Arena Rating | `sensor.thrall_stormrage_3v3_arena_rating` | PvP |
+| RBG Rating | `sensor.thrall_stormrage_rbg_rating` | PvP, Retail |
+| Honor Level | `sensor.thrall_stormrage_honor_level` | PvP, Retail |
+| PvP Wins (Season) | `sensor.thrall_stormrage_pvp_wins_season` | Sum over the tracked brackets |
+| LFR / Normal / Heroic / Mythic Progress | `sensor.thrall_stormrage_mythic_progress` | Bosses defeated in the current expansion's raids |
+| Total Boss Kills | `sensor.thrall_stormrage_total_boss_kills` | Bosses defeated across all raids, lifetime |
+| M+ Score | `sensor.thrall_stormrage_m_score` | Current season |
+| Best M+ Level | `sensor.thrall_stormrage_best_m_level` | Highest key this season |
+| M+ Runs Completed | `sensor.thrall_stormrage_m_runs_completed` | Number of best runs the API reports this season, not all runs |
+| M+ Runs Timed | `sensor.thrall_stormrage_m_runs_timed` | Timed runs among those best runs |
+| Weekly Best M+ | `sensor.thrall_stormrage_weekly_best_m` | Highest key this week |
 
-### Server Sensors
+Attributes on every character sensor: `character_name`, `realm`, `character_class`, `class_color`, `character_race`, `character_level`, `guild`, `faction`, `active_spec`, `last_login`, `game_version`, `category`.
 
-**Per Realm** (If enabled):
-- `sensor.realmname_realm_status`
-- `sensor.realmname_population`
-- `sensor.realmname_queue_time`
+Raid difficulty sensors also have `expansion`, `total_bosses` and `raids`, which holds the per-raid progress, for example `{"The Dreamrift": "6/8"}`.
 
-### 🏆 Leaderboard Sensors
+The Equipment Details sensor lists the gear in `equipped_items` (keyed by slot, e.g. `head`, `trinket_1`) and `equipped_items_list`. Each item has `slot`, `name`, `item_id`, `item_level`, `quality`, `quality_color` and `stats`. These two attributes are not written to the recorder database.
 
-**Per Raid** (If enabled):
-- `sensor.wow_leaderboards_[raid_slug]_hof` (Displays World First guild name or `"Pending"`)
+### Character image
 
-## 🏠 Dashboard Examples
+Every character also gets an image entity with the full-body render from the character media API, for example `image.thrall_stormrage_full_body_render`. It falls back to the avatar when no render is available. Show it on a dashboard with a picture entity card:
 
-### Multi-Character Overview Card
+```yaml
+type: picture-entity
+entity: image.thrall_stormrage_full_body_render
+show_name: false
+show_state: false
+```
+
+### Realm sensors
+
+| Sensor | Example entity ID (English) | Notes |
+| --- | --- | --- |
+| Realm Status | `sensor.stormrage_server_realm_status` | Localized, e.g. "Up" / "Down" |
+| Population | `sensor.stormrage_server_population` | Localized, e.g. "High" |
+| Queue | `sensor.stormrage_server_queue` | `True` while a login queue is active |
+
+The `status_type` (`UP`, `DOWN`) and `population_type` (`LOW`, `MEDIUM`, `HIGH`, `FULL`, ...) attributes are language independent. Use them in automations.
+
+If the same realm name exists in two game versions, the second device gets the game version appended to its name.
+
+### Hall of Fame sensors
+
+One sensor per raid of the current expansion, for example `sensor.wow_leaderboards_the_dreamrift`. See [Hall of Fame](#hall-of-fame).
+
+## Hall of Fame
+
+The Hall of Fame shows the first guilds worldwide to defeat a raid on Mythic. Blizzard does not offer it in the Battle.net API, so the integration reads the public GraphQL endpoint behind the [Mythic Raid Hall of Fame](https://worldofwarcraft.blizzard.com/en-us/worldsoul/us/leaderboards/hall-of-fame/mythic-raid) page on worldofwarcraft.blizzard.com.
+
+- The raids of the newest expansion are discovered on their own and refreshed every 24 hours. New raids show up after the next reload of the integration.
+- The sensor state is the name of the world first guild, or `Pending` while nobody has cleared the raid.
+- Attributes: `world_first_guild`, `world_first_realm`, `world_first_region`, `world_first_timestamp_formatted`, `last_guild_name`, `last_guild_rank`, `total_entries`, `completed` (the list is full), `info_url` (link to the official page) and `character_guild_ranks` (rank of each configured Retail character's guild, if listed).
+- Leaderboards are cached for 2 hours while the race is on and kept once the list is full.
+- Hall of Fame data is only fetched when at least one Retail character is configured.
+
+The website only accepts a fixed set of pre-registered (persisted) queries. When Blizzard changes them, the integration reads the current query IDs from the website's script bundle and retries. If the website itself is restructured, the Hall of Fame may break until the integration is updated.
+
+## Examples
+
+### Dashboard: characters
+
 ```yaml
 type: entities
-title: WoW Characters
+title: Characters
 entities:
-  - entity: sensor.mainchar_level
-    name: "Main - Level"
-  - entity: sensor.mainchar_item_level
-    name: "Main - iLvl"
-  - entity: sensor.alt1_level
-    name: "Alt 1 - Level"
-  - entity: sensor.alt1_item_level  
-    name: "Alt 1 - iLvl"
-  - entity: sensor.alt2_level
-    name: "Alt 2 - Level"
-  - entity: sensor.alt2_item_level
-    name: "Alt 2 - iLvl"
+  - entity: sensor.thrall_stormrage_level
+    name: Thrall - Level
+  - entity: sensor.thrall_stormrage_item_level
+    name: Thrall - Item Level
+  - entity: sensor.jaina_stormrage_level
+    name: Jaina - Level
 ```
 
-### PvP Ratings Dashboard
+### Dashboard: leveling race
+
 ```yaml
-type: glance
-title: PvP Ratings
+type: history-graph
+title: Leveling race
+hours_to_show: 168
 entities:
-  - entity: sensor.mainchar_2v2_arena_rating
-    name: "2v2"
-  - entity: sensor.mainchar_3v3_arena_rating
-    name: "3v3"  
-  - entity: sensor.mainchar_rbg_rating
-    name: "RBG"
-  - entity: sensor.mainchar_honor_level
-    name: "Honor"
+  - entity: sensor.thrall_stormrage_level
+  - entity: sensor.jaina_stormrage_level
 ```
 
-### Raid Progress Tracker
+### Dashboard: raid progress
+
 ```yaml
 type: horizontal-stack
 cards:
   - type: entity
-    entity: sensor.mainchar_normal_progress
-    name: "Normal"
-    icon: mdi:castle
+    entity: sensor.thrall_stormrage_normal_progress
+    name: Normal
   - type: entity
-    entity: sensor.mainchar_heroic_progress  
-    name: "Heroic"
-    icon: mdi:castle
+    entity: sensor.thrall_stormrage_heroic_progress
+    name: Heroic
   - type: entity
-    entity: sensor.mainchar_mythic_progress
-    name: "Mythic"
-    icon: mdi:castle
+    entity: sensor.thrall_stormrage_mythic_progress
+    name: Mythic
 ```
 
-### Server Status Card
+### Dashboard: Hall of Fame
+
 ```yaml
 type: entities
-title: Server Status
+title: Mythic Hall of Fame
 entities:
-  - entity: sensor.stormrage_realm_status
-    name: "Stormrage Status"
-  - entity: sensor.stormrage_population
-    name: "Population"
-  - entity: sensor.stormrage_queue_time
-    name: "Queue"
+  - entity: sensor.wow_leaderboards_the_dreamrift
+  - entity: sensor.wow_leaderboards_march_on_queldanas
 ```
 
-### Leaderboards Tracking Card
-```yaml
-type: entities
-title: WoW Mythic Leaderboards
-entities:
-  - entity: sensor.wow_leaderboards_the_dreamrift_hof
-    name: "Der Traumriss"
-  - entity: sensor.wow_leaderboards_march_on_queldanas_hof
-    name: "Marsch auf Quel'Danas"
-```
+### Automation: level up
 
-## 🤖 Automation Examples
-
-### Level-Up Celebration
 ```yaml
 automation:
-  - alias: "WoW Character Level Up"
-    trigger:
-      - platform: state
-        entity_id: 
-          - sensor.mainchar_level
-          - sensor.alt1_level
-          - sensor.alt2_level
-    condition:
+  - alias: WoW level up
+    triggers:
+      - trigger: state
+        entity_id:
+          - sensor.thrall_stormrage_level
+          - sensor.jaina_stormrage_level
+    conditions:
       - condition: template
-        value_template: "{{ trigger.to_state.state | int > trigger.from_state.state | int }}"
-    action:
-      - service: notify.mobile_app
+        value_template: >
+          {{ trigger.from_state.state | int(0) > 0 and
+             trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}
+    actions:
+      - action: notify.mobile_app_phone
         data:
-          title: "🎉 Level Up!"
-          message: "{{ trigger.to_state.attributes.character_name }} reached level {{ trigger.to_state.state }}!"
+          title: Level up
+          message: >
+            {{ trigger.to_state.attributes.character_name }} reached level
+            {{ trigger.to_state.state }}.
 ```
 
-### High PvP Rating Alert
-```yaml
-automation:
-  - alias: "High Arena Rating Achieved"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.mainchar_3v3_arena_rating
-        above: 2100
-    action:
-      - service: notify.discord
-        data:
-          message: "🏆 {{ trigger.to_state.attributes.character_name }} hit {{ trigger.to_state.state }} rating in 3v3!"
-```
+### Automation: new Mythic boss
 
-### Raid Boss Kill Notification
 ```yaml
 automation:
-  - alias: "New Raid Boss Kill"
-    trigger:
-      - platform: state
-        entity_id: sensor.mainchar_mythic_progress
-    condition:
+  - alias: WoW new Mythic boss
+    triggers:
+      - trigger: state
+        entity_id: sensor.thrall_stormrage_mythic_progress
+    conditions:
       - condition: template
-        value_template: "{{ trigger.to_state.state | int > trigger.from_state.state | int }}"
-    action:
-      - service: notify.family
+        value_template: >
+          {{ trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}
+    actions:
+      - action: notify.mobile_app_phone
         data:
-          message: "🐉 {{ trigger.to_state.attributes.character_name }} killed a new Mythic boss! ({{ trigger.to_state.state }}/{{ trigger.to_state.attributes.total_bosses }})"
+          message: >
+            {{ trigger.to_state.attributes.character_name }} defeated a new Mythic boss
+            ({{ trigger.to_state.state }}/{{ trigger.to_state.attributes.total_bosses }}).
 ```
 
-### Server Downtime Alert
+### Automation: realm back online
+
 ```yaml
 automation:
-  - alias: "Server Maintenance Alert"
-    trigger:
-      - platform: state
-        entity_id: sensor.stormrage_realm_status
-        to: "Offline"
-    action:
-      - service: notify.mobile_app
+  - alias: WoW realm back online
+    triggers:
+      - trigger: state
+        entity_id: sensor.stormrage_server_realm_status
+        attribute: status_type
+        from: DOWN
+        to: UP
+    actions:
+      - action: notify.mobile_app_phone
         data:
-          title: "🔧 Server Maintenance"
-          message: "Stormrage is offline for maintenance"
+          message: Stormrage is back online.
 ```
 
-### Mythic+ Score Milestone
-```yaml
-automation:
-  - alias: "M+ Score Milestone"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.mainchar_m_score
-        above: 2500
-    action:
-      - service: script.celebrate_achievement
-        data:
-          character: "{{ trigger.to_state.attributes.character_name }}"
-          achievement: "M+ Score over 2500!"
-          score: "{{ trigger.to_state.state }}"
-```
+## Update behavior
 
-## 🔧 Advanced Configuration
+- All data is refreshed every 5 minutes in one update cycle.
+- Data from the Battle.net API reflects what Blizzard has processed, which usually lags the game by a few minutes and may be refreshed only after logout.
+- If a character profile cannot be fetched (API error, maintenance), the last known values are kept, so graphs do not drop to 0.
+- On HTTP 429 (rate limit) the request is retried up to two times, waiting at most 30 seconds. The Battle.net API allows 36,000 requests per hour, and each character uses roughly 5 to 12 requests per update depending on the enabled features.
 
-### Custom Update Intervals
+## Troubleshooting
 
-The integration uses smart update intervals:
-- **Basic Data**: 5 minutes
-- **PvP/M+ Data**: 1 minute (during active play)
-- **Server Status**: 15 minutes
-- **Rate Limiting**: Automatic handling
+**Creating the Battle.net API client fails with HTTP 500**
+The client name is most likely taken already. Blizzard requires globally unique client names but does not say so in the error. Choose a more specific name, see the [developer forum thread](https://us.forums.blizzard.com/en/blizzard/t/creating-an-api-client-returns-500/56603/6).
 
-### Multiple Characters Management
+**Invalid authentication during setup**
+Check the client ID and secret at https://develop.battle.net/access/clients.
 
-Add, remove, or modify characters dynamically at any time without re-entering client credentials:
-1. Go to **Settings** → **Devices & Services** → **World of Warcraft Blizzard API**
-2. Click **Configure**
-3. Select **Add a Character** or **Remove Character(s)**
-4. If you change your mind while entering character details, simply submit the form empty to cancel and return to the options menu.
+**Character not found**
+- The character must exist in the selected region and game version.
+- The realm must match the character's realm (pick it from the list).
+- New characters, or characters that have not logged in for a long time, may not be in the API until they log in and log out once.
 
-### Feature Toggle
+**Values are missing or unknown**
+- PvP ratings appear only after the character has played rated games this season.
+- Mythic+ values need at least one run in the current season.
+- Some sensors are not offered for some game versions (see [Supported game versions](#supported-game-versions)).
 
-Enable or disable specific features (Server Status, PvP, Raids, Mythic+) without recreating your sensors:
-1. Go to the integration **Options** (Configure button)
-2. Select **Configure Features**
-3. Toggle the desired feature checkboxes and submit. The integration will automatically reload to apply the changes immediately without requiring a Home Assistant restart.
+**Hall of Fame sensors are missing or show errors**
+Hall of Fame sensors are only created when at least one Retail character is configured and the website could be reached when the integration started. Reload the integration to retry. With debug logging enabled, errors show up as `GraphQL ... failed`.
 
+**Debug logging**
 
-## 🚨 Troubleshooting
-
-### Common Issues
-
-**Battle.net API Client Creation Error (HTTP 500)**:
-- If creating an API client on Battle.net fails with an HTTP 500 internal server error, your **Client Name** is likely already taken.
-- Blizzard requires **Client Names to be unique** across their entire developer platform, but fails to show a clear validation error.
-- Change the client name to something unique (e.g., `HA-WoW-YourUsername123`).
-- See [Blizzard Developer Forum](https://us.forums.blizzard.com/en/blizzard/t/creating-an-api-client-returns-500/56603/6) for reference.
-
-**Authentication Errors (401/403)**:
-- Verify Client ID and Client Secret
-- Check API client is active on Battle.net
-- Ensure region matches your characters
-
-**Character Not Found (404)**:
-- Verify character name spelling (case-sensitive)
-- Confirm character exists and is public
-- Check realm name matches exactly
-- Character must be level 10+ for some data
-
-**Rate Limiting (429)**:
-- Integration handles automatically
-- Waits and retries on rate limits
-- Consider reducing character count if persistent
-
-**Server Timeout Issues**:
-- Check Blizzard API status
-- Verify internet connectivity
-- Try different region if applicable
-
-**Missing Data**:
-- Some features require character activity
-- PvP data needs recent PvP participation
-- M+ data requires current season runs
-- Raid data needs recent raid clears
-
-### Debug Logging
-
-Enable debug logging in `configuration.yaml`:
 ```yaml
 logger:
   default: info
@@ -410,85 +345,26 @@ logger:
     custom_components.wow_blizzard: debug
 ```
 
-### Data Freshness
+## Known limitations
 
-API data updates at different rates:
-- **Character Level/Gear**: Near real-time
-- **PvP Ratings**: After match completion
-- **Raid Progress**: After boss kills
-- **M+ Scores**: After key completion
-- **Server Status**: Every few minutes
+- The Battle.net API only reports whether a realm has a login queue, not how long it is.
+- "M+ Runs Completed" and "M+ Runs Timed" count the best runs that the API returns, not every key you have run.
+- Hall of Fame data comes from the public website rather than the official API and can break when Blizzard changes the site.
+- WoW Forever support depends on Blizzard publishing its API namespace (see [WoW Forever](#wow-forever)).
+- Weekly activities (Great Vault, weekly quests) are not part of the public game data API for other accounts, so they cannot be tracked.
 
-## 🔄 Updates & Maintenance
+## Contributing
 
-### Season Updates
+Bug reports and feature requests are welcome in the [issue tracker](https://github.com/yourdawi/homeassistant-wow-blizzard/issues). For bugs, please include:
 
-When new content releases:
-1. **Integration Update**: Install latest version
-2. **Season IDs**: Automatically updated
-3. **New Features**: May require reconfiguration
+- Home Assistant version and integration version
+- Game version, region and realm of the affected character
+- Relevant log lines with debug logging enabled
 
-### API Changes
+Pull requests are welcome as well.
 
-Blizzard occasionally updates APIs:
-- Integration adapts automatically
-- Check Home Assistant logs for warnings
-- Update integration when available
+## License
 
-## 🤝 Contributing
+MIT, see [LICENSE](LICENSE).
 
-We welcome contributions!
-
-### Feature Requests
-- **GitHub Issues**: Report bugs, request features
-
-## 📈 Performance
-
-### Resource Usage
-- **Memory**: ~10MB per character
-- **CPU**: Minimal impact
-- **Network**: ~1MB/hour per character
-- **Storage**: <1MB configuration
-
-### Scalability
-- **Characters**: Unlimited (API rate limited)
-- **Realms**: All supported regions
-- **Refresh Rate**: Configurable intervals
-- **Data Retention**: Home Assistant standard
-
-### Special Thanks
-- **Blizzard Entertainment**: Official API
-- **Home Assistant**: Platform foundation
-- **Community**: Feature requests & testing
-- **HACS**: Distribution platform
-
-### Open Source
-- **License**: MIT License
-- **Source Code**: Fully open source
-
-## 📞 Support
-
-### Getting Help
-1. **Documentation**: Check this README first
-2. **GitHub Issues**: Technical problems
-
-### Reporting Bugs
-Please include:
-- Home Assistant version
-- Integration version  
-- Error logs
-- Steps to reproduce
-- Character/realm details (if relevant)
-
-### Feature Requests
-We love new ideas! Include:
-- Use case description
-- Expected behavior
-- API endpoints needed
-- Priority level
-
----
-
-**⚡ Transform your Home Assistant into the ultimate WoW command center!**
-
-Monitor your entire guild, track progression, and never miss another raid night with the most comprehensive World of Warcraft integration available.
+World of Warcraft and Blizzard Entertainment are trademarks of Blizzard Entertainment, Inc. This project is not affiliated with or endorsed by Blizzard Entertainment.

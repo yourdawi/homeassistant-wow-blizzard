@@ -54,10 +54,11 @@
     },
     "error": {
       "cannot_connect": "Failed to connect to Battle.net API",
-      "invalid_auth": "Invalid authentication credentials", 
+      "invalid_auth": "Invalid authentication credentials",
       "character_not_found": "Character not found or not accessible",
       "character_already_added": "This character has already been added",
-      "unknown": "Unknown error occurred"
+      "unknown": "Unknown error occurred",
+      "game_version_unavailable": "This game version is not available in the Blizzard API yet"
     },
     "abort": {
       "already_configured": "This character configuration is already set up",
@@ -78,7 +79,7 @@
         "description": "Toggle which features are enabled. These changes will reload the integration automatically.",
         "data": {
           "enable_server_status": "Server Status & Maintenance",
-          "enable_pvp": "PvP Statistics & Ratings", 
+          "enable_pvp": "PvP Statistics & Ratings",
           "enable_raids": "Raid Progress & Boss Kills",
           "enable_mythic_plus": "Mythic+ Scores & Runs",
           "enable_hall_of_fame": "Raid Hall of Fame / Leaderboards"
@@ -106,6 +107,14 @@
           "characters_to_remove": "Select Characters to Remove"
         }
       }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Battle.net API",
+      "invalid_auth": "Invalid authentication credentials",
+      "character_not_found": "Character not found or not accessible",
+      "character_already_added": "This character has already been added",
+      "unknown": "Unknown error occurred",
+      "game_version_unavailable": "This game version is not available in the Blizzard API yet"
     }
   },
   "entity": {
@@ -137,7 +146,7 @@
         "name": "Population"
       },
       "realm_queue": {
-        "name": "Queue Time"
+        "name": "Queue"
       },
       "pvp_2v2_rating": {
         "name": "2v2 Arena Rating"
@@ -218,9 +227,10 @@
     "game_versions": {
       "options": {
         "retail": "Retail",
-        "classic": "Classic Progression (e.g. Cataclysm)",
+        "classic": "Classic Progression (e.g. Mists of Pandaria)",
         "classic1x": "Classic Era (Vanilla)",
-        "classicann": "Classic Anniversary (Burning Crusade)"
+        "classicann": "Classic Anniversary (Burning Crusade)",
+        "forever": "WoW Forever"
       }
     },
     "character_menu_actions": {

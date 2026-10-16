@@ -1,47 +1,58 @@
 """The WoW Blizzard API integration."""
-import asyncio
 import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN, CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_REGION, CONF_LOCALE
 from .api_client import WoWBlizzardAPIClient
+from .sensor import async_create_coordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.IMAGE]
 
 
+def _strip_cached_realms(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove realm lists that older versions stored in the config entry."""
+    stale = [k for k in entry.data if k == "available_realms" or k.startswith("realms_")]
+    if stale:
+        new_data = {k: v for k, v in entry.data.items() if k not in stale}
+        hass.config_entries.async_update_entry(entry, data=new_data)
+        _LOGGER.debug("Removed cached realm lists from config entry: %s", stale)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up WoW Blizzard API from a config entry."""
     hass.data.setdefault(DOMAIN, {})
-    
+    _strip_cached_realms(hass, entry)
+
     # Test the API connection before setting up platforms
     client = WoWBlizzardAPIClient(
         entry.data[CONF_CLIENT_ID],
-        entry.data[CONF_CLIENT_SECRET], 
+        entry.data[CONF_CLIENT_SECRET],
         entry.data[CONF_REGION],
-        locale=entry.data.get(CONF_LOCALE)
+        locale=entry.data.get(CONF_LOCALE),
+        session=async_get_clientsession(hass),
     )
-    
+
     try:
         # Test connection
         test_data = await client.get_all_realms()
-        if not test_data:
-            raise ConfigEntryNotReady("Unable to connect to Blizzard API")
     except Exception as err:
         _LOGGER.error("Failed to connect to Blizzard API: %s", err)
-        raise ConfigEntryNotReady(f"Unable to connect to Blizzard API: {err}")
-    finally:
-        await client.close()
+        raise ConfigEntryNotReady(f"Unable to connect to Blizzard API: {err}") from err
+    if not test_data:
+        raise ConfigEntryNotReady("Unable to connect to Blizzard API")
 
-    # Store the config entry data for access by platforms
-    hass.data[DOMAIN][entry.entry_id] = {"config": entry.data}
+    # One coordinator feeds all platforms (sensor, image)
+    coordinator = await async_create_coordinator(hass, entry)
+    hass.data[DOMAIN][entry.entry_id] = {"config": entry.data, "coordinator": coordinator}
 
-    # Forward the setup to the sensor platform
+    # Forward the setup to the platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Set up options update listener
@@ -53,11 +64,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        entry_data = hass.data[DOMAIN].pop(entry.entry_id, None)
-        if isinstance(entry_data, dict) and "coordinator" in entry_data:
-            coordinator = entry_data["coordinator"]
-            if hasattr(coordinator, "client") and coordinator.client:
-                await coordinator.client.close()
+        hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
 
