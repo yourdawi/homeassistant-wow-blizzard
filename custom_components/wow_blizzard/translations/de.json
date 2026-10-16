@@ -57,7 +57,8 @@
       "invalid_auth": "Ungültige Authentifizierungsdaten",
       "character_not_found": "Charakter nicht gefunden oder nicht zugänglich",
       "character_already_added": "Dieser Charakter wurde bereits hinzugefügt",
-      "unknown": "Ein unerwarteter Fehler ist aufgetreten"
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten",
+      "game_version_unavailable": "Diese Spielversion ist in der Blizzard-API noch nicht verfügbar"
     },
     "abort": {
       "already_configured": "Diese Charakterkonfiguration existiert bereits",
@@ -106,6 +107,14 @@
           "characters_to_remove": "Zu entfernende Charaktere auswählen"
         }
       }
+    },
+    "error": {
+      "cannot_connect": "Verbindung mit der Battle.net-API fehlgeschlagen",
+      "invalid_auth": "Ungültige Authentifizierungsdaten",
+      "character_not_found": "Charakter nicht gefunden oder nicht zugänglich",
+      "character_already_added": "Dieser Charakter wurde bereits hinzugefügt",
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten",
+      "game_version_unavailable": "Diese Spielversion ist in der Blizzard-API noch nicht verfügbar"
     }
   },
   "entity": {
@@ -137,7 +146,7 @@
         "name": "Bevölkerung"
       },
       "realm_queue": {
-        "name": "Wartezeit"
+        "name": "Warteschlange"
       },
       "pvp_2v2_rating": {
         "name": "2v2 Arena-Wertung"
@@ -218,9 +227,10 @@
     "game_versions": {
       "options": {
         "retail": "Retail",
-        "classic": "Classic Progression (z. B. Cataclysm)",
+        "classic": "Classic Progression (z. B. Mists of Pandaria)",
         "classic1x": "Classic Era (Vanilla)",
-        "classicann": "Classic Anniversary (Burning Crusade)"
+        "classicann": "Classic Anniversary (Burning Crusade)",
+        "forever": "WoW Forever"
       }
     },
     "character_menu_actions": {

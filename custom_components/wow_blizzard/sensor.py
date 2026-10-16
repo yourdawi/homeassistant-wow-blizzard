@@ -1,18 +1,13 @@
 """Support for WoW Blizzard API sensors with all features."""
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 
-from homeassistant.components.sensor import (
-    SensorEntity,
-    SensorEntityDescription,
-    SensorDeviceClass,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.update_coordinator import (
@@ -26,50 +21,108 @@ from .const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_REGION,
+    CONF_REALM,
+    CONF_CHARACTER_NAME,
     CONF_CHARACTERS,
     CONF_ENABLE_SERVER_STATUS,
     CONF_ENABLE_PVP,
     CONF_ENABLE_RAIDS,
     CONF_ENABLE_MYTHIC_PLUS,
     CONF_ENABLE_HALL_OF_FAME,
+    CONF_GAME_VERSION,
     CONF_LOCALE,
+    CONF_NAMESPACE_SUFFIX,
     ALL_SENSOR_TYPES,
-    BASIC_SENSOR_TYPES,
     SERVER_SENSOR_TYPES,
     PVP_SENSOR_TYPES,
     RAID_SENSOR_TYPES,
     MYTHICPLUS_SENSOR_TYPES,
     HOF_SENSOR_TYPES,
     DEFAULT_SCAN_INTERVAL,
-    FAST_SCAN_INTERVAL,
-    SLOW_SCAN_INTERVAL,
-    PVP_BRACKETS,
-    CURRENT_RAIDS,
     CLASS_COLORS,
     ITEM_QUALITY_COLORS,
+    GAME_VERSIONS,
     get_sensor_types_for_version,
 )
 from .api_client import WoWBlizzardAPIClient
 
 _LOGGER = logging.getLogger(__name__)
 
+# Blizzard difficulty types (stable, unlike the localized difficulty names)
+RAID_DIFFICULTY_SENSORS = {
+    "LFR": "raid_progress_lfr",
+    "NORMAL": "raid_progress_normal",
+    "HEROIC": "raid_progress_heroic",
+    "MYTHIC": "raid_progress_mythic",
+}
+
+# Hall of Fame list sizes: split faction lists hold 100 guilds, unified lists 200
+HOF_FULL_SPLIT = 100
+HOF_FULL_UNIFIED = 200
+
+
+def assign_character_keys(characters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Give every configured character a unique data/entity key.
+
+    The first character with a given realm and name keeps the historic
+    "{realm}-{name}" key so existing entity IDs stay stable. A later character
+    with the same realm and name in another game version (e.g. "Mograine" in
+    Classic Era and Anniversary) gets the game version appended.
+    """
+    seen = set()
+    result = []
+    for char in characters:
+        game_version = char.get(CONF_GAME_VERSION, "retail")
+        base = f"{char[CONF_REALM]}-{char[CONF_CHARACTER_NAME]}"
+        key = base if base not in seen else f"{base}-{game_version}"
+        seen.add(base)
+        result.append({**char, CONF_GAME_VERSION: game_version, "key": key})
+    return result
+
+
+def assign_realm_keys(characters: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
+    """Map a unique key to every (realm, game version) pair, first one unsuffixed."""
+    realms: Dict[str, Dict[str, str]] = {}
+    seen_pairs = set()
+    for char in characters:
+        realm = char[CONF_REALM]
+        game_version = char[CONF_GAME_VERSION]
+        if (realm, game_version) in seen_pairs:
+            continue
+        seen_pairs.add((realm, game_version))
+        key = realm if realm not in realms else f"{realm}-{game_version}"
+        realms[key] = {"realm": realm, "game_version": game_version}
+    return realms
+
+
+def _format_timestamp(timestamp_ms: Optional[int]) -> Optional[str]:
+    """Format a Blizzard millisecond timestamp as UTC string."""
+    if not timestamp_ms:
+        return None
+    try:
+        dt = datetime.fromtimestamp(float(timestamp_ms) / 1000, timezone.utc)
+        return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+    except (TypeError, ValueError, OverflowError):
+        return None
+
 
 class WoWDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching all WoW data from the API."""
 
     def __init__(
-        self, 
-        hass: HomeAssistant, 
+        self,
+        hass: HomeAssistant,
         client: WoWBlizzardAPIClient,
-        characters: List[Dict[str, str]],
+        characters: List[Dict[str, Any]],
         features: Dict[str, bool]
     ):
         """Initialize."""
         self.client = client
-        self.characters = characters
+        self.characters = assign_character_keys(characters)
         self.features = features
-        self.realms = set(char["realm"] for char in characters)
-        
+        self.realms = assign_realm_keys(self.characters)
+        self.has_retail = any(c[CONF_GAME_VERSION] == "retail" for c in self.characters)
+
         # Cache for dynamic raid discovery and Hall of Fame leaderboards
         self._cached_raids = None
         self._last_raids_fetch = None
@@ -82,120 +135,75 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
 
+    def _previous(self, key: str) -> Dict[str, Any]:
+        """Last successfully fetched data for a key."""
+        if self.data and isinstance(self.data.get(key), dict):
+            return self.data[key]
+        return {}
+
     async def _fetch_basic_character_data(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
         """Fetch basic character data."""
         try:
             profile = await self.client.get_character_profile(realm, character_name, game_version=game_version)
-            equipment = await self.client.get_character_equipment(realm, character_name, game_version=game_version)
+            if not profile:
+                # API hiccup or character temporarily unavailable: do not report 0
+                return {}
 
             # Determine which sensors this version supports
             version_sensors = get_sensor_types_for_version(game_version)
             supported_basic = version_sensors["basic"]
 
             # Achievements: only fetch if supported by this version
-            achievement_points = 0
+            achievement_points = None
             if "achievement_points" in supported_basic:
-                try:
-                    achievements = await self.client.get_character_achievements(realm, character_name, game_version=game_version)
-                    achievement_points = achievements.get("total_points", 0)
-                except Exception:
-                    pass
-
-            # Item level: only available in retail and classic (Cata)
-            item_level = 0
-            if "character_item_level" in supported_basic:
-                item_level = profile.get("equipped_item_level", 0)
+                achievements = await self.client.get_character_achievements(realm, character_name, game_version=game_version)
+                achievement_points = achievements.get("total_points")
 
             # Get guild information
             guild_name = None
             if profile.get("guild"):
-                guild_name = profile["guild"]["name"]
+                guild_name = profile["guild"].get("name")
 
             # Fetch character media (avatar & full-body render)
             avatar_url = None
             full_body_url = None
             try:
                 media = await self.client.get_character_media(realm, character_name, game_version=game_version)
-                if media:
-                    if "assets" in media and isinstance(media["assets"], list):
-                        assets_dict = {asset.get("key"): asset.get("value") for asset in media["assets"] if isinstance(asset, dict)}
-                        avatar_url = assets_dict.get("avatar")
-                        full_body_url = (
-                            assets_dict.get("main-raw")
-                            or assets_dict.get("main")
-                            or assets_dict.get("inset")
-                            or avatar_url
-                        )
-                    else:
-                        avatar_url = media.get("avatar_url")
-                        full_body_url = media.get("render_url") or avatar_url
+                assets = {
+                    asset.get("key"): asset.get("value")
+                    for asset in (media or {}).get("assets") or []
+                    if isinstance(asset, dict)
+                }
+                avatar_url = assets.get("avatar")
+                full_body_url = assets.get("main-raw") or assets.get("main") or assets.get("inset") or avatar_url
             except Exception as media_err:
                 _LOGGER.debug(f"Could not fetch media for {character_name}-{realm}: {media_err}")
 
-            # Process equipment details & stats
-            equipped_items = {}
-            equipped_items_list = []
-            if equipment and isinstance(equipment.get("equipped_items"), list):
-                for item in equipment["equipped_items"]:
-                    if not isinstance(item, dict):
-                        continue
-                    slot_type = item.get("slot", {}).get("type", "UNKNOWN")
-                    slot_name = item.get("slot", {}).get("name", slot_type.title())
-                    item_name = item.get("name", "Unknown Item")
-                    item_id = item.get("item", {}).get("id")
-                    ilvl = item.get("level", {}).get("value", 0)
-                    quality_type = item.get("quality", {}).get("type", "")
-                    quality_name = item.get("quality", {}).get("name", quality_type.title())
-                    
-                    quality_color = "#FFFFFF"
-                    q_val = item.get("quality", {}).get("value")
-                    if quality_type and quality_type.upper() in ITEM_QUALITY_COLORS:
-                        quality_color = ITEM_QUALITY_COLORS[quality_type.upper()]
-                    elif isinstance(q_val, int) and q_val in ITEM_QUALITY_COLORS:
-                        quality_color = ITEM_QUALITY_COLORS[q_val]
+            equipment = await self.client.get_character_equipment(realm, character_name, game_version=game_version)
+            equipped_items_list = self._parse_equipment(equipment)
 
-                    stats_dict = {}
-                    for stat in item.get("stats", []):
-                        if isinstance(stat, dict):
-                            stat_type = stat.get("type", {}).get("name") or stat.get("type", {}).get("type")
-                            stat_val = stat.get("value", 0)
-                            if stat_type:
-                                stats_dict[stat_type] = stat_val
-
-                    item_info = {
-                        "slot": slot_name,
-                        "slot_type": slot_type,
-                        "name": item_name,
-                        "item_id": item_id,
-                        "item_level": ilvl,
-                        "quality": quality_name,
-                        "quality_color": quality_color,
-                        "stats": stats_dict,
-                    }
-                    equipped_items[slot_type.lower()] = item_info
-                    equipped_items_list.append(item_info)
-
+            character_class = profile.get("character_class") or {}
             result = {
-                "character_level": profile.get("level", 0),
+                "character_level": profile.get("level"),
                 "guild_name": guild_name,
                 "last_login_timestamp": profile.get("last_login_timestamp"),
-                "character_class": profile.get("character_class", {}).get("name"),
-                "character_race": profile.get("race", {}).get("name"),
-                "realm": profile.get("realm", {}).get("name"),
-                "faction": profile.get("faction", {}).get("name"),
-                "gender": profile.get("gender", {}).get("name"),
-                "spec": profile.get("active_spec", {}).get("name"),
+                "character_class": character_class.get("name"),
+                "character_class_id": character_class.get("id"),
+                "character_race": (profile.get("race") or {}).get("name"),
+                "realm": (profile.get("realm") or {}).get("name"),
+                "faction": (profile.get("faction") or {}).get("name"),
+                "gender": (profile.get("gender") or {}).get("name"),
+                "spec": (profile.get("active_spec") or {}).get("name"),
                 "avatar_url": avatar_url,
                 "full_body_url": full_body_url,
-                "character_full_body_render": full_body_url or avatar_url,
                 "character_equipment": len(equipped_items_list),
-                "equipped_items": equipped_items,
+                "equipped_items": {item["slot_type"].lower(): item for item in equipped_items_list},
                 "equipped_items_list": equipped_items_list,
             }
 
             # Only include values for sensors this version supports
             if "character_item_level" in supported_basic:
-                result["character_item_level"] = item_level
+                result["character_item_level"] = profile.get("equipped_item_level")
             if "achievement_points" in supported_basic:
                 result["achievement_points"] = achievement_points
 
@@ -205,6 +213,37 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"Error fetching basic data for {character_name}-{realm}: {err}")
             return {}
 
+    @staticmethod
+    def _parse_equipment(equipment: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Flatten the equipment endpoint into one entry per slot."""
+        items = []
+        for item in (equipment or {}).get("equipped_items") or []:
+            if not isinstance(item, dict):
+                continue
+            slot = item.get("slot") or {}
+            quality = item.get("quality") or {}
+            slot_type = slot.get("type", "UNKNOWN")
+            quality_type = (quality.get("type") or "").upper()
+
+            stats = {}
+            for stat in item.get("stats") or []:
+                if isinstance(stat, dict):
+                    stat_type = (stat.get("type") or {}).get("name") or (stat.get("type") or {}).get("type")
+                    if stat_type:
+                        stats[stat_type] = stat.get("value", 0)
+
+            items.append({
+                "slot": slot.get("name", slot_type.title()),
+                "slot_type": slot_type,
+                "name": item.get("name", "Unknown Item"),
+                "item_id": (item.get("item") or {}).get("id"),
+                "item_level": (item.get("level") or {}).get("value", 0),
+                "quality": quality.get("name", quality_type.title()),
+                "quality_color": ITEM_QUALITY_COLORS.get(quality_type, "#FFFFFF"),
+                "stats": stats,
+            })
+        return items
+
     async def _fetch_server_data(self, realm: str, game_version: str = "retail") -> Dict[str, Any]:
         """Fetch server status data."""
         if not self.features.get(CONF_ENABLE_SERVER_STATUS, False):
@@ -212,23 +251,22 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
         try:
             realm_info = await self.client.get_realm_info(realm, game_version=game_version)
-            connected_realm = await self.client.get_connected_realm(realm, game_version=game_version)
+            if not realm_info:
+                return {}
+            connected_realm = await self.client.get_connected_realm(realm, game_version=game_version, realm_info=realm_info)
+            if not connected_realm:
+                return {}
 
-            status = "Unknown"
-            population = "Unknown"
-            queue_time = 0
-
-            if connected_realm:
-                status = connected_realm.get("status", {}).get("name", "Unknown")
-                population = connected_realm.get("population", {}).get("name", "Unknown")
-                # Get queue information if available
-                if connected_realm.get("has_queue"):
-                    queue_time = connected_realm.get("queue_time", 0)
+            status = connected_realm.get("status") or {}
+            population = connected_realm.get("population") or {}
 
             return {
-                "realm_status": status,
-                "realm_population": population,
-                "realm_queue": queue_time,
+                "realm_status": status.get("name", "Unknown"),
+                "realm_status_type": status.get("type"),
+                "realm_population": population.get("name", "Unknown"),
+                "realm_population_type": population.get("type"),
+                # The API only exposes whether a queue exists, not its length
+                "realm_queue": bool(connected_realm.get("has_queue", False)),
                 "realm_timezone": realm_info.get("timezone", "Unknown"),
                 "realm_locale": realm_info.get("locale", "Unknown"),
             }
@@ -299,7 +337,12 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             return {}
 
     async def _fetch_raid_data(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
-        """Fetch raid progress data."""
+        """Fetch raid progress data.
+
+        Difficulty sensors count bosses defeated in the raids of the current
+        (newest) expansion. raid_kills_total counts bosses defeated across all
+        raids the character has ever entered.
+        """
         version_sensors = get_sensor_types_for_version(game_version)
         supported_raid = version_sensors["raid"]
 
@@ -308,44 +351,50 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
         try:
             encounters = await self.client.get_character_encounters_raids(realm, character_name, game_version=game_version)
+            if not encounters:
+                return {}
 
-            progress_lfr = 0
-            progress_normal = 0
-            progress_heroic = 0
-            progress_mythic = 0
+            expansions = encounters.get("expansions", [])
+            current = max(
+                expansions,
+                key=lambda e: (e.get("expansion") or {}).get("id", 0),
+                default=None,
+            )
+
+            progress = {sensor: 0 for sensor in RAID_DIFFICULTY_SENSORS.values()}
+            totals = {sensor: 0 for sensor in RAID_DIFFICULTY_SENSORS.values()}
+            raids_detail = {}
             total_kills = 0
 
-            # Count boss kills only for difficulties this version supports
-            if encounters and "expansions" in encounters:
-                for expansion in encounters["expansions"]:
-                    for instance in expansion.get("instances", []):
-                        for mode in instance.get("modes", []):
-                            difficulty = mode.get("difficulty", {}).get("name", "")
-                            progress = mode.get("progress", {})
-                            completed = progress.get("completed_count", 0)
+            for expansion in expansions:
+                is_current = expansion is current
+                for instance in expansion.get("instances", []):
+                    instance_name = (instance.get("instance") or {}).get("name")
+                    for mode in instance.get("modes", []):
+                        difficulty_type = (mode.get("difficulty") or {}).get("type", "")
+                        mode_progress = mode.get("progress") or {}
+                        completed = mode_progress.get("completed_count", 0)
+                        total_kills += completed
 
-                            if "raid finder" in difficulty.lower() and "raid_progress_lfr" in supported_raid:
-                                progress_lfr += completed
-                            elif "normal" in difficulty.lower() and "raid_progress_normal" in supported_raid:
-                                progress_normal += completed
-                            elif "heroic" in difficulty.lower() and "raid_progress_heroic" in supported_raid:
-                                progress_heroic += completed
-                            elif "mythic" in difficulty.lower() and "raid_progress_mythic" in supported_raid:
-                                progress_mythic += completed
-
-                            total_kills += completed
+                        sensor = RAID_DIFFICULTY_SENSORS.get(difficulty_type)
+                        if not is_current or sensor is None:
+                            continue
+                        progress[sensor] += completed
+                        totals[sensor] += mode_progress.get("total_count", 0)
+                        if instance_name:
+                            raids_detail.setdefault(instance_name, {})[difficulty_type.lower()] = (
+                                f"{completed}/{mode_progress.get('total_count', 0)}"
+                            )
 
             result = {}
-            if "raid_progress_lfr" in supported_raid:
-                result["raid_progress_lfr"] = progress_lfr
-            if "raid_progress_normal" in supported_raid:
-                result["raid_progress_normal"] = progress_normal
-            if "raid_progress_heroic" in supported_raid:
-                result["raid_progress_heroic"] = progress_heroic
-            if "raid_progress_mythic" in supported_raid:
-                result["raid_progress_mythic"] = progress_mythic
+            for sensor in RAID_DIFFICULTY_SENSORS.values():
+                if sensor in supported_raid:
+                    result[sensor] = progress[sensor]
             if "raid_kills_total" in supported_raid:
                 result["raid_kills_total"] = total_kills
+            result["raid_expansion"] = ((current or {}).get("expansion") or {}).get("name")
+            result["raid_total_bosses"] = totals
+            result["raid_details"] = raids_detail
 
             return result
 
@@ -360,7 +409,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
         try:
             profile = await self.client.get_character_mythicplus_profile(realm, character_name)
-            season_data = await self.client.get_character_mythicplus_season(realm, character_name)
+            season_data = await self.client.get_character_mythicplus_season(realm, character_name, profile=profile)
 
             score = 0
             best_run = 0
@@ -370,21 +419,17 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
             # Get current season data
             if season_data:
+                # The API only returns the best run per dungeon (and affix week)
                 best_runs = season_data.get("best_runs", [])
-                all_runs = []
-                # Collect all runs from all dungeons
-                for run in best_runs:
-                    if "members" in run:
-                        all_runs.append(run)
-                # If the API provides additional fields for all runs, add here
                 if best_runs:
                     best_run = max(run.get("keystone_level", 0) for run in best_runs)
-                # Total number of all runs and timed runs
-                runs_completed = len(all_runs)
-                runs_timed = sum(1 for run in all_runs if run.get("is_completed_within_time", False))
+                runs_completed = len(best_runs)
+                runs_timed = sum(1 for run in best_runs if run.get("is_completed_within_time", False))
 
                 # Use Blizzard score directly
                 score = season_data.get("mythic_rating", {}).get("rating", 0)
+            elif profile:
+                score = profile.get("current_mythic_rating", {}).get("rating", 0)
 
             # Get weekly data if available
             if profile and "current_period" in profile:
@@ -410,53 +455,54 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         """Update data via library."""
         try:
             all_data = {}
-            
+
             # Fetch data for each character
             for character in self.characters:
-                realm = character["realm"]
-                name = character["character_name"]
-                game_version = character.get("game_version", "retail")
-                char_key = f"{realm}-{name}"
-                
-                # Fetch all character data
+                realm = character[CONF_REALM]
+                name = character[CONF_CHARACTER_NAME]
+                game_version = character[CONF_GAME_VERSION]
+                char_key = character["key"]
+
                 basic_data = await self._fetch_basic_character_data(realm, name, game_version=game_version)
+                if not basic_data:
+                    # Keep the last known values instead of dropping to 0
+                    all_data[char_key] = self._previous(char_key)
+                    continue
+
                 pvp_data = await self._fetch_pvp_data(realm, name, game_version=game_version)
                 raid_data = await self._fetch_raid_data(realm, name, game_version=game_version)
                 mythicplus_data = await self._fetch_mythicplus_data(realm, name, game_version=game_version)
-                
+
                 # Combine all character data
-                character_data = {
+                all_data[char_key] = {
                     **basic_data,
                     **pvp_data,
                     **raid_data,
                     **mythicplus_data,
                 }
-                
-                all_data[char_key] = character_data
-                
+
                 # Small delay to avoid rate limiting
                 await asyncio.sleep(0.1)
 
-            # Fetch server data for each unique realm
+            # Fetch server data for each unique realm and game version
             server_data = {}
-            realm_versions = {char["realm"]: char.get("game_version", "retail") for char in self.characters}
-            for realm in self.realms:
-                game_version = realm_versions.get(realm, "retail")
-                realm_data = await self._fetch_server_data(realm, game_version=game_version)
-                server_data[realm] = realm_data
+            previous_servers = self._previous("servers")
+            for realm_key, realm in self.realms.items():
+                realm_data = await self._fetch_server_data(realm["realm"], game_version=realm["game_version"])
+                server_data[realm_key] = realm_data or previous_servers.get(realm_key, {})
                 await asyncio.sleep(0.1)
 
-            # Fetch Hall of Fame leaderboards if enabled
-            if self.features.get(CONF_ENABLE_HALL_OF_FAME, True):
+            # Hall of Fame leaderboards are Retail-only
+            if self.features.get(CONF_ENABLE_HALL_OF_FAME, True) and self.has_retail:
                 leaderboards = {}
                 current_raids = await self._fetch_current_raids()
                 for raid in current_raids:
-                    raid_name = raid["name"]
                     raid_slug = raid["id"]
-                    entries = await self._fetch_hall_of_fame_data(raid_slug)
+                    hof = await self._fetch_hall_of_fame_data(raid_slug)
                     leaderboards[raid_slug] = {
-                        "entries": entries if entries else [],
-                        "raid_name": raid_name,
+                        "entries": hof["entries"] if hof else [],
+                        "unified": hof["unified"] if hof else True,
+                        "raid_name": raid["name"],
                     }
                 all_data["leaderboards"] = leaderboards
 
@@ -469,30 +515,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}")
 
-    @staticmethod
-    def generate_raid_slugs(raid_name: str) -> List[str]:
-        """Generate candidate slugs for a raid name."""
-        # Variant 1: standard slug (spaces to hyphens, remove special characters except hyphens)
-        slug1 = raid_name.strip().lower()
-        for char in ["'", ",", "\"", "(", ")", ":", "."]:
-            slug1 = slug1.replace(char, "")
-        slug1 = slug1.replace(" ", "-")
-        while "--" in slug1:
-            slug1 = slug1.replace("--", "-")
-        
-        # Variant 2: remove all hyphens within words (e.g. Nerub-ar -> Nerubar)
-        slug2 = raid_name.strip().lower()
-        for char in ["'", ",", "\"", "(", ")", ":", ".", "-"]:
-            slug2 = slug2.replace(char, "")
-        slug2 = slug2.replace(" ", "-")
-        while "--" in slug2:
-            slug2 = slug2.replace("--", "-")
-            
-        candidates = [slug1]
-        if slug2 != slug1:
-            candidates.append(slug2)
-        return candidates
-
     async def _fetch_current_raids(self) -> List[Dict[str, Any]]:
         """Fetch all available mythic raids for the latest expansion dynamically from GraphQL endpoint."""
         now = datetime.now()
@@ -504,20 +526,20 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         try:
             data = await self.client.get_all_mythic_raids_graphql()
             if data and "data" in data:
-                expansions_data = data["data"].get("MythicRaidLeaderboardExpansions", {})
+                expansions_data = data["data"].get("MythicRaidLeaderboardExpansions") or {}
                 expansions = expansions_data.get("expansions", [])
-                
+
                 raids = []
                 if expansions:
                     latest_exp = expansions[0]
-                    _LOGGER.info(f"Latest expansion detected dynamically: {latest_exp.get('name')}")
+                    _LOGGER.debug(f"Latest expansion detected dynamically: {latest_exp.get('name')}")
                     for zone in latest_exp.get("zones", []):
                         raids.append({
                             "id": zone.get("slug"),  # use slug as ID
                             "name": zone.get("name"),
                             "expansion_name": latest_exp.get("name")
                         })
-                
+
                 if raids:
                     self._cached_raids = raids
                     self._last_raids_fetch = now
@@ -529,142 +551,134 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             return self._cached_raids
         return []
 
-    async def _fetch_hall_of_fame_data(self, raid_slug: str) -> Optional[List[Dict[str, Any]]]:
+    async def _fetch_hall_of_fame_data(self, raid_slug: str) -> Optional[Dict[str, Any]]:
         """Fetch Hall of Fame data for a raid, using cache."""
         now = datetime.now()
-        cache_key = raid_slug
-        
-        # Check cache. If it's already completed, we keep it indefinitely during runtime
-        if cache_key in self._hof_cache:
-            fetch_time, cached_data = self._hof_cache[cache_key]
-            if cached_data is not None:
-                # Completed check: >= 100 entries (older or unified global)
-                if len(cached_data) >= 100:
-                    return cached_data
-                # Otherwise, cache for 2 hours during progression
-                if now - fetch_time < timedelta(hours=2):
-                    return cached_data
-            else:
-                # If cached value is None (not found), check it again after 2 hours
-                if now - fetch_time < timedelta(hours=2):
-                    return cached_data
+
+        if raid_slug in self._hof_cache:
+            fetch_time, cached = self._hof_cache[raid_slug]
+            if cached is not None:
+                # A full leaderboard no longer changes, keep it for the runtime
+                full_size = HOF_FULL_UNIFIED if cached["unified"] else HOF_FULL_SPLIT
+                if len(cached["entries"]) >= full_size:
+                    return cached
+            # Otherwise refresh every 2 hours during progression (or after a miss)
+            if now - fetch_time < timedelta(hours=2):
+                return cached
 
         try:
-            # We call get_hall_of_fame with faction='horde' (arbitrary, as the new client returns unified)
+            # Faction is only used for old split leaderboards; unified lists ignore it
             hof_data = await self.client.get_hall_of_fame(raid_slug, "horde")
             if hof_data and "entries" in hof_data:
-                entries = hof_data["entries"]
-                self._hof_cache[cache_key] = (now, entries)
-                return entries
-            
+                self._hof_cache[raid_slug] = (now, hof_data)
+                return hof_data
+
             # Empty dictionary indicates 404/not found
-            self._hof_cache[cache_key] = (now, None)
+            self._hof_cache[raid_slug] = (now, None)
             return None
         except Exception as err:
             _LOGGER.debug(f"Could not retrieve Hall of Fame for {raid_slug}: {err}")
-            self._hof_cache[cache_key] = (now, None)
+            self._hof_cache[raid_slug] = (now, None)
             return None
+
+
+async def async_create_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> WoWDataUpdateCoordinator:
+    """Create the shared coordinator for a config entry and fetch initial data."""
+    characters = entry.data.get(CONF_CHARACTERS, [])
+
+    # Feature flags from options with data as fallback
+    features = {
+        key: entry.options.get(key, entry.data.get(key, True))
+        for key in (
+            CONF_ENABLE_SERVER_STATUS,
+            CONF_ENABLE_PVP,
+            CONF_ENABLE_RAIDS,
+            CONF_ENABLE_MYTHIC_PLUS,
+            CONF_ENABLE_HALL_OF_FAME,
+        )
+    }
+
+    client = WoWBlizzardAPIClient(
+        entry.data[CONF_CLIENT_ID],
+        entry.data[CONF_CLIENT_SECRET],
+        entry.data[CONF_REGION],
+        locale=entry.data.get(CONF_LOCALE),
+        session=async_get_clientsession(hass),
+    )
+    # Apply namespaces that were resolved while adding characters (e.g. WoW Forever)
+    for character in characters:
+        suffix = character.get(CONF_NAMESPACE_SUFFIX)
+        if suffix is not None:
+            client.set_namespace_suffix(character.get(CONF_GAME_VERSION, "retail"), suffix)
+
+    coordinator = WoWDataUpdateCoordinator(hass, client, characters, features)
+    await coordinator.async_config_entry_first_refresh()
+    return coordinator
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up WoW Blizzard sensors based on a config entry."""
-    client_id = entry.data[CONF_CLIENT_ID]
-    client_secret = entry.data[CONF_CLIENT_SECRET]
-    region = entry.data[CONF_REGION]
-    characters = entry.data.get(CONF_CHARACTERS, [])
-    
-    # Feature flags from options with data as fallback
-    features = {
-        CONF_ENABLE_SERVER_STATUS: entry.options.get(CONF_ENABLE_SERVER_STATUS, entry.data.get(CONF_ENABLE_SERVER_STATUS, True)),
-        CONF_ENABLE_PVP: entry.options.get(CONF_ENABLE_PVP, entry.data.get(CONF_ENABLE_PVP, True)),
-        CONF_ENABLE_RAIDS: entry.options.get(CONF_ENABLE_RAIDS, entry.data.get(CONF_ENABLE_RAIDS, True)),
-        CONF_ENABLE_MYTHIC_PLUS: entry.options.get(CONF_ENABLE_MYTHIC_PLUS, entry.data.get(CONF_ENABLE_MYTHIC_PLUS, True)),
-        CONF_ENABLE_HALL_OF_FAME: entry.options.get(CONF_ENABLE_HALL_OF_FAME, entry.data.get(CONF_ENABLE_HALL_OF_FAME, True)),
-    }
-
-    if not characters:
-        _LOGGER.error("No characters configured")
-        return
-
-    locale = entry.data.get(CONF_LOCALE)
-    client = WoWBlizzardAPIClient(client_id, client_secret, region, locale=locale)
-    coordinator = WoWDataUpdateCoordinator(hass, client, characters, features)
-    if isinstance(hass.data[DOMAIN].get(entry.entry_id), dict):
-        hass.data[DOMAIN][entry.entry_id]["coordinator"] = coordinator
-
-    # Fetch initial data
-    await coordinator.async_config_entry_first_refresh()
+    coordinator: WoWDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    features = coordinator.features
 
     # Create sensors
     entities = []
-    
+
     # Character sensors
-    for character in characters:
-        realm = character["realm"]
-        name = character["character_name"]
-        game_version = character.get("game_version", "retail")
-        char_key = f"{realm}-{name}"
-        
+    for character in coordinator.characters:
+        realm = character[CONF_REALM]
+        name = character[CONF_CHARACTER_NAME]
+        game_version = character[CONF_GAME_VERSION]
+        char_key = character["key"]
+
         # Get the sensor types applicable to this game version
         version_sensors = get_sensor_types_for_version(game_version)
-        
-        # Basic character sensors (version-filtered)
-        for sensor_type in version_sensors["basic"]:
+        sensor_types = list(version_sensors["basic"])
+        if features[CONF_ENABLE_PVP]:
+            sensor_types += list(version_sensors["pvp"])
+        if features[CONF_ENABLE_RAIDS]:
+            sensor_types += list(version_sensors["raid"])
+        if features[CONF_ENABLE_MYTHIC_PLUS]:
+            sensor_types += list(version_sensors["mythicplus"])
+
+        for sensor_type in sensor_types:
             entities.append(
                 WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm, game_version)
             )
-        
-        # PvP sensors (version-filtered)
-        if features[CONF_ENABLE_PVP] and version_sensors["pvp"]:
-            for sensor_type in version_sensors["pvp"]:
-                entities.append(
-                    WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm, game_version)
-                )
-        
-        # Raid sensors (version-filtered)
-        if features[CONF_ENABLE_RAIDS] and version_sensors["raid"]:
-            for sensor_type in version_sensors["raid"]:
-                entities.append(
-                    WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm, game_version)
-                )
-        
-        # Mythic+ sensors (version-filtered)
-        if features[CONF_ENABLE_MYTHIC_PLUS] and version_sensors["mythicplus"]:
-            for sensor_type in version_sensors["mythicplus"]:
-                entities.append(
-                    WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm, game_version)
-                )
 
     # Server sensors
     if features[CONF_ENABLE_SERVER_STATUS]:
-        realms = set(char["realm"] for char in characters)
-        for realm in realms:
+        for realm_key, realm in coordinator.realms.items():
             for sensor_type in SERVER_SENSOR_TYPES:
                 entities.append(
-                    WoWServerSensor(coordinator, sensor_type, realm)
+                    WoWServerSensor(coordinator, sensor_type, realm_key, realm["realm"], realm["game_version"])
                 )
 
     # Hall of Fame Leaderboard sensors (Retail only)
-    has_retail = any(char.get("game_version", "retail") == "retail" for char in characters)
-    if features[CONF_ENABLE_HALL_OF_FAME] and has_retail:
-        current_raids = coordinator._cached_raids or []
-        for raid in current_raids:
-            raid_name = raid["name"]
-            raid_slug = raid["id"]
+    if features[CONF_ENABLE_HALL_OF_FAME] and coordinator.has_retail:
+        for raid in coordinator._cached_raids or []:
             entities.append(
-                WoWLeaderboardSensor(coordinator, "hall_of_fame", raid_slug, raid_name)
+                WoWLeaderboardSensor(coordinator, "hall_of_fame", raid["id"], raid["name"])
             )
 
     async_add_entities(entities)
 
 
+def _game_version_label(game_version: str) -> str:
+    """Human readable game version label."""
+    return GAME_VERSIONS.get(game_version, {}).get("label", game_version)
+
+
 class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
     """Representation of a WoW character sensor."""
 
+    # Gear details are large and change rarely; keep them out of the recorder
+    _unrecorded_attributes = frozenset({"equipped_items", "equipped_items_list"})
+
     def __init__(
-        self, 
+        self,
         coordinator: WoWDataUpdateCoordinator,
         sensor_type: str,
         char_key: str,
@@ -679,91 +693,98 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
         self._character_name = character_name
         self._realm = realm
         self._game_version = game_version
-        
+        # char_key is "{realm}-{name}" unless disambiguated by game version
+        self._id_base = char_key.replace(f"{realm}-{character_name}", f"{realm}_{character_name}", 1)
+
         sensor_config = ALL_SENSOR_TYPES[sensor_type]
-        
+
         self._attr_has_entity_name = True
         self._attr_translation_key = sensor_type
-        self._attr_unique_id = f"{DOMAIN}_{realm}_{character_name}_{sensor_type}"
+        self._attr_unique_id = f"{DOMAIN}_{self._id_base}_{sensor_type}"
         self._attr_icon = sensor_config["icon"]
         self._attr_native_unit_of_measurement = sensor_config.get("unit")
         self._attr_device_class = sensor_config.get("device_class")
-        if "enabled_default" in sensor_config:
-            self._attr_entity_registry_enabled_default = sensor_config["enabled_default"]
+        self._attr_state_class = sensor_config.get("state_class")
+
+    @property
+    def _char_data(self) -> Dict[str, Any]:
+        if not self.coordinator.data:
+            return {}
+        return self.coordinator.data.get(self._char_key) or {}
 
     @property
     def native_value(self):
         """Return the state of the sensor."""
-        if not self.coordinator.data or self._char_key not in self.coordinator.data:
-            return None
-        return self.coordinator.data[self._char_key].get(self._sensor_type)
+        return self._char_data.get(self._sensor_type)
 
     @property
     def entity_picture(self):
         """Return the entity picture."""
-        if not self.coordinator.data or self._char_key not in self.coordinator.data:
-            return None
-        return self.coordinator.data[self._char_key].get("avatar_url")
+        return self._char_data.get("avatar_url")
 
     @property
     def extra_state_attributes(self):
         """Return additional state attributes."""
-        if not self.coordinator.data or self._char_key not in self.coordinator.data:
+        char_data = self._char_data
+        if not char_data:
             return {}
-        
-        char_data = self.coordinator.data[self._char_key]
-        
+
         attributes = {
             "character_name": self._character_name,
             "realm": self._realm,
             "character_class": char_data.get("character_class"),
             "character_race": char_data.get("character_race"),
             "character_level": char_data.get("character_level"),
+            "guild": char_data.get("guild_name"),
             "last_update": self.coordinator.last_update_success,
+            "last_login": _format_timestamp(char_data.get("last_login_timestamp")),
             "faction": char_data.get("faction"),
             "active_spec": char_data.get("spec"),
             "game_version": self._game_version,
             "avatar_url": char_data.get("avatar_url"),
             "full_body_url": char_data.get("full_body_url"),
         }
-        
-        # Add class color if available
-        if char_data.get("character_class") in CLASS_COLORS:
-            attributes["class_color"] = CLASS_COLORS[char_data["character_class"]]
-            
+
         if self._sensor_type == "character_equipment":
             attributes["equipped_items"] = char_data.get("equipped_items", {})
             attributes["equipped_items_list"] = char_data.get("equipped_items_list", [])
+
+        # Add class color if available
+        class_color = CLASS_COLORS.get(char_data.get("character_class_id"))
+        if class_color:
+            attributes["class_color"] = class_color
 
         # Add specific attributes based on sensor type
         if self._sensor_type in PVP_SENSOR_TYPES:
             attributes["category"] = "pvp"
         elif self._sensor_type in RAID_SENSOR_TYPES:
             attributes["category"] = "raid"
+            attributes["expansion"] = char_data.get("raid_expansion")
+            difficulty_sensors = {v: k for k, v in RAID_DIFFICULTY_SENSORS.items()}
+            if self._sensor_type in difficulty_sensors:
+                attributes["total_bosses"] = (char_data.get("raid_total_bosses") or {}).get(self._sensor_type)
+                difficulty = difficulty_sensors[self._sensor_type].lower()
+                attributes["raids"] = {
+                    raid: modes[difficulty]
+                    for raid, modes in (char_data.get("raid_details") or {}).items()
+                    if difficulty in modes
+                }
         elif self._sensor_type in MYTHICPLUS_SENSOR_TYPES:
             attributes["category"] = "mythic_plus"
         else:
             attributes["category"] = "character"
-            
+
         return attributes
 
     @property
     def device_info(self):
         """Return device info."""
-        sw_version = "The War Within"
-        if self._game_version == "classic":
-            sw_version = "Cataclysm Classic"
-        elif self._game_version == "classic1x":
-            sw_version = "Classic Era"
-        elif self._game_version == "classicann":
-            sw_version = "Burning Crusade Classic (Anniversary)"
-
         return {
-            "identifiers": {(DOMAIN, f"{self._realm}_{self._character_name}")},
+            "identifiers": {(DOMAIN, self._id_base)},
             "name": f"{self._character_name} ({self._realm})",
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Character",
-            "sw_version": sw_version,
+            "sw_version": _game_version_label(self._game_version),
         }
 
 
@@ -771,47 +792,55 @@ class WoWServerSensor(CoordinatorEntity, SensorEntity):
     """Representation of a WoW server sensor."""
 
     def __init__(
-        self, 
+        self,
         coordinator: WoWDataUpdateCoordinator,
         sensor_type: str,
-        realm: str
+        realm_key: str,
+        realm: str,
+        game_version: str = "retail",
     ):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._sensor_type = sensor_type
+        self._realm_key = realm_key
         self._realm = realm
-        
+        self._game_version = game_version
+
         sensor_config = ALL_SENSOR_TYPES[sensor_type]
-        
+
         self._attr_has_entity_name = True
         self._attr_translation_key = sensor_type
-        self._attr_unique_id = f"{DOMAIN}_server_{realm}_{sensor_type}"
+        self._attr_unique_id = f"{DOMAIN}_server_{realm_key}_{sensor_type}"
         self._attr_icon = sensor_config["icon"]
         self._attr_native_unit_of_measurement = sensor_config.get("unit")
         self._attr_device_class = sensor_config.get("device_class")
+        self._attr_state_class = sensor_config.get("state_class")
+
+    @property
+    def _realm_data(self) -> Dict[str, Any]:
+        if not self.coordinator.data:
+            return {}
+        return (self.coordinator.data.get("servers") or {}).get(self._realm_key) or {}
 
     @property
     def native_value(self):
         """Return the state of the sensor."""
-        if (not self.coordinator.data 
-            or "servers" not in self.coordinator.data 
-            or self._realm not in self.coordinator.data["servers"]):
-            return None
-        return self.coordinator.data["servers"][self._realm].get(self._sensor_type)
+        return self._realm_data.get(self._sensor_type)
 
     @property
     def extra_state_attributes(self):
         """Return additional state attributes."""
-        if (not self.coordinator.data 
-            or "servers" not in self.coordinator.data 
-            or self._realm not in self.coordinator.data["servers"]):
+        realm_data = self._realm_data
+        if not realm_data:
             return {}
-        
-        realm_data = self.coordinator.data["servers"][self._realm]
-        
+
         return {
             "realm": self._realm,
+            "game_version": self._game_version,
             "category": "server",
+            # Language-independent values for automations (e.g. "UP"/"DOWN", "HIGH")
+            "status_type": realm_data.get("realm_status_type"),
+            "population_type": realm_data.get("realm_population_type"),
             "timezone": realm_data.get("realm_timezone"),
             "locale": realm_data.get("realm_locale"),
             "last_update": self.coordinator.last_update_success,
@@ -820,12 +849,15 @@ class WoWServerSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_info(self):
         """Return device info."""
+        realm_name = self._realm.replace("-", " ").title()
+        if self._realm_key != self._realm:
+            realm_name = f"{realm_name} ({_game_version_label(self._game_version)})"
         return {
-            "identifiers": {(DOMAIN, f"server_{self._realm}")},
-            "name": f"{self._realm.title()} Server",
+            "identifiers": {(DOMAIN, f"server_{self._realm_key}")},
+            "name": f"{realm_name} Server",
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Realm",
-            "sw_version": "The War Within",
+            "sw_version": _game_version_label(self._game_version),
         }
 
 
@@ -844,30 +876,28 @@ class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
         self._sensor_type = sensor_type
         self._raid_slug = raid_slug
         self._raid_name = raid_name
-        
+
         sensor_config = HOF_SENSOR_TYPES[sensor_type]
         self._attr_has_entity_name = True
-        self._attr_translation_key = sensor_type
         self._attr_unique_id = f"{DOMAIN}_{raid_slug}_hof"
+        self._attr_name = raid_name
         self._attr_icon = sensor_config["icon"]
         self._attr_native_unit_of_measurement = sensor_config.get("unit")
         self._attr_device_class = sensor_config.get("device_class")
 
     @property
-    def name(self) -> str:
-        """Return the name of the entity."""
-        return self._raid_name
+    def _leaderboard(self) -> Dict[str, Any]:
+        if not self.coordinator.data:
+            return {}
+        return (self.coordinator.data.get("leaderboards") or {}).get(self._raid_slug) or {}
 
     @property
     def native_value(self):
         """Return the state of the sensor (name of the world first guild)."""
-        if not self.coordinator.data or "leaderboards" not in self.coordinator.data:
-            return None
-        
-        leaderboard = self.coordinator.data["leaderboards"].get(self._raid_slug)
+        leaderboard = self._leaderboard
         if not leaderboard:
             return None
-        
+
         entries = leaderboard.get("entries", [])
         if len(entries) > 0:
             return entries[0].get("guild", {}).get("name")
@@ -876,15 +906,15 @@ class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return additional state attributes."""
-        locale_url = self.coordinator.client.locale.replace("_", "-").lower() if self.coordinator.client.locale else "de-de"
-        info_url = f"https://worldofwarcraft.blizzard.com/{locale_url}/game/hall-of-fame/mythic-raid/{self._raid_slug}"
-
+        leaderboard = self._leaderboard
+        unified = leaderboard.get("unified", True)
         attributes = {
             "raid_name": self._raid_name,
-            "faction": "Unified",
+            "faction": "Unified" if unified else "Horde",
             "region": "Global",
             "completed": False,
-            "info_url": info_url,
+            "total_entries": 0,
+            "info_url": self.coordinator.client.hof_page_url(self._raid_slug),
             "world_first_guild": None,
             "world_first_realm": None,
             "world_first_region": None,
@@ -896,73 +926,52 @@ class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
             "last_guild_timestamp_formatted": None,
             "character_guild_ranks": {},
         }
-        
-        if not self.coordinator.data or "leaderboards" not in self.coordinator.data:
-            return attributes
-            
-        leaderboard = self.coordinator.data["leaderboards"].get(self._raid_slug)
+
         if not leaderboard:
             return attributes
-            
+
         entries = leaderboard.get("entries", [])
         total_entries = len(entries)
-        
-        # Unified global leaderboards have a cap of 200 entries; older regional factions have 100.
-        attributes["completed"] = total_entries >= 200 if total_entries > 100 else total_entries >= 100
-        
+        attributes["total_entries"] = total_entries
+        attributes["completed"] = total_entries >= (HOF_FULL_UNIFIED if unified else HOF_FULL_SPLIT)
+
         if total_entries > 0:
             first_entry = entries[0]
             attributes["world_first_guild"] = first_entry.get("guild", {}).get("name")
-            attributes["world_first_realm"] = first_entry.get("guild", {}).get("realm", {}).get("slug")
-            attributes["world_first_region"] = str(first_entry.get("region", "")).upper()
-            
-            first_ts = first_entry.get("timestamp")
-            attributes["world_first_timestamp"] = first_ts
-            if first_ts:
-                try:
-                    from datetime import timezone
-                    dt = datetime.fromtimestamp(float(first_ts) / 1000, timezone.utc)
-                    attributes["world_first_timestamp_formatted"] = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-                except Exception:
-                    attributes["world_first_timestamp_formatted"] = None
-            
+            attributes["world_first_realm"] = first_entry.get("guild", {}).get("realm", {}).get("name")
+            attributes["world_first_region"] = str(first_entry.get("region") or "").upper()
+            attributes["world_first_timestamp"] = first_entry.get("timestamp")
+            attributes["world_first_timestamp_formatted"] = _format_timestamp(first_entry.get("timestamp"))
+
             last_entry = entries[-1]
             attributes["last_guild_name"] = last_entry.get("guild", {}).get("name")
             attributes["last_guild_rank"] = last_entry.get("rank")
-            
-            last_ts = last_entry.get("timestamp")
-            attributes["last_guild_timestamp"] = last_ts
-            if last_ts:
-                try:
-                    from datetime import timezone
-                    dt = datetime.fromtimestamp(float(last_ts) / 1000, timezone.utc)
-                    attributes["last_guild_timestamp_formatted"] = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-                except Exception:
-                    attributes["last_guild_timestamp_formatted"] = None
+            attributes["last_guild_timestamp"] = last_entry.get("timestamp")
+            attributes["last_guild_timestamp_formatted"] = _format_timestamp(last_entry.get("timestamp"))
 
         # Map configured retail characters to their guild rank
         char_ranks = {}
+        client = self.coordinator.client
         for character in self.coordinator.characters:
-            if character.get("game_version", "retail") != "retail":
+            if character[CONF_GAME_VERSION] != "retail":
                 continue
-            
-            char_key = f"{character['realm']}-{character['character_name']}"
-            char_data = self.coordinator.data.get(char_key, {})
+
+            char_data = self.coordinator.data.get(character["key"]) or {}
             guild_name = char_data.get("guild_name")
             if not guild_name:
                 continue
-            
-            char_realm_slug = self.coordinator.client.realm_to_slug(character["realm"])
+
+            char_realm_slug = client.realm_to_slug(character[CONF_REALM])
             for entry in entries:
                 entry_guild = entry.get("guild", {})
                 entry_guild_name = entry_guild.get("name")
                 entry_realm_slug = entry_guild.get("realm", {}).get("slug")
-                
+
                 if entry_guild_name and entry_guild_name.lower() == guild_name.lower():
-                    if entry_realm_slug == char_realm_slug:
-                        char_ranks[character["character_name"]] = entry.get("rank")
+                    if entry_realm_slug == char_realm_slug and entry.get("region") == client.region:
+                        char_ranks[character[CONF_CHARACTER_NAME]] = entry.get("rank")
                         break
-                        
+
         attributes["character_guild_ranks"] = char_ranks
         return attributes
 
@@ -974,5 +983,5 @@ class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
             "name": "WoW Leaderboards",
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Leaderboards",
-            "entry_type": DeviceRegistryEntryType.SERVICE if 'DeviceRegistryEntryType' in globals() else DeviceEntryType.SERVICE,
+            "entry_type": DeviceEntryType.SERVICE,
         }
