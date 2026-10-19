@@ -24,9 +24,13 @@ Use it to track levels and item level over time, watch realm status on reset day
 
 | Area | What you get |
 | --- | --- |
-| Characters | Level, item level, guild, achievement points, portrait as entity picture, full-body render as image entity, equipment per slot. Any number of characters across realms and game versions. |
+| Characters | Level, item level, guild, achievement points, profile status, portrait as entity picture, full-body render as image entity, equipment per slot. Any number of characters across realms and game versions. |
+| Character details | Professions, health and secondary stats, title, reputations, talents, dungeons completed, deaths, quests completed, hunter pets. |
+| Collections | Number of mounts, pets, toys and heirlooms. |
+| Guild | Member count and guild achievement points. |
 | Realms | Realm status, population and whether a login queue is active. |
-| PvP | 2v2, 3v3 and RBG ratings, honor level and season wins. |
+| Region | WoW Token price (Retail and Classic Progression) and the next weekly reset. |
+| PvP | 2v2, 3v3 and RBG ratings, honor level, season wins, honorable kills and the Classic Era PvP rank. |
 | Raids | Bosses defeated per difficulty in the current expansion, plus a lifetime total. |
 | Mythic+ | Season score, highest key, best runs, timed runs, weekly best key. |
 | Hall of Fame | One sensor per raid of the current expansion with the world first guild and the ranks of your own guilds. |
@@ -37,13 +41,15 @@ Numeric sensors have the `measurement` state class, so Home Assistant keeps long
 
 Each character is added with its game version. The integration only creates the sensors that the Blizzard API supports for that version.
 
-| Game version | API namespace | Basic | PvP | Raids | Mythic+ | Hall of Fame |
-| --- | --- | --- | --- | --- | --- | --- |
-| Retail | `profile-{region}` | All | All | Yes | Yes | Yes |
-| Classic Progression (currently Mists of Pandaria) | `profile-classic-{region}` | All | 2v2, 3v3, wins | No | No | No |
-| Classic Anniversary (Burning Crusade) | `profile-classicann-{region}` | No item level | 2v2, 3v3, wins | No | No | No |
-| Classic Era (Vanilla) | `profile-classic1x-{region}` | Level, guild | No | No | No | No |
-| WoW Forever | detected at setup | All | No | No | No | No |
+| Game version | API namespace | Basic | PvP | Raids | Mythic+ | Details | Collections | Guild | Hall of Fame |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Retail | `profile-{region}` | All | All except PvP rank | Yes | Yes | All | Yes | Yes | Yes |
+| Classic Progression (currently Mists of Pandaria) | `profile-classic-{region}` | All | 2v2, 3v3, wins, honorable kills | No | No | No professions, versatility or dungeons | No | Yes | No |
+| Classic Anniversary (Burning Crusade) | `profile-classicann-{region}` | No achievement points | 2v2, 3v3, wins, honorable kills | No | No | Health, crit, haste, title, reputations, talents, hunter pets | No | Yes | No |
+| Classic Era (Vanilla) | `profile-classic1x-{region}` | No achievement points | Honorable kills, PvP rank | No | No | Health, crit, title, reputations, talents, hunter pets | No | Yes | No |
+| WoW Forever | detected at setup | All | No | No | No | No | No | No | No |
+
+The support per version was checked against the live API (EU, October 2026). The WoW Token price is available for Retail and Classic Progression; Blizzard does not offer it for Classic Era and Anniversary.
 
 ### WoW Forever
 
@@ -103,7 +109,7 @@ config/
 
 1. Go to **Settings > Devices & Services > Add Integration** and search for **World of Warcraft Blizzard API**.
 2. Enter the client ID and secret, select your **region** (US, EU, KR, TW, CN) and the **API locale**. The locale sets the language of names returned by the API, such as classes, realm status and raid names.
-3. Choose which feature groups to enable: realm status, PvP, raids, Mythic+ and Hall of Fame.
+3. Choose which feature groups to enable: realm status, PvP, raids, Mythic+, Hall of Fame, character details, collections, guild and region data (WoW Token, weekly reset).
 
 ### 3. Add characters
 
@@ -148,6 +154,21 @@ Each character becomes a device named `<Character> (<realm>)`, each realm become
 | M+ Runs Completed | `sensor.thrall_stormrage_m_runs_completed` | Number of best runs the API reports this season, not all runs |
 | M+ Runs Timed | `sensor.thrall_stormrage_m_runs_timed` | Timed runs among those best runs |
 | Weekly Best M+ | `sensor.thrall_stormrage_weekly_best_m` | Highest key this week |
+| Profile Status | `sensor.thrall_stormrage_profile_status` | `valid`, `invalid` or `not_found`, e.g. after a rename, transfer or deletion |
+| Honorable Kills | `sensor.thrall_stormrage_honorable_kills` | PvP, lifetime |
+| PvP Rank | `sensor.thrall_stormrage_pvp_rank` | PvP, Classic Era honor rank (0 = none) |
+| Professions | `sensor.thrall_stormrage_professions` | Primary professions; skill of the newest tier per profession in `professions` |
+| Health | `sensor.thrall_stormrage_health` | Details; primary stats, armor, power in attributes |
+| Critical Strike / Haste / Mastery / Versatility | `sensor.thrall_stormrage_haste` | Details, in percent |
+| Title | `sensor.thrall_stormrage_title` | Details, active title; Retail adds `title_count` |
+| Reputations | `sensor.thrall_stormrage_reputations` | Details, number of known factions; standing per faction in `factions` |
+| Talents | `sensor.thrall_stormrage_talents` | Details; Retail: hero talent tree with `loadout_code`, Classic Progression: specialization with `talent_list` and `glyphs`, Era/Anniversary: points per tree |
+| Dungeons Completed | `sensor.thrall_stormrage_dungeons_completed` | Details, dungeons of the newest expansion with at least one completed difficulty |
+| Deaths | `sensor.thrall_stormrage_deaths` | Details, lifetime |
+| Quests Completed | `sensor.thrall_stormrage_quests_completed` | Details, lifetime |
+| Hunter Pet | `sensor.thrall_stormrage_hunter_pet` | Details, hunters only; summoned pet, all pets in `pets` |
+| Mounts / Pets / Toys / Heirlooms | `sensor.thrall_stormrage_mounts` | Collections, Retail |
+| Guild Members | `sensor.thrall_stormrage_guild_members` | Guild, only for characters in a guild; achievement points, realm, faction, creation date in attributes |
 
 Attributes on every character sensor: `character_name`, `realm`, `character_class`, `class_color`, `character_race`, `character_level`, `guild`, `faction`, `active_spec`, `last_login`, `game_version`, `category`.
 
@@ -178,13 +199,23 @@ The `status_type` (`UP`, `DOWN`) and `population_type` (`LOW`, `MEDIUM`, `HIGH`,
 
 If the same realm name exists in two game versions, the second device gets the game version appended to its name.
 
+### Region sensors
+
+Region-wide data lives on the device `WoW <REGION>`, for example `WoW EU`.
+
+| Sensor | Example entity ID (English) | Notes |
+| --- | --- | --- |
+| WoW Token Price | `sensor.wow_eu_wow_token_price` | Retail, in gold; `last_updated` attribute |
+| WoW Token Price (Classic) | `sensor.wow_eu_wow_token_price_classic` | Only with a Classic Progression character |
+| Weekly Reset | `sensor.wow_eu_weekly_reset` | Timestamp of the next weekly reset (Retail) |
+
 ### Hall of Fame sensors
 
 One sensor per raid of the current expansion, for example `sensor.wow_leaderboards_the_dreamrift`. See [Hall of Fame](#hall-of-fame).
 
 ## Hall of Fame
 
-The Hall of Fame shows the first guilds worldwide to defeat a raid on Mythic. Blizzard does not offer it in the Battle.net API, so the integration reads the public GraphQL endpoint behind the [Mythic Raid Hall of Fame](https://worldofwarcraft.blizzard.com/en-us/worldsoul/us/leaderboards/hall-of-fame/mythic-raid) page on worldofwarcraft.blizzard.com.
+The Hall of Fame shows the first guilds worldwide to defeat a raid on Mythic. The Battle.net API has a Hall of Fame endpoint (`/data/wow/leaderboard/hall-of-fame/{raid}/{faction}`), but it only covers raids up to Vault of the Incarnates (Dragonflight) and returns 404 for every newer raid. So the integration reads the public GraphQL endpoint behind the [Mythic Raid Hall of Fame](https://worldofwarcraft.blizzard.com/en-us/worldsoul/us/leaderboards/hall-of-fame/mythic-raid) page on worldofwarcraft.blizzard.com.
 
 - The raids of the newest expansion are discovered on their own and refreshed every 24 hours. New raids show up after the next reload of the integration.
 - The sensor state is the name of the world first guild, or `Pending` while nobody has cleared the raid.
@@ -312,8 +343,9 @@ automation:
 
 - All data is refreshed every 5 minutes in one update cycle.
 - Data from the Battle.net API reflects what Blizzard has processed, which usually lags the game by a few minutes and may be refreshed only after logout.
-- If a character profile cannot be fetched (API error, maintenance), the last known values are kept, so graphs do not drop to 0.
-- On HTTP 429 (rate limit) the request is retried up to two times, waiting at most 30 seconds. The Battle.net API allows 36,000 requests per hour, and each character uses roughly 5 to 12 requests per update depending on the enabled features.
+- Character details and collections are only fetched again when the character's last login changes, and at least every 6 hours. Guild data is cached for 1 hour, the weekly period until the reset.
+- If a character profile cannot be fetched (API error, maintenance), the last known values are kept, so graphs do not drop to 0. The profile status sensor then shows whether the character still exists.
+- On HTTP 429 (rate limit) the request is retried up to two times, waiting at most 30 seconds. The Battle.net API allows 36,000 requests per hour, and each character uses roughly 4 to 10 requests per update depending on the enabled features, plus up to 13 after a new login.
 
 ## Troubleshooting
 
@@ -349,6 +381,8 @@ logger:
 
 - The Battle.net API only reports whether a realm has a login queue, not how long it is.
 - "M+ Runs Completed" and "M+ Runs Timed" count the best runs that the API returns, not every key you have run.
+- The API does not say which Mythic+ affixes are active this week.
+- Account-wide data (all characters of an account, account collections) needs a Battle.net login of the player and is not supported.
 - Hall of Fame data comes from the public website rather than the official API and can break when Blizzard changes the site.
 - WoW Forever support depends on Blizzard publishing its API namespace (see [WoW Forever](#wow-forever)).
 - Weekly activities (Great Vault, weekly quests) are not part of the public game data API for other accounts, so they cannot be tracked.

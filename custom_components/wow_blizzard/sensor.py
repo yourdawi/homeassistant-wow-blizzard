@@ -1,6 +1,7 @@
 """Support for WoW Blizzard API sensors with all features."""
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 
@@ -29,6 +30,10 @@ from .const import (
     CONF_ENABLE_RAIDS,
     CONF_ENABLE_MYTHIC_PLUS,
     CONF_ENABLE_HALL_OF_FAME,
+    CONF_ENABLE_CHARACTER_DETAILS,
+    CONF_ENABLE_COLLECTIONS,
+    CONF_ENABLE_GUILD,
+    CONF_ENABLE_REGION_DATA,
     CONF_GAME_VERSION,
     CONF_LOCALE,
     CONF_NAMESPACE_SUFFIX,
@@ -37,8 +42,14 @@ from .const import (
     PVP_SENSOR_TYPES,
     RAID_SENSOR_TYPES,
     MYTHICPLUS_SENSOR_TYPES,
+    DETAIL_SENSOR_TYPES,
+    COLLECTION_SENSOR_TYPES,
+    GUILD_SENSOR_TYPES,
+    REGION_SENSOR_TYPES,
     HOF_SENSOR_TYPES,
     DEFAULT_SCAN_INTERVAL,
+    SLOW_REFRESH_INTERVAL,
+    GUILD_REFRESH_INTERVAL,
     CLASS_COLORS,
     ITEM_QUALITY_COLORS,
     GAME_VERSIONS,
@@ -59,6 +70,260 @@ RAID_DIFFICULTY_SENSORS = {
 # Hall of Fame list sizes: split faction lists hold 100 guilds, unified lists 200
 HOF_FULL_SPLIT = 100
 HOF_FULL_UNIFIED = 200
+
+# Achievement statistic IDs (stable across locales)
+STATISTIC_TOTAL_DEATHS = 60
+STATISTIC_QUESTS_COMPLETED = 98
+
+HUNTER_CLASS_ID = 3
+
+# Collection endpoints per collection sensor and the list key in the response
+COLLECTION_ENDPOINTS = {
+    "mounts_collected": ("collections/mounts", "mounts"),
+    "pets_collected": ("collections/pets", "pets"),
+    "toys_collected": ("collections/toys", "toys"),
+    "heirlooms_collected": ("collections/heirlooms", "heirlooms"),
+}
+
+
+def _guild_path(guild: Dict[str, Any]) -> Optional[str]:
+    """Extract "{realmSlug}/{nameSlug}" from the guild link of a profile."""
+    href = ((guild or {}).get("key") or {}).get("href") or ""
+    match = re.search(r"/data/wow/guild/([^?]+)", href)
+    return match.group(1) if match else None
+
+
+def _stat_value(stats: Dict[str, Any], *keys: str) -> Optional[float]:
+    """Highest percentage among rating stats such as melee/spell/ranged crit."""
+    values = [
+        (stats.get(key) or {}).get("value")
+        for key in keys
+        if isinstance(stats.get(key), dict)
+    ]
+    values = [v for v in values if isinstance(v, (int, float))]
+    return round(max(values), 2) if values else None
+
+
+def parse_statistics(stats: Dict[str, Any]) -> Dict[str, Any]:
+    """Character stats endpoint to sensor values and attributes."""
+    if not stats:
+        return {}
+    versatility = stats.get("versatility_damage_done_bonus")
+    result = {
+        "stat_health": stats.get("health"),
+        "stat_crit": _stat_value(stats, "melee_crit", "spell_crit", "ranged_crit"),
+        "stat_haste": _stat_value(stats, "melee_haste", "spell_haste", "ranged_haste"),
+        "stat_mastery": _stat_value(stats, "mastery"),
+        "stat_versatility": round(versatility, 2) if isinstance(versatility, (int, float)) else None,
+    }
+    attrs = {
+        "power_type": (stats.get("power_type") or {}).get("name"),
+        "power": stats.get("power"),
+    }
+    for key in ("strength", "agility", "intellect", "stamina", "spirit", "armor"):
+        if isinstance(stats.get(key), dict):
+            attrs[key] = stats[key].get("effective")
+    for key in ("attack_power", "spell_power"):
+        if key in stats:
+            attrs[key] = stats[key]
+    result["attrs"] = {"stat_health": attrs}
+    return result
+
+
+def parse_professions(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Professions endpoint: primary profession names, skill of the newest tier."""
+    if not data:
+        return {}
+    professions = {}
+    primary_names = []
+    for kind in ("primaries", "secondaries"):
+        for entry in data.get(kind) or []:
+            name = (entry.get("profession") or {}).get("name")
+            if not name:
+                continue
+            tiers = [t for t in entry.get("tiers") or [] if isinstance(t, dict)]
+            newest = max(tiers, key=lambda t: (t.get("tier") or {}).get("id", 0), default={})
+            professions[name] = {
+                "type": "primary" if kind == "primaries" else "secondary",
+                "tier": (newest.get("tier") or {}).get("name"),
+                "skill_points": newest.get("skill_points"),
+                "max_skill_points": newest.get("max_skill_points"),
+            }
+            if kind == "primaries":
+                primary_names.append(name)
+    return {
+        "professions": ", ".join(primary_names) if primary_names else None,
+        "attrs": {"professions": {"professions": professions}},
+    }
+
+
+def parse_reputations(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Reputations endpoint: number of known factions, standing per faction."""
+    if not data:
+        return {}
+    factions = {}
+    for entry in data.get("reputations") or []:
+        name = (entry.get("faction") or {}).get("name")
+        standing = entry.get("standing") or {}
+        if not name:
+            continue
+        text = standing.get("name") or ""
+        if standing.get("max"):
+            text = f"{text} ({standing.get('value', 0)}/{standing['max']})".strip()
+        factions[name] = text
+    return {
+        "reputations": len(factions),
+        "attrs": {"reputations": {"factions": factions}},
+    }
+
+
+def parse_talents(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Specializations endpoint for Retail, Classic Progression and older Classic."""
+    if not data:
+        return {}
+    active = data.get("active_specialization") or {}
+
+    # Retail: specializations with loadouts and hero talents
+    if data.get("active_hero_talent_tree") is not None or any(
+        "loadouts" in s for s in data.get("specializations") or []
+    ):
+        hero = (data.get("active_hero_talent_tree") or {}).get("name")
+        loadout_code = None
+        for spec in data.get("specializations") or []:
+            if (spec.get("specialization") or {}).get("id") != active.get("id"):
+                continue
+            for loadout in spec.get("loadouts") or []:
+                if loadout.get("is_active"):
+                    loadout_code = loadout.get("talent_loadout_code")
+        return {
+            "talents": hero or active.get("name"),
+            "attrs": {"talents": {
+                "specialization": active.get("name"),
+                "hero_talent_tree": hero,
+                "loadout_code": loadout_code,
+            }},
+        }
+
+    # Classic Progression: one talent list per specialization plus glyphs
+    if active:
+        talents = []
+        for spec in data.get("specializations") or []:
+            if (spec.get("specialization") or {}).get("id") != active.get("id"):
+                continue
+            for talent in spec.get("talents") or []:
+                name = ((talent.get("spell_tooltip") or {}).get("spell") or {}).get("name")
+                if name:
+                    talents.append(name)
+        glyphs = []
+        for group in data.get("specialization_groups") or []:
+            if group.get("is_active"):
+                glyphs = [g.get("name") for g in group.get("glyphs") or [] if g.get("name")]
+        return {
+            "talents": active.get("name"),
+            "attrs": {"talents": {
+                "specialization": active.get("name"),
+                "talent_list": talents,
+                "glyphs": glyphs,
+            }},
+        }
+
+    # Classic Era / Anniversary: talent points per tree in the active group
+    for group in data.get("specialization_groups") or []:
+        if not group.get("is_active"):
+            continue
+        points = {
+            spec.get("specialization_name"): spec.get("spent_points", 0)
+            for spec in group.get("specializations") or []
+            if spec.get("specialization_name")
+        }
+        if not points:
+            return {}
+        return {
+            "talents": " / ".join(f"{name} {spent}" for name, spent in points.items()),
+            "attrs": {"talents": {
+                "specialization": max(points, key=points.get),
+                "talent_points": points,
+            }},
+        }
+    return {}
+
+
+def parse_dungeons(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Dungeon encounters: dungeons completed in the newest expansion."""
+    expansions = (data or {}).get("expansions") or []
+    current = max(expansions, key=lambda e: (e.get("expansion") or {}).get("id", 0), default=None)
+    if current is None:
+        return {}
+    dungeons = {}
+    for instance in current.get("instances") or []:
+        name = (instance.get("instance") or {}).get("name")
+        modes = [
+            # Some completed modes come without a difficulty
+            (mode.get("difficulty") or {}).get("type") or "OTHER"
+            for mode in instance.get("modes") or []
+            if (mode.get("status") or {}).get("type") == "COMPLETE"
+        ]
+        if name and modes:
+            dungeons[name] = sorted(set(m.lower() for m in modes))
+    return {
+        "dungeons_completed": len(dungeons),
+        "attrs": {"dungeons_completed": {
+            "expansion": (current.get("expansion") or {}).get("name"),
+            "dungeons": dungeons,
+        }},
+    }
+
+
+def parse_achievement_statistics(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Pick total deaths and completed quests from the achievement statistics."""
+    found = {}
+
+    def walk(category):
+        for stat in category.get("statistics") or []:
+            found[stat.get("id")] = stat.get("quantity")
+        for sub in category.get("sub_categories") or []:
+            walk(sub)
+
+    for category in (data or {}).get("categories") or []:
+        walk(category)
+    result = {}
+    for key, stat_id in (("deaths", STATISTIC_TOTAL_DEATHS), ("quests_completed", STATISTIC_QUESTS_COMPLETED)):
+        value = found.get(stat_id)
+        if isinstance(value, (int, float)):
+            result[key] = int(value)
+    return result
+
+
+def parse_hunter_pets(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Hunter pets: summoned (or first active) pet as state, all pets as attribute."""
+    pets = [p for p in (data or {}).get("hunter_pets") or [] if isinstance(p, dict)]
+    if not pets:
+        return {}
+    current = next((p for p in pets if p.get("is_summoned")), None) or next(
+        (p for p in pets if p.get("is_active")), None
+    )
+    return {
+        "hunter_pet": (current or {}).get("name"),
+        "attrs": {"hunter_pet": {"pets": [
+            {
+                "name": p.get("name"),
+                "level": p.get("level"),
+                "creature": (p.get("creature") or {}).get("name"),
+                "slot": p.get("slot"),
+                "active": bool(p.get("is_active")),
+            }
+            for p in pets
+        ]}},
+    }
+
+
+def _merge(result: Dict[str, Any], part: Dict[str, Any]) -> None:
+    """Merge parsed values into result, combining the per-sensor attributes."""
+    for key, value in part.items():
+        if key == "attrs":
+            result.setdefault("attrs", {}).update(value)
+        else:
+            result[key] = value
 
 
 def assign_character_keys(characters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -122,11 +387,17 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self.features = features
         self.realms = assign_realm_keys(self.characters)
         self.has_retail = any(c[CONF_GAME_VERSION] == "retail" for c in self.characters)
+        self.has_classic_progression = any(c[CONF_GAME_VERSION] == "classic" for c in self.characters)
 
         # Cache for dynamic raid discovery and Hall of Fame leaderboards
         self._cached_raids = None
         self._last_raids_fetch = None
         self._hof_cache = {}
+        # Slowly changing data: char_key -> (last login, fetch time, data);
+        # guild path -> (fetch time, data); current weekly period
+        self._slow_cache: Dict[str, Any] = {}
+        self._guild_cache: Dict[str, Any] = {}
+        self._period: Dict[str, Any] = {}
 
         super().__init__(
             hass,
@@ -153,16 +424,12 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             version_sensors = get_sensor_types_for_version(game_version)
             supported_basic = version_sensors["basic"]
 
-            # Achievements: only fetch if supported by this version
-            achievement_points = None
-            if "achievement_points" in supported_basic:
-                achievements = await self.client.get_character_achievements(realm, character_name, game_version=game_version)
-                achievement_points = achievements.get("total_points")
-
             # Get guild information
             guild_name = None
+            guild_path = None
             if profile.get("guild"):
                 guild_name = profile["guild"].get("name")
+                guild_path = _guild_path(profile["guild"])
 
             # Fetch character media (avatar & full-body render)
             avatar_url = None
@@ -184,8 +451,15 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
             character_class = profile.get("character_class") or {}
             result = {
+                "character_status": "valid",
                 "character_level": profile.get("level"),
                 "guild_name": guild_name,
+                "guild_path": guild_path,
+                # Titles are templates like "%s, Liberator of Orgrimmar"
+                "active_title": (
+                    ((profile.get("active_title") or {}).get("name") or "").replace("%s", profile.get("name") or "").strip()
+                    or None
+                ),
                 "last_login_timestamp": profile.get("last_login_timestamp"),
                 "character_class": character_class.get("name"),
                 "character_class_id": character_class.get("id"),
@@ -205,7 +479,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             if "character_item_level" in supported_basic:
                 result["character_item_level"] = profile.get("equipped_item_level")
             if "achievement_points" in supported_basic:
-                result["achievement_points"] = achievement_points
+                # The profile carries the total; the achievements endpoint is >1 MB
+                result["achievement_points"] = profile.get("achievement_points")
 
             return result
 
@@ -306,8 +581,14 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             # Extract ratings and stats
             result = {}
 
-            if "pvp_honor_level" in supported_pvp and pvp_data.get("summary"):
-                result["pvp_honor_level"] = pvp_data["summary"].get("honor_level", 0)
+            summary = pvp_data.get("summary") or {}
+            if "pvp_honor_level" in supported_pvp and summary:
+                result["pvp_honor_level"] = summary.get("honor_level", 0)
+            if "pvp_honorable_kills" in supported_pvp and summary:
+                result["pvp_honorable_kills"] = summary.get("honorable_kills", 0)
+            if "pvp_rank" in supported_pvp and summary:
+                # Classic Era honor rank (0 = no rank)
+                result["pvp_rank"] = summary.get("pvp_rank", 0)
 
             wins_season = 0
             for bracket, data in pvp_data.items():
@@ -364,17 +645,21 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             progress = {sensor: 0 for sensor in RAID_DIFFICULTY_SENSORS.values()}
             totals = {sensor: 0 for sensor in RAID_DIFFICULTY_SENSORS.values()}
             raids_detail = {}
-            total_kills = 0
+            # Current raids are listed twice (their expansion and the
+            # "Current Season" group), so count each raid/difficulty once
+            kills_by_mode = {}
 
             for expansion in expansions:
                 is_current = expansion is current
                 for instance in expansion.get("instances", []):
                     instance_name = (instance.get("instance") or {}).get("name")
+                    instance_id = (instance.get("instance") or {}).get("id", instance_name)
                     for mode in instance.get("modes", []):
                         difficulty_type = (mode.get("difficulty") or {}).get("type", "")
                         mode_progress = mode.get("progress") or {}
                         completed = mode_progress.get("completed_count", 0)
-                        total_kills += completed
+                        mode_key = (instance_id, difficulty_type)
+                        kills_by_mode[mode_key] = max(kills_by_mode.get(mode_key, 0), completed)
 
                         sensor = RAID_DIFFICULTY_SENSORS.get(difficulty_type)
                         if not is_current or sensor is None:
@@ -391,7 +676,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 if sensor in supported_raid:
                     result[sensor] = progress[sensor]
             if "raid_kills_total" in supported_raid:
-                result["raid_kills_total"] = total_kills
+                result["raid_kills_total"] = sum(kills_by_mode.values())
             result["raid_expansion"] = ((current or {}).get("expansion") or {}).get("name")
             result["raid_total_bosses"] = totals
             result["raid_details"] = raids_detail
@@ -451,6 +736,142 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"Error fetching M+ data for {character_name}-{realm}: {err}")
             return {}
 
+    async def _fetch_character_status(self, realm: str, character_name: str, game_version: str) -> Optional[str]:
+        """Check why a profile is missing: "not_found", "invalid" or None (API hiccup)."""
+        status = await self.client.get_character_resource(realm, character_name, "status", game_version)
+        if status:
+            return "valid" if status.get("is_valid", True) else "invalid"
+        if self.client.last_status == 404:
+            return "not_found"
+        return None
+
+    async def _fetch_details_data(self, realm: str, character_name: str, game_version: str, class_id: Optional[int]) -> Dict[str, Any]:
+        """Fetch professions, stats, titles, reputations, talents, dungeons and more."""
+        supported = get_sensor_types_for_version(game_version)["details"]
+        if not self.features.get(CONF_ENABLE_CHARACTER_DETAILS, False) or not supported:
+            return {}
+
+        # (endpoint, parser, sensors that need it)
+        sources = [
+            ("statistics", parse_statistics, {"stat_health", "stat_crit", "stat_haste", "stat_mastery", "stat_versatility"}),
+            ("professions", parse_professions, {"professions"}),
+            ("reputations", parse_reputations, {"reputations"}),
+            ("specializations", parse_talents, {"talents"}),
+            ("encounters/dungeons", parse_dungeons, {"dungeons_completed"}),
+            ("achievements/statistics", parse_achievement_statistics, {"deaths", "quests_completed"}),
+        ]
+        if class_id == HUNTER_CLASS_ID:
+            sources.append(("hunter-pets", parse_hunter_pets, {"hunter_pet"}))
+
+        result: Dict[str, Any] = {}
+        for resource, parser, sensors in sources:
+            if not sensors & set(supported):
+                continue
+            data = await self.client.get_character_resource(realm, character_name, resource, game_version)
+            _merge(result, parser(data))
+            await asyncio.sleep(0.1)
+
+        # Retail lists all earned titles; the active one comes with the profile
+        if game_version == "retail" and "active_title" in supported:
+            titles = await self.client.get_character_resource(realm, character_name, "titles", game_version)
+            if titles:
+                result.setdefault("attrs", {})["active_title"] = {"title_count": len(titles.get("titles") or [])}
+        return result
+
+    async def _fetch_collections_data(self, realm: str, character_name: str, game_version: str) -> Dict[str, Any]:
+        """Fetch the number of collected mounts, pets, toys and heirlooms."""
+        supported = get_sensor_types_for_version(game_version)["collections"]
+        if not self.features.get(CONF_ENABLE_COLLECTIONS, False) or not supported:
+            return {}
+        result = {}
+        for sensor, (resource, list_key) in COLLECTION_ENDPOINTS.items():
+            if sensor not in supported:
+                continue
+            data = await self.client.get_character_resource(realm, character_name, resource, game_version)
+            if data:
+                result[sensor] = len(data.get(list_key) or [])
+            await asyncio.sleep(0.1)
+        return result
+
+    async def _fetch_slow_character_data(self, char_key: str, realm: str, character_name: str, game_version: str, basic: Dict[str, Any]) -> Dict[str, Any]:
+        """Details and collections, refetched after a new login or every few hours."""
+        last_login = basic.get("last_login_timestamp")
+        now = datetime.now()
+        cached = self._slow_cache.get(char_key)
+        if cached and cached[0] == last_login and now - cached[1] < timedelta(seconds=SLOW_REFRESH_INTERVAL):
+            return cached[2]
+
+        data: Dict[str, Any] = {}
+        _merge(data, await self._fetch_details_data(realm, character_name, game_version, basic.get("character_class_id")))
+        _merge(data, await self._fetch_collections_data(realm, character_name, game_version))
+        if not data and cached:
+            # Everything failed, keep the old values and retry next update
+            return cached[2]
+        self._slow_cache[char_key] = (last_login, now, data)
+        return data
+
+    async def _fetch_guild_data(self, guild_path: Optional[str], game_version: str) -> Dict[str, Any]:
+        """Fetch guild member count and achievement points, cached per guild."""
+        if not self.features.get(CONF_ENABLE_GUILD, False) or not guild_path:
+            return {}
+        if not get_sensor_types_for_version(game_version)["guild"]:
+            return {}
+
+        cache_key = f"{game_version}:{guild_path}"
+        now = datetime.now()
+        cached = self._guild_cache.get(cache_key)
+        if cached and now - cached[0] < timedelta(seconds=GUILD_REFRESH_INTERVAL):
+            return cached[1]
+
+        guild = await self.client.get_guild(guild_path, game_version)
+        if not guild:
+            return cached[1] if cached else {}
+        data = {
+            "guild_members": guild.get("member_count"),
+            "attrs": {"guild_members": {
+                "guild": guild.get("name"),
+                "guild_realm": (guild.get("realm") or {}).get("name"),
+                "guild_faction": (guild.get("faction") or {}).get("name"),
+                "guild_achievement_points": guild.get("achievement_points"),
+                "guild_created": _format_timestamp(guild.get("created_timestamp")),
+            }},
+        }
+        self._guild_cache[cache_key] = (now, data)
+        return data
+
+    async def _fetch_region_data(self) -> Dict[str, Any]:
+        """Fetch WoW Token prices and the weekly reset for the region."""
+        if not self.features.get(CONF_ENABLE_REGION_DATA, False):
+            return {}
+        result: Dict[str, Any] = {}
+        for sensor, game_version, enabled in (
+            ("wow_token_price", "retail", self.has_retail),
+            ("wow_token_price_classic", "classic", self.has_classic_progression),
+        ):
+            if not enabled:
+                continue
+            token = await self.client.get_wow_token(game_version)
+            if isinstance(token.get("price"), int):
+                # Price is in copper: 1 gold = 100 silver = 10,000 copper
+                result[sensor] = token["price"] // 10000
+                result.setdefault("attrs", {})[sensor] = {
+                    "last_updated": _format_timestamp(token.get("last_updated_timestamp")),
+                }
+
+        if self.has_retail:
+            now_ms = datetime.now(timezone.utc).timestamp() * 1000
+            if not self._period or now_ms > (self._period.get("end_timestamp") or 0):
+                self._period = await self.client.get_current_keystone_period() or self._period
+            end = self._period.get("end_timestamp")
+            if isinstance(end, int):
+                # The period ends one second before the reset
+                result["weekly_reset"] = end + 1000
+                result.setdefault("attrs", {})["weekly_reset"] = {
+                    "period_id": self._period.get("id"),
+                    "period_start": _format_timestamp(self._period.get("start_timestamp")),
+                }
+        return result
+
     async def _async_update_data(self):
         """Update data via library."""
         try:
@@ -465,21 +886,32 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
                 basic_data = await self._fetch_basic_character_data(realm, name, game_version=game_version)
                 if not basic_data:
-                    # Keep the last known values instead of dropping to 0
-                    all_data[char_key] = self._previous(char_key)
+                    # Keep the last known values instead of dropping to 0,
+                    # but report renamed, transferred or deleted characters
+                    previous = dict(self._previous(char_key))
+                    status = await self._fetch_character_status(realm, name, game_version)
+                    if status:
+                        previous["character_status"] = status
+                    all_data[char_key] = previous
                     continue
 
                 pvp_data = await self._fetch_pvp_data(realm, name, game_version=game_version)
                 raid_data = await self._fetch_raid_data(realm, name, game_version=game_version)
                 mythicplus_data = await self._fetch_mythicplus_data(realm, name, game_version=game_version)
+                slow_data = await self._fetch_slow_character_data(char_key, realm, name, game_version, basic_data)
+                guild_data = await self._fetch_guild_data(basic_data.get("guild_path"), game_version)
 
                 # Combine all character data
-                all_data[char_key] = {
+                char_data = {
                     **basic_data,
                     **pvp_data,
                     **raid_data,
                     **mythicplus_data,
                 }
+                # Per-sensor attributes are merged, not overwritten
+                _merge(char_data, slow_data)
+                _merge(char_data, guild_data)
+                all_data[char_key] = char_data
 
                 # Small delay to avoid rate limiting
                 await asyncio.sleep(0.1)
@@ -505,6 +937,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                         "raid_name": raid["name"],
                     }
                 all_data["leaderboards"] = leaderboards
+
+            region_data = await self._fetch_region_data()
+            all_data["region"] = region_data or self._previous("region")
 
             # Combine character and server data
             all_data["servers"] = server_data
@@ -595,6 +1030,10 @@ async def async_create_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> W
             CONF_ENABLE_RAIDS,
             CONF_ENABLE_MYTHIC_PLUS,
             CONF_ENABLE_HALL_OF_FAME,
+            CONF_ENABLE_CHARACTER_DETAILS,
+            CONF_ENABLE_COLLECTIONS,
+            CONF_ENABLE_GUILD,
+            CONF_ENABLE_REGION_DATA,
         )
     }
 
@@ -642,6 +1081,18 @@ async def async_setup_entry(
             sensor_types += list(version_sensors["raid"])
         if features[CONF_ENABLE_MYTHIC_PLUS]:
             sensor_types += list(version_sensors["mythicplus"])
+        if features[CONF_ENABLE_CHARACTER_DETAILS]:
+            char_data = (coordinator.data or {}).get(char_key) or {}
+            sensor_types += [
+                key for key in version_sensors["details"]
+                # Only hunters have pets
+                if key != "hunter_pet" or char_data.get("character_class_id") == HUNTER_CLASS_ID
+            ]
+        if features[CONF_ENABLE_COLLECTIONS]:
+            sensor_types += list(version_sensors["collections"])
+        if features[CONF_ENABLE_GUILD] and ((coordinator.data or {}).get(char_key) or {}).get("guild_path"):
+            # Guild sensors only for characters in a guild (reload after joining one)
+            sensor_types += list(version_sensors["guild"])
 
         for sensor_type in sensor_types:
             entities.append(
@@ -663,6 +1114,16 @@ async def async_setup_entry(
                 WoWLeaderboardSensor(coordinator, "hall_of_fame", raid["id"], raid["name"])
             )
 
+    # Region-wide sensors (WoW Token, weekly reset)
+    if features[CONF_ENABLE_REGION_DATA]:
+        region_sensors = []
+        if coordinator.has_retail:
+            region_sensors += ["wow_token_price", "weekly_reset"]
+        if coordinator.has_classic_progression:
+            region_sensors.append("wow_token_price_classic")
+        for sensor_type in region_sensors:
+            entities.append(WoWRegionSensor(coordinator, sensor_type, entry.entry_id))
+
     async_add_entities(entities)
 
 
@@ -674,8 +1135,11 @@ def _game_version_label(game_version: str) -> str:
 class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
     """Representation of a WoW character sensor."""
 
-    # Gear details are large and change rarely; keep them out of the recorder
-    _unrecorded_attributes = frozenset({"equipped_items", "equipped_items_list"})
+    # Gear details and other lists are large and change rarely; keep them out of the recorder
+    _unrecorded_attributes = frozenset({
+        "equipped_items", "equipped_items_list", "factions", "professions",
+        "talent_list", "talent_points", "glyphs", "loadout_code", "dungeons", "pets",
+    })
 
     def __init__(
         self,
@@ -705,6 +1169,8 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
         self._attr_native_unit_of_measurement = sensor_config.get("unit")
         self._attr_device_class = sensor_config.get("device_class")
         self._attr_state_class = sensor_config.get("state_class")
+        if "options" in sensor_config:
+            self._attr_options = sensor_config["options"]
 
     @property
     def _char_data(self) -> Dict[str, Any]:
@@ -771,8 +1237,17 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
                 }
         elif self._sensor_type in MYTHICPLUS_SENSOR_TYPES:
             attributes["category"] = "mythic_plus"
+        elif self._sensor_type in DETAIL_SENSOR_TYPES:
+            attributes["category"] = "details"
+        elif self._sensor_type in COLLECTION_SENSOR_TYPES:
+            attributes["category"] = "collections"
+        elif self._sensor_type in GUILD_SENSOR_TYPES:
+            attributes["category"] = "guild"
         else:
             attributes["category"] = "character"
+
+        # Sensor specific details, e.g. skill per profession or standing per faction
+        attributes.update((char_data.get("attrs") or {}).get(self._sensor_type) or {})
 
         return attributes
 
@@ -983,5 +1458,63 @@ class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
             "name": "WoW Leaderboards",
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Leaderboards",
+            "entry_type": DeviceEntryType.SERVICE,
+        }
+
+
+class WoWRegionSensor(CoordinatorEntity, SensorEntity):
+    """Region-wide sensor such as the WoW Token price or the weekly reset."""
+
+    def __init__(
+        self,
+        coordinator: WoWDataUpdateCoordinator,
+        sensor_type: str,
+        entry_id: str,
+    ):
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._sensor_type = sensor_type
+        self._region = coordinator.client.region
+
+        sensor_config = REGION_SENSOR_TYPES[sensor_type]
+        self._attr_has_entity_name = True
+        self._attr_translation_key = sensor_type
+        self._attr_unique_id = f"{DOMAIN}_{entry_id}_{sensor_type}"
+        self._attr_icon = sensor_config["icon"]
+        self._attr_native_unit_of_measurement = sensor_config.get("unit")
+        self._attr_device_class = sensor_config.get("device_class")
+        self._attr_state_class = sensor_config.get("state_class")
+
+    @property
+    def _region_data(self) -> Dict[str, Any]:
+        if not self.coordinator.data:
+            return {}
+        return self.coordinator.data.get("region") or {}
+
+    @property
+    def native_value(self):
+        """Return the state of the sensor."""
+        value = self._region_data.get(self._sensor_type)
+        if value is not None and self._sensor_type == "weekly_reset":
+            return datetime.fromtimestamp(value / 1000, timezone.utc)
+        return value
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return additional state attributes."""
+        return {
+            "region": self._region.upper(),
+            "category": "region",
+            **((self._region_data.get("attrs") or {}).get(self._sensor_type) or {}),
+        }
+
+    @property
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {(DOMAIN, f"region_{self._region}")},
+            "name": f"WoW {self._region.upper()}",
+            "manufacturer": "Blizzard Entertainment",
+            "model": "World of Warcraft Region",
             "entry_type": DeviceEntryType.SERVICE,
         }

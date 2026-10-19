@@ -19,7 +19,11 @@
           "enable_pvp": "PvP-Statistiken aktivieren",
           "enable_raids": "Schlachtzugsfortschritt aktivieren",
           "enable_mythic_plus": "Mythic+ Daten aktivieren",
-          "enable_hall_of_fame": "Raid-Ruhmeshalle aktivieren"
+          "enable_hall_of_fame": "Raid-Ruhmeshalle aktivieren",
+          "enable_character_details": "Charakterdetails aktivieren (Berufe, Werte, Talente, Ruf, ...)",
+          "enable_collections": "Sammlungen aktivieren (Reittiere, Haustiere, Spielzeuge, Erbstücke)",
+          "enable_guild": "Gildendaten aktivieren",
+          "enable_region_data": "WoW-Marken-Preis und Wochen-Reset aktivieren"
         }
       },
       "character": {
@@ -82,7 +86,11 @@
           "enable_pvp": "PvP-Statistiken & Wertungen",
           "enable_raids": "Raid-Fortschritt & Boss-Kills",
           "enable_mythic_plus": "Mythic+ Wertungen & Durchläufe",
-          "enable_hall_of_fame": "Raid-Ruhmeshalle / Leaderboards"
+          "enable_hall_of_fame": "Raid-Ruhmeshalle / Leaderboards",
+          "enable_character_details": "Charakterdetails (Berufe, Werte, Talente, Ruf, ...)",
+          "enable_collections": "Sammlungen (Reittiere, Haustiere, Spielzeuge, Erbstücke)",
+          "enable_guild": "Gildenmitglieder & Erfolgspunkte",
+          "enable_region_data": "WoW-Marken-Preis & Wochen-Reset"
         }
       },
       "add_character": {
@@ -195,6 +203,83 @@
       },
       "hall_of_fame": {
         "name": "Ruhmeshalle"
+      },
+      "character_status": {
+        "name": "Profilstatus",
+        "state": {
+          "valid": "Gültig",
+          "invalid": "Ungültig",
+          "not_found": "Nicht gefunden"
+        }
+      },
+      "pvp_honorable_kills": {
+        "name": "Ehrenhafte Siege"
+      },
+      "pvp_rank": {
+        "name": "PvP-Rang"
+      },
+      "professions": {
+        "name": "Berufe"
+      },
+      "stat_health": {
+        "name": "Gesundheit"
+      },
+      "stat_crit": {
+        "name": "Kritische Trefferchance"
+      },
+      "stat_haste": {
+        "name": "Tempo"
+      },
+      "stat_mastery": {
+        "name": "Meisterschaft"
+      },
+      "stat_versatility": {
+        "name": "Vielseitigkeit"
+      },
+      "active_title": {
+        "name": "Titel"
+      },
+      "reputations": {
+        "name": "Ruf"
+      },
+      "talents": {
+        "name": "Talente"
+      },
+      "dungeons_completed": {
+        "name": "Abgeschlossene Dungeons"
+      },
+      "deaths": {
+        "name": "Tode"
+      },
+      "quests_completed": {
+        "name": "Abgeschlossene Quests"
+      },
+      "hunter_pet": {
+        "name": "Jägerbegleiter"
+      },
+      "mounts_collected": {
+        "name": "Reittiere"
+      },
+      "pets_collected": {
+        "name": "Haustiere"
+      },
+      "toys_collected": {
+        "name": "Spielzeuge"
+      },
+      "heirlooms_collected": {
+        "name": "Erbstücke"
+      },
+      "guild_members": {
+        "name": "Gildenmitglieder"
+      },
+      "wow_token_price": {
+        "name": "WoW-Marken-Preis"
+      },
+      "wow_token_price_classic": {
+        "name": "WoW-Marken-Preis (Classic)"
+      },
+      "weekly_reset": {
+        "name": "Wochen-Reset"
       }
     }
   },

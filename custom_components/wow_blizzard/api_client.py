@@ -68,6 +68,9 @@ class WoWBlizzardAPIClient:
         self._token_expires = None
         self._request_count = 0
         self._last_request_reset = datetime.now()
+        # HTTP status of the last API request (None on network errors), lets
+        # callers tell a 404 apart from other failures
+        self.last_status: Optional[int] = None
         # Resolved namespace suffix per game version (see GAME_VERSIONS)
         self._namespace_suffixes: Dict[str, str] = {}
         # Hall of Fame persisted query hashes, refreshed from the site bundle on demand
@@ -172,7 +175,8 @@ class WoWBlizzardAPIClient:
         try:
             async with session.get(url, headers=headers, params=params) as response:
                 self._request_count += 1
-                
+                self.last_status = response.status
+
                 if response.status == 200:
                     data = await response.json()
                     _LOGGER.debug(f"API Success: {endpoint}")
@@ -199,6 +203,7 @@ class WoWBlizzardAPIClient:
                     _LOGGER.error(f"API Error {response.status}: {error_text}")
                     return {}
         except Exception as e:
+            self.last_status = None
             _LOGGER.error(f"Request failed for {endpoint}: {e}")
             return {}
 
@@ -225,17 +230,17 @@ class WoWBlizzardAPIClient:
         params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(endpoint, params)
 
-    async def get_character_achievements(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
-        """Get character achievements data."""
-        realm_slug = self.realm_to_slug(realm)
-        endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/achievements"
-        params = {"namespace": self.get_namespace("profile", game_version)}
-        return await self._make_request(endpoint, params)
-
     async def get_character_media(self, realm: str, character_name: str, game_version: str = "retail") -> Dict[str, Any]:
         """Get character media data (portrait renders)."""
         realm_slug = self.realm_to_slug(realm)
         endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/character-media"
+        params = {"namespace": self.get_namespace("profile", game_version)}
+        return await self._make_request(endpoint, params)
+
+    async def get_character_resource(self, realm: str, character_name: str, resource: str, game_version: str = "retail") -> Dict[str, Any]:
+        """Get a character sub-resource such as "status", "professions" or "collections/mounts"."""
+        realm_slug = self.realm_to_slug(realm)
+        endpoint = f"/profile/wow/character/{realm_slug}/{character_name.lower()}/{resource}"
         params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(endpoint, params)
 
@@ -327,17 +332,34 @@ class WoWBlizzardAPIClient:
 
     # === Guild Methods ===
     
-    async def get_guild_info(self, realm: str, guild_name: str) -> Dict[str, Any]:
-        """Get guild information."""
-        if not guild_name or not isinstance(guild_name, str):
+    async def get_guild(self, guild_path: str, game_version: str = "retail") -> Dict[str, Any]:
+        """Get guild information by its "{realmSlug}/{nameSlug}" path.
+
+        The path is taken from the guild link in the character profile, since the
+        guild's realm can differ from the character's (connected realms).
+        """
+        if not guild_path:
             return {}
-        realm_slug = self.realm_to_slug(realm)
-        endpoint = f"/data/wow/guild/{realm_slug}/{guild_name.lower().replace(' ', '-')}"
-        params = {"namespace": f"profile-{self.region}"}
+        endpoint = f"/data/wow/guild/{guild_path}"
+        params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(endpoint, params)
 
-    # === Multi-character support ===
-    
+    # === Region-wide data ===
+
+    async def get_wow_token(self, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the current WoW Token price (in copper) for the region."""
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
+        return await self._make_request("/data/wow/token/index", params)
+
+    async def get_current_keystone_period(self) -> Dict[str, Any]:
+        """Get the current weekly period (start and end of the reset week)."""
+        params = {"namespace": self.get_namespace("dynamic", "retail")}
+        index = await self._make_request("/data/wow/mythic-keystone/period/index", params)
+        period_id = (index.get("current_period") or {}).get("id")
+        if not isinstance(period_id, int):
+            return {}
+        return await self._make_request(f"/data/wow/mythic-keystone/period/{period_id}", params)
+
     # === Hall of Fame and expansions ===
 
     def _hof_locale(self) -> str:

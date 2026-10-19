@@ -19,7 +19,11 @@
           "enable_pvp": "Enable PvP Statistics",
           "enable_raids": "Enable Raid Progress",
           "enable_mythic_plus": "Enable Mythic+ Data",
-          "enable_hall_of_fame": "Enable Raid Hall of Fame"
+          "enable_hall_of_fame": "Enable Raid Hall of Fame",
+          "enable_character_details": "Enable character details (professions, stats, talents, reputations, ...)",
+          "enable_collections": "Enable collections (mounts, pets, toys, heirlooms)",
+          "enable_guild": "Enable guild data",
+          "enable_region_data": "Enable WoW Token price and weekly reset"
         }
       },
       "character": {
@@ -82,7 +86,11 @@
           "enable_pvp": "PvP Statistics & Ratings",
           "enable_raids": "Raid Progress & Boss Kills",
           "enable_mythic_plus": "Mythic+ Scores & Runs",
-          "enable_hall_of_fame": "Raid Hall of Fame / Leaderboards"
+          "enable_hall_of_fame": "Raid Hall of Fame / Leaderboards",
+          "enable_character_details": "Character details (professions, stats, talents, reputations, ...)",
+          "enable_collections": "Collections (mounts, pets, toys, heirlooms)",
+          "enable_guild": "Guild members & achievement points",
+          "enable_region_data": "WoW Token price & weekly reset"
         }
       },
       "add_character": {
@@ -195,6 +203,83 @@
       },
       "hall_of_fame": {
         "name": "Hall of Fame"
+      },
+      "character_status": {
+        "name": "Profile Status",
+        "state": {
+          "valid": "Valid",
+          "invalid": "Invalid",
+          "not_found": "Not found"
+        }
+      },
+      "pvp_honorable_kills": {
+        "name": "Honorable Kills"
+      },
+      "pvp_rank": {
+        "name": "PvP Rank"
+      },
+      "professions": {
+        "name": "Professions"
+      },
+      "stat_health": {
+        "name": "Health"
+      },
+      "stat_crit": {
+        "name": "Critical Strike"
+      },
+      "stat_haste": {
+        "name": "Haste"
+      },
+      "stat_mastery": {
+        "name": "Mastery"
+      },
+      "stat_versatility": {
+        "name": "Versatility"
+      },
+      "active_title": {
+        "name": "Title"
+      },
+      "reputations": {
+        "name": "Reputations"
+      },
+      "talents": {
+        "name": "Talents"
+      },
+      "dungeons_completed": {
+        "name": "Dungeons Completed"
+      },
+      "deaths": {
+        "name": "Deaths"
+      },
+      "quests_completed": {
+        "name": "Quests Completed"
+      },
+      "hunter_pet": {
+        "name": "Hunter Pet"
+      },
+      "mounts_collected": {
+        "name": "Mounts"
+      },
+      "pets_collected": {
+        "name": "Pets"
+      },
+      "toys_collected": {
+        "name": "Toys"
+      },
+      "heirlooms_collected": {
+        "name": "Heirlooms"
+      },
+      "guild_members": {
+        "name": "Guild Members"
+      },
+      "wow_token_price": {
+        "name": "WoW Token Price"
+      },
+      "wow_token_price_classic": {
+        "name": "WoW Token Price (Classic)"
+      },
+      "weekly_reset": {
+        "name": "Weekly Reset"
       }
     }
   },
