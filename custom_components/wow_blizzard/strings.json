@@ -71,15 +71,32 @@
       },
       "account_select": {
         "title": "Characters of your account",
-        "description": "Pick the characters to add ({character_count} available).",
-        "data": {
-          "characters": "Characters",
-          "keep_login": "Also load account data (gold, account collections) while the login is valid (24 hours)"
+        "description": "Open a game version and a realm, then tick the characters to add ({character_count} available, already configured ones are hidden).",
+        "sections": {
+          "retail": {
+            "name": "Retail"
+          },
+          "classic": {
+            "name": "Classic Progression (Mists of Pandaria)"
+          },
+          "classicann": {
+            "name": "Classic Anniversary (Burning Crusade)"
+          },
+          "classic1x": {
+            "name": "Classic Era"
+          }
         }
       },
       "account_failed": {
         "title": "Battle.net login not completed",
         "description": "Nothing is lost. Continue to add characters by hand or try the login again. If this keeps failing, check that `https://my.home-assistant.io/redirect/oauth` is a redirect URL of your Battle.net API client."
+      },
+      "account_options": {
+        "title": "Account data",
+        "description": "{selected_count} character(s) selected.\n\nThe Battle.net login can also be kept to load gold per character, total gold and account collections. Blizzard limits logins to 24 hours; afterwards the values keep their last state, everything else keeps working, and you can log in again via Reconfigure whenever you like.",
+        "data": {
+          "keep_login": "Load account data (gold, account collections) while the login is valid"
+        }
       }
     },
     "error": {

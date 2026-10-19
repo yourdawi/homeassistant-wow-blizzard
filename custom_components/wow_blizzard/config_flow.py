@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.data_entry_flow import FlowResult, section
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 from homeassistant.helpers.config_entry_oauth2_flow import LocalOAuth2Implementation
@@ -130,6 +130,15 @@ STEP_GAME_VERSION_SCHEMA = vol.Schema(
         ),
     }
 )
+
+
+def _selected_values(data: Any) -> List[str]:
+    """All picked character keys from the nested version/realm sections."""
+    if isinstance(data, dict):
+        return [value for item in data.values() for value in _selected_values(item)]
+    if isinstance(data, list):
+        return [value for value in data if isinstance(value, str)]
+    return []
 
 
 def game_version_label(game_version: str) -> str:
@@ -354,6 +363,7 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
         self._realm_cache = {}
         self._account_token = None
         self._account_error: Optional[str] = None
+        self._account_selected: List[str] = []
         self._account_characters: Dict[str, Dict[str, Any]] = {}
 
     async def async_step_user(
@@ -486,63 +496,96 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
                 await client.close()
 
         existing = {character_id(c) for c in self.characters}
-        if user_input is not None:
-            for value in user_input.get("characters", []):
-                char = self._account_characters.get(value)
-                if not char:
-                    continue
-                game_version = char[CONF_GAME_VERSION]
-                new = {
-                    CONF_REALM: char["realm_slug"],
-                    CONF_CHARACTER_NAME: char["name"],
-                    CONF_GAME_VERSION: game_version,
-                }
-                if character_id(new) in existing:
-                    continue
-                existing.add(character_id(new))
-                self.characters.append({
-                    **new,
-                    CONF_NAMESPACE_SUFFIX: GAME_VERSIONS[game_version]["namespaces"][0],
-                    "display_name": f"{char['name']} - {char['realm']} ({game_version_label(game_version)})",
-                    "level": char.get("level"),
-                    "character_class": char.get("class") or "Unknown",
-                    "race": "",
-                })
-            if user_input.get("keep_login"):
-                self.data[CONF_ACCOUNT_TOKEN] = self._account_token
-            else:
-                # Unticked: no account data (and no reminders about the login)
-                self.data.pop(CONF_ACCOUNT_TOKEN, None)
-            if self.source == config_entries.SOURCE_RECONFIGURE:
-                entry = self._get_reconfigure_entry()
-                return self.async_update_reload_and_abort(
-                    entry,
-                    title=entry_title(self.characters),
-                    data={**self.data, CONF_CHARACTERS: self.characters},
-                )
-            return await self.async_step_character_menu()
-
-        # Highest level first, characters that are already configured are hidden
-        chars = sorted(self._account_characters.items(), key=lambda kv: -(kv[1].get("level") or 0))
-        options = [
-            {
-                "value": key,
-                "label": f"{c['name']} - {c['realm']} ({game_version_label(c[CONF_GAME_VERSION])}, Lv {c.get('level')}, {c.get('class')})",
-            }
-            for key, c in chars
+        available = {
+            key: c for key, c in self._account_characters.items()
             if character_id({CONF_REALM: c["realm_slug"], CONF_CHARACTER_NAME: c["name"], CONF_GAME_VERSION: c[CONF_GAME_VERSION]}) not in existing
-        ]
+        }
+
+        if user_input is not None:
+            self._account_selected = [key for key in _selected_values(user_input) if key in available]
+            return await self.async_step_account_options()
+
+        # Game version (foldable section) > realm (dropdown) > characters, so
+        # long rosters stay readable; a single game version starts unfolded.
+        grouped: Dict[str, Dict[str, List[Any]]] = {}
+        for key, c in available.items():
+            grouped.setdefault(c[CONF_GAME_VERSION], {}).setdefault(c["realm"] or c["realm_slug"], []).append((key, c))
+
+        schema: Dict[Any, Any] = {}
+        for game_version in ACCOUNT_GAME_VERSIONS:
+            realms = grouped.get(game_version)
+            if not realms:
+                continue
+            realm_schema: Dict[Any, Any] = {}
+            for realm in sorted(realms):
+                chars = sorted(realms[realm], key=lambda kv: (-(kv[1].get("level") or 0), kv[1]["name"]))
+                options = [
+                    {"value": key, "label": f"{c['name']} (Lv {c.get('level')}, {c.get('class')})"}
+                    for key, c in chars
+                ]
+                # HA does not nest sections; a dropdown keeps each realm folded until clicked
+                realm_schema[vol.Optional(f"{realm} ({len(chars)})", default=[])] = selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options, mode=selector.SelectSelectorMode.DROPDOWN, multiple=True
+                    )
+                )
+            schema[vol.Required(game_version)] = section(
+                vol.Schema(realm_schema), {"collapsed": len(grouped) > 1}
+            )
+
         return self.async_show_form(
             step_id="account_select",
-            data_schema=vol.Schema({
-                vol.Optional("characters", default=[]): selector.SelectSelector(
-                    selector.SelectSelectorConfig(options=options, mode=selector.SelectSelectorMode.LIST, multiple=True)
-                ),
-                # Preselected when renewing an existing login
-                vol.Optional("keep_login", default=CONF_ACCOUNT_TOKEN in self.data): bool,
-            }),
-            description_placeholders={"character_count": len(options)},
+            data_schema=vol.Schema(schema),
+            description_placeholders={"character_count": str(len(available))},
         )
+
+    async def async_step_account_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """After picking characters: keep the login for account data (optional)."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="account_options",
+                data_schema=vol.Schema({
+                    # Preselected when renewing an existing login
+                    vol.Optional("keep_login", default=CONF_ACCOUNT_TOKEN in self.data): bool,
+                }),
+                description_placeholders={"selected_count": str(len(self._account_selected))},
+            )
+
+        existing = {character_id(c) for c in self.characters}
+        for key in self._account_selected:
+            char = self._account_characters[key]
+            game_version = char[CONF_GAME_VERSION]
+            new = {
+                CONF_REALM: char["realm_slug"],
+                CONF_CHARACTER_NAME: char["name"],
+                CONF_GAME_VERSION: game_version,
+            }
+            if character_id(new) in existing:
+                continue
+            existing.add(character_id(new))
+            self.characters.append({
+                **new,
+                CONF_NAMESPACE_SUFFIX: GAME_VERSIONS[game_version]["namespaces"][0],
+                "display_name": f"{char['name']} - {char['realm']} ({game_version_label(game_version)})",
+                "level": char.get("level"),
+                "character_class": char.get("class") or "Unknown",
+                "race": "",
+            })
+        if user_input.get("keep_login"):
+            self.data[CONF_ACCOUNT_TOKEN] = self._account_token
+        else:
+            # Unticked: no account data (and no reminders about the login)
+            self.data.pop(CONF_ACCOUNT_TOKEN, None)
+        if self.source == config_entries.SOURCE_RECONFIGURE:
+            entry = self._get_reconfigure_entry()
+            return self.async_update_reload_and_abort(
+                entry,
+                title=entry_title(self.characters),
+                data={**self.data, CONF_CHARACTERS: self.characters},
+            )
+        return await self.async_step_character_menu()
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None

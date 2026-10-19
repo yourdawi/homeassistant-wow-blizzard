@@ -71,15 +71,32 @@
       },
       "account_select": {
         "title": "Charaktere deines Accounts",
-        "description": "Wähle die Charaktere aus, die hinzugefügt werden sollen ({character_count} verfügbar).",
-        "data": {
-          "characters": "Charaktere",
-          "keep_login": "Zusätzlich Account-Daten (Gold, Account-Sammlungen) laden, solange der Login gilt (24 Stunden)"
+        "description": "Öffne eine Spielversion und einen Realm und hake die gewünschten Charaktere an ({character_count} verfügbar, bereits eingerichtete sind ausgeblendet).",
+        "sections": {
+          "retail": {
+            "name": "Retail"
+          },
+          "classic": {
+            "name": "Classic Progression (Mists of Pandaria)"
+          },
+          "classicann": {
+            "name": "Classic Anniversary (Burning Crusade)"
+          },
+          "classic1x": {
+            "name": "Classic Era"
+          }
         }
       },
       "account_failed": {
         "title": "Battle.net-Anmeldung nicht abgeschlossen",
         "description": "Es geht nichts verloren. Weiter, um Charaktere von Hand hinzuzufügen oder die Anmeldung erneut zu versuchen. Klappt es dauerhaft nicht, prüfe, ob `https://my.home-assistant.io/redirect/oauth` als Redirect-URL im Battle.net-API-Client eingetragen ist."
+      },
+      "account_options": {
+        "title": "Account-Daten",
+        "description": "{selected_count} Charakter(e) ausgewählt.\n\nDer Battle.net-Login kann zusätzlich behalten werden, um Gold pro Charakter, Gold gesamt und Account-Sammlungen zu laden. Blizzard begrenzt Logins auf 24 Stunden; danach behalten die Werte ihren letzten Stand, alles andere läuft weiter, und du kannst dich jederzeit über Neu konfigurieren wieder anmelden.",
+        "data": {
+          "keep_login": "Account-Daten laden (Gold, Account-Sammlungen), solange der Login gilt"
+        }
       }
     },
     "error": {
