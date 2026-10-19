@@ -18,6 +18,26 @@ CONF_ENABLE_CHARACTER_DETAILS = "enable_character_details"
 CONF_ENABLE_COLLECTIONS = "enable_collections"
 CONF_ENABLE_GUILD = "enable_guild"
 CONF_ENABLE_REGION_DATA = "enable_region_data"
+CONF_ENABLE_MYTHIC_LEADERBOARD = "enable_mythic_leaderboard"
+# Comma separated item IDs whose auction prices are tracked (empty = off)
+CONF_AUCTION_ITEMS = "auction_items"
+# Battle.net login of the player (OAuth token, expires after 24 hours)
+CONF_ACCOUNT_TOKEN = "account_token"
+
+# Feature toggles and their defaults. The Mythic+ leaderboards download about
+# 8 MB per realm and hour, so they are off unless enabled.
+FEATURE_DEFAULTS = {
+    "enable_server_status": True,
+    "enable_pvp": True,
+    "enable_raids": True,
+    "enable_mythic_plus": True,
+    "enable_hall_of_fame": True,
+    "enable_character_details": True,
+    "enable_collections": True,
+    "enable_guild": True,
+    "enable_region_data": True,
+    "enable_mythic_leaderboard": False,
+}
 CONF_GAME_VERSION = "game_version"
 CONF_LOCALE = "locale"
 
@@ -46,6 +66,24 @@ DEFAULT_SCAN_INTERVAL = 300  # 5 minutes
 # login changes, and otherwise at most this often.
 SLOW_REFRESH_INTERVAL = 6 * 3600
 GUILD_REFRESH_INTERVAL = 3600
+# Blizzard updates auctions and leaderboards about once an hour
+AUCTION_REFRESH_INTERVAL = 3600
+LEADERBOARD_REFRESH_INTERVAL = 3600
+# PvP season and title cutoffs
+PVP_SEASON_REFRESH_INTERVAL = 6 * 3600
+# Account data (gold) while the Battle.net login is valid
+ACCOUNT_REFRESH_INTERVAL = 900
+
+# Battle.net OAuth (player login for account data)
+OAUTH_AUTHORIZE_URLS = {
+    "cn": "https://oauth.battlenet.com.cn/authorize",
+}
+OAUTH_TOKEN_URLS = {
+    "cn": "https://oauth.battlenet.com.cn/token",
+}
+OAUTH_AUTHORIZE_URL_DEFAULT = "https://oauth.battle.net/authorize"
+OAUTH_TOKEN_URL_DEFAULT = "https://oauth.battle.net/token"
+OAUTH_SCOPE = "wow.profile"
 
 # Game versions and their Blizzard API namespace suffixes.
 # The namespace is built as "{type}{suffix}-{region}", e.g. "profile-classic1x-eu".
@@ -185,6 +223,20 @@ PVP_SENSOR_TYPES = {
         "unit": "kills",
         "device_class": None,
         "state_class": "total_increasing",
+    },
+    "pvp_shuffle_rating": {
+        "name": "Solo Shuffle Rating",
+        "icon": "mdi:shuffle-variant",
+        "unit": "rating",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "pvp_blitz_rating": {
+        "name": "Blitz Rating",
+        "icon": "mdi:flash",
+        "unit": "rating",
+        "device_class": None,
+        "state_class": "measurement",
     },
     "pvp_rank": {
         "name": "PvP Rank",
@@ -394,6 +446,84 @@ COLLECTION_SENSOR_TYPES = {
         "device_class": None,
         "state_class": "measurement",
     },
+    "decor_collected": {
+        "name": "Housing Decor",
+        "icon": "mdi:sofa",
+        "unit": "items",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+}
+
+# Character sensors that need the player's Battle.net login
+ACCOUNT_CHARACTER_SENSOR_TYPES = {
+    "character_gold": {
+        "name": "Gold",
+        "icon": "mdi:gold",
+        "unit": "g",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+}
+
+# Account-wide sensors (Battle.net login)
+ACCOUNT_SENSOR_TYPES = {
+    "account_gold_total": {
+        "name": "Total Gold",
+        "icon": "mdi:gold",
+        "unit": "g",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_characters": {
+        "name": "Characters",
+        "icon": "mdi:account-multiple",
+        "unit": "characters",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_mounts": {
+        "name": "Account Mounts",
+        "icon": "mdi:horse",
+        "unit": "mounts",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_pets": {
+        "name": "Account Pets",
+        "icon": "mdi:cat",
+        "unit": "pets",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_login": {
+        "name": "Battle.net Login",
+        "icon": "mdi:login",
+        "unit": None,
+        "device_class": "timestamp",
+    },
+}
+
+# Realm sensors from the Mythic+ leaderboards (Retail, opt-in)
+REALM_LEADERBOARD_SENSOR_TYPES = {
+    "mythicplus_realm_best": {
+        "name": "Best M+ Key This Week",
+        "icon": "mdi:podium-gold",
+        "unit": "level",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+}
+
+# Auction price sensors, one per tracked item and game version
+AUCTION_SENSOR_TYPES = {
+    "auction_price": {
+        "name": "Auction Price",
+        "icon": "mdi:scale-balance",
+        "unit": "g",
+        "device_class": None,
+        "state_class": "measurement",
+    },
 }
 
 # Guild sensors, shown on the character device
@@ -429,6 +559,32 @@ REGION_SENSOR_TYPES = {
         "unit": None,
         "device_class": "timestamp",
     },
+    "pvp_season": {
+        "name": "PvP Season",
+        "icon": "mdi:sword-cross",
+        "unit": None,
+        "device_class": None,
+    },
+    "pvp_cutoff_gladiator": {
+        "name": "Gladiator Cutoff",
+        "icon": "mdi:trophy",
+        "unit": "rating",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "pvp_cutoff_hero": {
+        "name": "Hero Cutoff",
+        "icon": "mdi:flag-checkered",
+        "unit": "rating",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "mythicplus_affixes": {
+        "name": "M+ Affixes",
+        "icon": "mdi:alert-decagram",
+        "unit": None,
+        "device_class": None,
+    },
 }
 
 # Hall of Fame Leaderboard Sensors
@@ -452,6 +608,10 @@ ALL_SENSOR_TYPES = {
     **COLLECTION_SENSOR_TYPES,
     **GUILD_SENSOR_TYPES,
     **REGION_SENSOR_TYPES,
+    **ACCOUNT_CHARACTER_SENSOR_TYPES,
+    **ACCOUNT_SENSOR_TYPES,
+    **REALM_LEADERBOARD_SENSOR_TYPES,
+    **AUCTION_SENSOR_TYPES,
     **HOF_SENSOR_TYPES,
 }
 
@@ -471,8 +631,8 @@ CHARACTER_SENSOR_GROUPS = {
 VERSION_SENSOR_SUPPORT = {
     "retail": {
         "basic": None,
-        "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_rbg_rating", "pvp_honor_level",
-                "pvp_wins_season", "pvp_honorable_kills"},
+        "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_rbg_rating", "pvp_shuffle_rating",
+                "pvp_blitz_rating", "pvp_honor_level", "pvp_wins_season", "pvp_honorable_kills"},
         "raid": None,
         "mythicplus": None,
         "details": None,

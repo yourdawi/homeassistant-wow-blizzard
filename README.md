@@ -26,14 +26,17 @@ Use it to track levels and item level over time, watch realm status on reset day
 | --- | --- |
 | Characters | Level, item level, guild, achievement points, profile status, portrait as entity picture, full-body render as image entity, equipment per slot. Any number of characters across realms and game versions. |
 | Character details | Professions, health and secondary stats, title, reputations, talents, dungeons completed, deaths, quests completed, hunter pets. |
-| Collections | Number of mounts, pets, toys and heirlooms. |
-| Guild | Member count and guild achievement points. |
+| Collections | Number of mounts, pets, toys, heirlooms and housing decor. |
+| Guild | Member count, guild achievement points and an event entity for new guild achievements and boss kills. |
 | Realms | Realm status, population and whether a login queue is active. |
-| Region | WoW Token price (Retail and Classic Progression) and the next weekly reset. |
-| PvP | 2v2, 3v3 and RBG ratings, honor level, season wins, honorable kills and the Classic Era PvP rank. |
+| Region | WoW Token price (Retail and Classic Progression), the next weekly reset, the PvP season with its title cutoffs and, opt-in, the weekly Mythic+ affixes. |
+| PvP | 2v2, 3v3, RBG, Solo Shuffle and Blitz ratings of the current season, honor level, season wins, honorable kills and the Classic Era PvP rank. |
 | Raids | Bosses defeated per difficulty in the current expansion, plus a lifetime total. |
 | Mythic+ | Season score, highest key, best runs, timed runs, weekly best key. |
 | Hall of Fame | One sensor per raid of the current expansion with the world first guild and the ranks of your own guilds. |
+| Mythic+ leaderboards (opt-in) | Best key of the week per realm, with the best runs of your characters. |
+| Auction house | Lowest price for item IDs you choose (Retail commodities and realm auctions, Classic Progression realm auctions). |
+| Battle.net account (optional) | Import characters by logging in with Battle.net. While the login is valid (24 hours): gold per character, total gold, account mounts and pets. |
 
 Numeric sensors have the `measurement` state class, so Home Assistant keeps long-term statistics and you can graph them (for example a leveling race).
 
@@ -90,7 +93,9 @@ config/
       config_flow.py
       const.py
       manifest.json
+      event.py
       image.py
+      parsers.py
       sensor.py
       strings.json
       translations/
@@ -102,16 +107,23 @@ config/
 ### 1. Create a Battle.net API client
 
 1. Sign in at https://develop.battle.net/access/clients.
-2. Create a new client. The client name must be unique across the whole Blizzard developer portal (for example `HA-WoW-<yourname>`); a name that is already taken makes the creation fail with an HTTP 500 error. The redirect URL is not used by this integration, but the form requires one; `https://my.home-assistant.io/redirect/oauth` works.
+2. Create a new client. The client name must be unique across the whole Blizzard developer portal (for example `HA-WoW-<yourname>`); a name that is already taken makes the creation fail with an HTTP 500 error. Enter `https://my.home-assistant.io/redirect/oauth` as redirect URL. It is only used for the optional Battle.net login, but the form requires one anyway.
 3. Copy the **Client ID** and **Client Secret**.
 
 ### 2. Add the integration
 
 1. Go to **Settings > Devices & Services > Add Integration** and search for **World of Warcraft Blizzard API**.
 2. Enter the client ID and secret, select your **region** (US, EU, KR, TW, CN) and the **API locale**. The locale sets the language of names returned by the API, such as classes, realm status and raid names.
-3. Choose which feature groups to enable: realm status, PvP, raids, Mythic+, Hall of Fame, character details, collections, guild and region data (WoW Token, weekly reset).
+3. Choose which feature groups to enable: realm status, PvP, raids, Mythic+, Hall of Fame, character details, collections, guild, region data (WoW Token, weekly reset) and the Mythic+ realm leaderboards (off by default, they download about 8 MB per realm and hour).
+4. Optionally enter item IDs to track auction prices, for example `210796, 224025`. You find the ID in the item's Wowhead URL. Leave the field empty to skip the auction house.
 
 ### 3. Add characters
+
+Choose **Enter realm and name** or **Log in with Battle.net**.
+
+**Log in with Battle.net** (optional) opens the Battle.net login. Afterwards all characters of your account (Retail and all Classic versions) are listed and you tick the ones to add. With **Also load account data** the login is kept and the integration adds gold and account collections. Blizzard logins last 24 hours and cannot be renewed automatically. An expired login never breaks the integration: everything that does not need the login keeps updating, gold and account values keep their last state (also across restarts), and a notice under **Settings > Repairs** reminds you that you can log in again with **Reconfigure**. Logging in again is optional; you can ignore the notice or remove the login. If the login fails or is cancelled during setup, nothing is lost and you can add characters by hand. The login needs My Home Assistant (part of `default_config`) and the redirect URL from step 1.
+
+**Enter realm and name:**
 
 1. Select the game version.
 2. Pick the realm from the list (you can type to search) and enter the character name. Upper and lower case do not matter.
@@ -125,7 +137,9 @@ Open **Settings > Devices & Services > World of Warcraft Blizzard API > Configur
 
 - **Add a Character** adds another character, in any game version.
 - **Remove Character(s)** removes characters. At least one has to remain.
-- **Configure Features** turns feature groups on or off.
+- **Configure Features** turns feature groups on or off and sets the auction item IDs.
+- **Remove Battle.net login** (only shown with a kept login) forgets the login and removes the gold and account sensors. Characters and everything else stay.
+- **Reconfigure** (in the integration's menu) logs in with Battle.net to import characters or renew the account login. Unticking **Also load account data** there removes the login as well.
 
 The integration reloads on its own after every change.
 
@@ -147,6 +161,9 @@ Each character becomes a device named `<Character> (<realm>)`, each realm become
 | RBG Rating | `sensor.thrall_stormrage_rbg_rating` | PvP, Retail |
 | Honor Level | `sensor.thrall_stormrage_honor_level` | PvP, Retail |
 | PvP Wins (Season) | `sensor.thrall_stormrage_pvp_wins_season` | Sum over the tracked brackets |
+
+The rated PvP sensors only count the current season. Blizzard returns the last season a character played; ratings from an older season show as 0, with the old rating in `last_season_rating`. Every bracket sensor has `season_played`, `season_won`, `season_lost`, `weekly_played` and `weekly_won`, and 3v3 / RBG show the `gladiator_cutoff` / `hero_cutoff`.
+
 | LFR / Normal / Heroic / Mythic Progress | `sensor.thrall_stormrage_mythic_progress` | Bosses defeated in the current expansion's raids |
 | Total Boss Kills | `sensor.thrall_stormrage_total_boss_kills` | Bosses defeated across all raids, lifetime |
 | M+ Score | `sensor.thrall_stormrage_m_score` | Current season |
@@ -167,14 +184,16 @@ Each character becomes a device named `<Character> (<realm>)`, each realm become
 | Deaths | `sensor.thrall_stormrage_deaths` | Details, lifetime |
 | Quests Completed | `sensor.thrall_stormrage_quests_completed` | Details, lifetime |
 | Hunter Pet | `sensor.thrall_stormrage_hunter_pet` | Details, hunters only; summoned pet, all pets in `pets` |
-| Mounts / Pets / Toys / Heirlooms | `sensor.thrall_stormrage_mounts` | Collections, Retail |
+| Mounts / Pets / Toys / Heirlooms / Housing Decor | `sensor.thrall_stormrage_mounts` | Collections, Retail |
+| Solo Shuffle Rating / Blitz Rating | `sensor.thrall_stormrage_solo_shuffle_rating` | PvP, Retail, for the active specialization; `legend_cutoff` attribute |
+| Gold | `sensor.thrall_stormrage_gold` | Battle.net login only; gold gained/lost, deaths, location and hearthstone in attributes |
 | Guild Members | `sensor.thrall_stormrage_guild_members` | Guild, only for characters in a guild; achievement points, realm, faction, creation date in attributes |
 
 Attributes on every character sensor: `character_name`, `realm`, `character_class`, `class_color`, `character_race`, `character_level`, `guild`, `faction`, `active_spec`, `last_login`, `game_version`, `category`.
 
 Raid difficulty sensors also have `expansion`, `total_bosses` and `raids`, which holds the per-raid progress, for example `{"The Dreamrift": "6/8"}`.
 
-The Equipment Details sensor lists the gear in `equipped_items` (keyed by slot, e.g. `head`, `trinket_1`) and `equipped_items_list`. Each item has `slot`, `name`, `item_id`, `item_level`, `quality`, `quality_color` and `stats`. These two attributes are not written to the recorder database.
+The Equipment Details sensor lists the gear in `equipped_items` (keyed by slot, e.g. `head`, `trinket_1`) and `equipped_items_list`. Each item has `slot`, `name`, `item_id`, `icon` (image URL), `item_level`, `quality`, `quality_color` and `stats`. These two attributes are not written to the recorder database.
 
 ### Character image
 
@@ -208,6 +227,45 @@ Region-wide data lives on the device `WoW <REGION>`, for example `WoW EU`.
 | WoW Token Price | `sensor.wow_eu_wow_token_price` | Retail, in gold; `last_updated` attribute |
 | WoW Token Price (Classic) | `sensor.wow_eu_wow_token_price_classic` | Only with a Classic Progression character |
 | Weekly Reset | `sensor.wow_eu_weekly_reset` | Timestamp of the next weekly reset (Retail) |
+| PvP Season | `sensor.wow_eu_pvp_season` | PvP, Retail; season ID and start in attributes |
+| Gladiator Cutoff | `sensor.wow_eu_gladiator_cutoff` | 3v3 rating needed for Gladiator this season |
+| Hero Cutoff | `sensor.wow_eu_hero_cutoff` | RBG rating for Hero of the Alliance/Horde, per faction in attributes |
+| M+ Affixes | `sensor.wow_eu_m_affixes` | Mythic+ leaderboards only; affixes of the week with their starting key level |
+
+### Mythic+ realm leaderboards (opt-in)
+
+With **Mythic+ leaderboards** enabled, every Retail realm device gets `Best M+ Key This Week` (e.g. `sensor.stormrage_server_best_m_key_this_week`). The attribute `dungeons` holds the best key, its duration and the number of listed runs per dungeon, `own_characters` the ranking of your configured characters. Each realm needs one download of about 1 MB per dungeon every hour.
+
+### Auction house
+
+Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, named after the item, with the lowest price per item in gold (silver and copper as decimals). Attributes: `quantity` (items listed), `auctions`, and `sources` (lowest price per source). Retail looks in the region-wide commodity market first and in the auctions of your characters' realms for everything else; Classic Progression uses the realms of your Classic Progression characters. Classic Era and Anniversary auctions are not available in the API. The data is refreshed hourly; the Retail commodity market alone is about 30 MB, so only add the auction house if you need it.
+
+### Guild activity
+
+Each guild of your characters gets an event entity on the device of the first character in it, e.g. `event.thrall_stormrage_guild_activity`. It fires `achievement` (attributes `character`, `achievement`, `achievement_id`) and `encounter` (`encounter`, `encounter_id`, `difficulty`, `difficulty_name`) for every new entry in the guild's activity feed. Activity is checked hourly; entries from before Home Assistant started are not replayed.
+
+```yaml
+automation:
+  - alias: Guild boss kill
+    triggers:
+      - trigger: state
+        entity_id: event.thrall_stormrage_guild_activity
+    conditions:
+      - condition: state
+        entity_id: event.thrall_stormrage_guild_activity
+        attribute: event_type
+        state: encounter
+    actions:
+      - action: notify.mobile_app_phone
+        data:
+          message: >
+            Guild kill: {{ state_attr('event.thrall_stormrage_guild_activity', 'encounter') }}
+            ({{ state_attr('event.thrall_stormrage_guild_activity', 'difficulty_name') }})
+```
+
+### Battle.net account (optional)
+
+With a kept Battle.net login, the device `Battle.net Account` has `Total Gold` (Retail), `Characters`, `Account Mounts`, `Account Pets` and `Battle.net Login Expires`. The attribute `login_valid` turns `false` when the 24 hour login has expired or Blizzard rejects it (for example after a password change); the values then keep their last state. Temporary API errors also keep the last values instead of dropping to 0.
 
 ### Hall of Fame sensors
 
@@ -343,7 +401,8 @@ automation:
 
 - All data is refreshed every 5 minutes in one update cycle.
 - Data from the Battle.net API reflects what Blizzard has processed, which usually lags the game by a few minutes and may be refreshed only after logout.
-- Character details and collections are only fetched again when the character's last login changes, and at least every 6 hours. Guild data is cached for 1 hour, the weekly period until the reset.
+- Character details and collections are only fetched again when the character's last login changes, and at least every 6 hours. Guild data and guild activity are cached for 1 hour, the weekly period until the reset, the PvP season for 6 hours.
+- Auction prices and Mythic+ leaderboards are refreshed hourly, account data (gold) every 15 minutes while the Battle.net login is valid. Large responses are decoded outside the event loop.
 - If a character profile cannot be fetched (API error, maintenance), the last known values are kept, so graphs do not drop to 0. The profile status sensor then shows whether the character still exists.
 - On HTTP 429 (rate limit) the request is retried up to two times, waiting at most 30 seconds. The Battle.net API allows 36,000 requests per hour, and each character uses roughly 4 to 10 requests per update depending on the enabled features, plus up to 13 after a new login.
 
@@ -382,7 +441,8 @@ logger:
 - The Battle.net API only reports whether a realm has a login queue, not how long it is.
 - "M+ Runs Completed" and "M+ Runs Timed" count the best runs that the API returns, not every key you have run.
 - The API does not say which Mythic+ affixes are active this week.
-- Account-wide data (all characters of an account, account collections) needs a Battle.net login of the player and is not supported.
+- Account data needs a Battle.net login of the player, which Blizzard limits to 24 hours without a way to renew it automatically.
+- Classic Era and Anniversary auction houses are listed by the API but return no data.
 - Hall of Fame data comes from the public website rather than the official API and can break when Blizzard changes the site.
 - WoW Forever support depends on Blizzard publishing its API namespace (see [WoW Forever](#wow-forever)).
 - Weekly activities (Great Vault, weekly quests) are not part of the public game data API for other accounts, so they cannot be tracked.
