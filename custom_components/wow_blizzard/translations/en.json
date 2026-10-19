@@ -19,7 +19,13 @@
           "enable_pvp": "Enable PvP Statistics",
           "enable_raids": "Enable Raid Progress",
           "enable_mythic_plus": "Enable Mythic+ Data",
-          "enable_hall_of_fame": "Enable Raid Hall of Fame"
+          "enable_hall_of_fame": "Enable Raid Hall of Fame",
+          "enable_character_details": "Enable character details (professions, stats, talents, reputations, ...)",
+          "enable_collections": "Enable collections (mounts, pets, toys, heirlooms)",
+          "enable_guild": "Enable guild data",
+          "enable_region_data": "Enable WoW Token price and weekly reset",
+          "enable_mythic_leaderboard": "Mythic+ realm leaderboards and weekly affixes (about 8 MB per realm and hour)",
+          "auction_items": "Item IDs for auction prices (comma separated, empty = off)"
         }
       },
       "character": {
@@ -50,6 +56,47 @@
         "data": {
           "characters_to_remove": "Select Characters to Remove"
         }
+      },
+      "add_method": {
+        "title": "Add characters",
+        "description": "Add a character by hand, or log in with Battle.net to pick characters from your account. The login needs `https://my.home-assistant.io/redirect/oauth` as redirect URL of your Battle.net API client.",
+        "menu_options": {
+          "character": "Enter realm and name",
+          "account_login": "Log in with Battle.net"
+        }
+      },
+      "account_login": {
+        "title": "Battle.net login",
+        "description": "Log in with Battle.net in the window that opened."
+      },
+      "account_select": {
+        "title": "Characters of your account",
+        "description": "Open a game version and a realm, then tick the characters to add ({character_count} available, already configured ones are hidden).",
+        "sections": {
+          "retail": {
+            "name": "Retail"
+          },
+          "classic": {
+            "name": "Classic Progression (Mists of Pandaria)"
+          },
+          "classicann": {
+            "name": "Classic Anniversary (Burning Crusade)"
+          },
+          "classic1x": {
+            "name": "Classic Era"
+          }
+        }
+      },
+      "account_failed": {
+        "title": "Battle.net login not completed",
+        "description": "Nothing is lost. Continue to add characters by hand or try the login again. If this keeps failing, check that `https://my.home-assistant.io/redirect/oauth` is a redirect URL of your Battle.net API client."
+      },
+      "account_options": {
+        "title": "Account data",
+        "description": "{selected_count} character(s) selected.\n\nThe Battle.net login can also be kept to load gold per character, total gold and account collections. Blizzard limits logins to 24 hours; afterwards the values keep their last state, everything else keeps working, and you can log in again via Reconfigure whenever you like.",
+        "data": {
+          "keep_login": "Load account data (gold, account collections) while the login is valid"
+        }
       }
     },
     "error": {
@@ -58,11 +105,15 @@
       "character_not_found": "Character not found or not accessible",
       "character_already_added": "This character has already been added",
       "unknown": "Unknown error occurred",
-      "game_version_unavailable": "This game version is not available in the Blizzard API yet"
+      "game_version_unavailable": "This game version is not available in the Blizzard API yet",
+      "account_login_failed": "The Battle.net login failed or was cancelled",
+      "oauth_redirect_unavailable": "Home Assistant could not build the login redirect. Enable My Home Assistant (part of default_config)."
     },
     "abort": {
       "already_configured": "This character configuration is already set up",
-      "no_characters": "At least one character must be kept"
+      "no_characters": "At least one character must be kept",
+      "reconfigure_successful": "Characters and Battle.net login updated",
+      "account_login_skipped": "Battle.net login not completed, the configuration is unchanged"
     }
   },
   "options": {
@@ -82,7 +133,13 @@
           "enable_pvp": "PvP Statistics & Ratings",
           "enable_raids": "Raid Progress & Boss Kills",
           "enable_mythic_plus": "Mythic+ Scores & Runs",
-          "enable_hall_of_fame": "Raid Hall of Fame / Leaderboards"
+          "enable_hall_of_fame": "Raid Hall of Fame / Leaderboards",
+          "enable_character_details": "Character details (professions, stats, talents, reputations, ...)",
+          "enable_collections": "Collections (mounts, pets, toys, heirlooms)",
+          "enable_guild": "Guild members & achievement points",
+          "enable_region_data": "WoW Token price & weekly reset",
+          "enable_mythic_leaderboard": "Mythic+ realm leaderboards & affixes (about 8 MB per realm and hour)",
+          "auction_items": "Item IDs for auction prices (comma separated, empty = off)"
         }
       },
       "add_character": {
@@ -106,6 +163,10 @@
         "data": {
           "characters_to_remove": "Select Characters to Remove"
         }
+      },
+      "remove_account": {
+        "title": "Remove Battle.net login",
+        "description": "The integration forgets the Battle.net login. Gold and account sensors are removed; characters and all other data stay. You can log in again any time with Reconfigure."
       }
     },
     "error": {
@@ -195,6 +256,138 @@
       },
       "hall_of_fame": {
         "name": "Hall of Fame"
+      },
+      "character_status": {
+        "name": "Profile Status",
+        "state": {
+          "valid": "Valid",
+          "invalid": "Invalid",
+          "not_found": "Not found"
+        }
+      },
+      "pvp_honorable_kills": {
+        "name": "Honorable Kills"
+      },
+      "pvp_rank": {
+        "name": "PvP Rank"
+      },
+      "professions": {
+        "name": "Professions"
+      },
+      "stat_health": {
+        "name": "Health"
+      },
+      "stat_crit": {
+        "name": "Critical Strike"
+      },
+      "stat_haste": {
+        "name": "Haste"
+      },
+      "stat_mastery": {
+        "name": "Mastery"
+      },
+      "stat_versatility": {
+        "name": "Versatility"
+      },
+      "active_title": {
+        "name": "Title"
+      },
+      "reputations": {
+        "name": "Reputations"
+      },
+      "talents": {
+        "name": "Talents"
+      },
+      "dungeons_completed": {
+        "name": "Dungeons Completed"
+      },
+      "deaths": {
+        "name": "Deaths"
+      },
+      "quests_completed": {
+        "name": "Quests Completed"
+      },
+      "hunter_pet": {
+        "name": "Hunter Pet"
+      },
+      "mounts_collected": {
+        "name": "Mounts"
+      },
+      "pets_collected": {
+        "name": "Pets"
+      },
+      "toys_collected": {
+        "name": "Toys"
+      },
+      "heirlooms_collected": {
+        "name": "Heirlooms"
+      },
+      "guild_members": {
+        "name": "Guild Members"
+      },
+      "wow_token_price": {
+        "name": "WoW Token Price"
+      },
+      "wow_token_price_classic": {
+        "name": "WoW Token Price (Classic)"
+      },
+      "weekly_reset": {
+        "name": "Weekly Reset"
+      },
+      "pvp_shuffle_rating": {
+        "name": "Solo Shuffle Rating"
+      },
+      "pvp_blitz_rating": {
+        "name": "Blitz Rating"
+      },
+      "decor_collected": {
+        "name": "Housing Decor"
+      },
+      "character_gold": {
+        "name": "Gold"
+      },
+      "account_gold_total": {
+        "name": "Total Gold"
+      },
+      "account_characters": {
+        "name": "Characters"
+      },
+      "account_mounts": {
+        "name": "Account Mounts"
+      },
+      "account_pets": {
+        "name": "Account Pets"
+      },
+      "account_login": {
+        "name": "Battle.net Login Expires"
+      },
+      "pvp_season": {
+        "name": "PvP Season"
+      },
+      "pvp_cutoff_gladiator": {
+        "name": "Gladiator Cutoff"
+      },
+      "pvp_cutoff_hero": {
+        "name": "Hero Cutoff"
+      },
+      "mythicplus_affixes": {
+        "name": "M+ Affixes"
+      },
+      "mythicplus_realm_best": {
+        "name": "Best M+ Key This Week"
+      }
+    },
+    "event": {
+      "guild_activity": {
+        "name": "Guild Activity",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "achievement": "Achievement",
+              "encounter": "Boss kill"
+            }
+          }
+        }
       }
     }
   },
@@ -244,8 +437,15 @@
       "options": {
         "add_character": "Add a Character",
         "features": "Configure Features",
-        "remove_character": "Remove Character(s)"
+        "remove_character": "Remove Character(s)",
+        "remove_account": "Remove Battle.net login"
       }
+    }
+  },
+  "issues": {
+    "account_login_expired": {
+      "title": "Battle.net login expired",
+      "description": "The Battle.net login of the World of Warcraft integration has expired (Blizzard limits logins to 24 hours). Everything else keeps working; gold and account values keep their last state. To update them, open the integration and choose **Reconfigure**. If you do not need account data, choose **Configure > Remove Battle.net login**, or ignore this notice."
     }
   }
 }

@@ -14,6 +14,30 @@ CONF_ENABLE_PVP = "enable_pvp"
 CONF_ENABLE_RAIDS = "enable_raids"
 CONF_ENABLE_MYTHIC_PLUS = "enable_mythic_plus"
 CONF_ENABLE_HALL_OF_FAME = "enable_hall_of_fame"
+CONF_ENABLE_CHARACTER_DETAILS = "enable_character_details"
+CONF_ENABLE_COLLECTIONS = "enable_collections"
+CONF_ENABLE_GUILD = "enable_guild"
+CONF_ENABLE_REGION_DATA = "enable_region_data"
+CONF_ENABLE_MYTHIC_LEADERBOARD = "enable_mythic_leaderboard"
+# Comma separated item IDs whose auction prices are tracked (empty = off)
+CONF_AUCTION_ITEMS = "auction_items"
+# Battle.net login of the player (OAuth token, expires after 24 hours)
+CONF_ACCOUNT_TOKEN = "account_token"
+
+# Feature toggles and their defaults. The Mythic+ leaderboards download about
+# 8 MB per realm and hour, so they are off unless enabled.
+FEATURE_DEFAULTS = {
+    "enable_server_status": True,
+    "enable_pvp": True,
+    "enable_raids": True,
+    "enable_mythic_plus": True,
+    "enable_hall_of_fame": True,
+    "enable_character_details": True,
+    "enable_collections": True,
+    "enable_guild": True,
+    "enable_region_data": True,
+    "enable_mythic_leaderboard": False,
+}
 CONF_GAME_VERSION = "game_version"
 CONF_LOCALE = "locale"
 
@@ -37,6 +61,29 @@ TOKEN_URLS = {
 # Default values
 DEFAULT_REGION = "us"
 DEFAULT_SCAN_INTERVAL = 300  # 5 minutes
+# Character details, collections and guilds change rarely. Character data is
+# only updated by Blizzard on logout, so these are refetched when the last
+# login changes, and otherwise at most this often.
+SLOW_REFRESH_INTERVAL = 6 * 3600
+GUILD_REFRESH_INTERVAL = 3600
+# Blizzard updates auctions and leaderboards about once an hour
+AUCTION_REFRESH_INTERVAL = 3600
+LEADERBOARD_REFRESH_INTERVAL = 3600
+# PvP season and title cutoffs
+PVP_SEASON_REFRESH_INTERVAL = 6 * 3600
+# Account data (gold) while the Battle.net login is valid
+ACCOUNT_REFRESH_INTERVAL = 900
+
+# Battle.net OAuth (player login for account data)
+OAUTH_AUTHORIZE_URLS = {
+    "cn": "https://oauth.battlenet.com.cn/authorize",
+}
+OAUTH_TOKEN_URLS = {
+    "cn": "https://oauth.battlenet.com.cn/token",
+}
+OAUTH_AUTHORIZE_URL_DEFAULT = "https://oauth.battle.net/authorize"
+OAUTH_TOKEN_URL_DEFAULT = "https://oauth.battle.net/token"
+OAUTH_SCOPE = "wow.profile"
 
 # Game versions and their Blizzard API namespace suffixes.
 # The namespace is built as "{type}{suffix}-{region}", e.g. "profile-classic1x-eu".
@@ -102,6 +149,13 @@ BASIC_SENSOR_TYPES = {
         "unit": "items",
         "device_class": None,
     },
+    "character_status": {
+        "name": "Profile Status",
+        "icon": "mdi:account-check",
+        "unit": None,
+        "device_class": "enum",
+        "options": ["valid", "invalid", "not_found"],
+    },
 }
 
 # Server Status Sensors
@@ -160,6 +214,34 @@ PVP_SENSOR_TYPES = {
         "name": "PvP Wins (Season)",
         "icon": "mdi:trophy-award",
         "unit": "wins",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "pvp_honorable_kills": {
+        "name": "Honorable Kills",
+        "icon": "mdi:sword",
+        "unit": "kills",
+        "device_class": None,
+        "state_class": "total_increasing",
+    },
+    "pvp_shuffle_rating": {
+        "name": "Solo Shuffle Rating",
+        "icon": "mdi:shuffle-variant",
+        "unit": "rating",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "pvp_blitz_rating": {
+        "name": "Blitz Rating",
+        "icon": "mdi:flash",
+        "unit": "rating",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "pvp_rank": {
+        "name": "PvP Rank",
+        "icon": "mdi:chevron-triple-up",
+        "unit": None,
         "device_class": None,
         "state_class": "measurement",
     },
@@ -243,6 +325,268 @@ MYTHICPLUS_SENSOR_TYPES = {
     },
 }
 
+# Character detail sensors (professions, stats, talents, ...)
+DETAIL_SENSOR_TYPES = {
+    "professions": {
+        "name": "Professions",
+        "icon": "mdi:hammer-wrench",
+        "unit": None,
+        "device_class": None,
+    },
+    "stat_health": {
+        "name": "Health",
+        "icon": "mdi:heart",
+        "unit": "HP",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "stat_crit": {
+        "name": "Critical Strike",
+        "icon": "mdi:target",
+        "unit": "%",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "stat_haste": {
+        "name": "Haste",
+        "icon": "mdi:run-fast",
+        "unit": "%",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "stat_mastery": {
+        "name": "Mastery",
+        "icon": "mdi:star-four-points",
+        "unit": "%",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "stat_versatility": {
+        "name": "Versatility",
+        "icon": "mdi:shield-sword",
+        "unit": "%",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "active_title": {
+        "name": "Title",
+        "icon": "mdi:card-account-details-star",
+        "unit": None,
+        "device_class": None,
+    },
+    "reputations": {
+        "name": "Reputations",
+        "icon": "mdi:handshake",
+        "unit": "factions",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "talents": {
+        "name": "Talents",
+        "icon": "mdi:file-tree",
+        "unit": None,
+        "device_class": None,
+    },
+    "dungeons_completed": {
+        "name": "Dungeons Completed",
+        "icon": "mdi:gate",
+        "unit": "dungeons",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "deaths": {
+        "name": "Deaths",
+        "icon": "mdi:grave-stone",
+        "unit": "deaths",
+        "device_class": None,
+        "state_class": "total_increasing",
+    },
+    "quests_completed": {
+        "name": "Quests Completed",
+        "icon": "mdi:exclamation",
+        "unit": "quests",
+        "device_class": None,
+        "state_class": "total_increasing",
+    },
+    "hunter_pet": {
+        "name": "Hunter Pet",
+        "icon": "mdi:paw",
+        "unit": None,
+        "device_class": None,
+    },
+}
+
+# Collection sensors (Retail only)
+COLLECTION_SENSOR_TYPES = {
+    "mounts_collected": {
+        "name": "Mounts",
+        "icon": "mdi:horse",
+        "unit": "mounts",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "pets_collected": {
+        "name": "Pets",
+        "icon": "mdi:cat",
+        "unit": "pets",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "toys_collected": {
+        "name": "Toys",
+        "icon": "mdi:teddy-bear",
+        "unit": "toys",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "heirlooms_collected": {
+        "name": "Heirlooms",
+        "icon": "mdi:treasure-chest",
+        "unit": "heirlooms",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "decor_collected": {
+        "name": "Housing Decor",
+        "icon": "mdi:sofa",
+        "unit": "items",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+}
+
+# Character sensors that need the player's Battle.net login
+ACCOUNT_CHARACTER_SENSOR_TYPES = {
+    "character_gold": {
+        "name": "Gold",
+        "icon": "mdi:gold",
+        "unit": "g",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+}
+
+# Account-wide sensors (Battle.net login)
+ACCOUNT_SENSOR_TYPES = {
+    "account_gold_total": {
+        "name": "Total Gold",
+        "icon": "mdi:gold",
+        "unit": "g",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_characters": {
+        "name": "Characters",
+        "icon": "mdi:account-multiple",
+        "unit": "characters",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_mounts": {
+        "name": "Account Mounts",
+        "icon": "mdi:horse",
+        "unit": "mounts",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_pets": {
+        "name": "Account Pets",
+        "icon": "mdi:cat",
+        "unit": "pets",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_login": {
+        "name": "Battle.net Login",
+        "icon": "mdi:login",
+        "unit": None,
+        "device_class": "timestamp",
+    },
+}
+
+# Realm sensors from the Mythic+ leaderboards (Retail, opt-in)
+REALM_LEADERBOARD_SENSOR_TYPES = {
+    "mythicplus_realm_best": {
+        "name": "Best M+ Key This Week",
+        "icon": "mdi:podium-gold",
+        "unit": "level",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+}
+
+# Auction price sensors, one per tracked item and game version
+AUCTION_SENSOR_TYPES = {
+    "auction_price": {
+        "name": "Auction Price",
+        "icon": "mdi:scale-balance",
+        "unit": "g",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+}
+
+# Guild sensors, shown on the character device
+GUILD_SENSOR_TYPES = {
+    "guild_members": {
+        "name": "Guild Members",
+        "icon": "mdi:account-group-outline",
+        "unit": "members",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+}
+
+# Region-wide sensors (WoW Token, weekly reset)
+REGION_SENSOR_TYPES = {
+    "wow_token_price": {
+        "name": "WoW Token Price",
+        "icon": "mdi:gold",
+        "unit": "g",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "wow_token_price_classic": {
+        "name": "WoW Token Price (Classic)",
+        "icon": "mdi:gold",
+        "unit": "g",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "weekly_reset": {
+        "name": "Weekly Reset",
+        "icon": "mdi:calendar-refresh",
+        "unit": None,
+        "device_class": "timestamp",
+    },
+    "pvp_season": {
+        "name": "PvP Season",
+        "icon": "mdi:sword-cross",
+        "unit": None,
+        "device_class": None,
+    },
+    "pvp_cutoff_gladiator": {
+        "name": "Gladiator Cutoff",
+        "icon": "mdi:trophy",
+        "unit": "rating",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "pvp_cutoff_hero": {
+        "name": "Hero Cutoff",
+        "icon": "mdi:flag-checkered",
+        "unit": "rating",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "mythicplus_affixes": {
+        "name": "M+ Affixes",
+        "icon": "mdi:alert-decagram",
+        "unit": None,
+        "device_class": None,
+    },
+}
+
 # Hall of Fame Leaderboard Sensors
 HOF_SENSOR_TYPES = {
     "hall_of_fame": {
@@ -260,7 +604,73 @@ ALL_SENSOR_TYPES = {
     **PVP_SENSOR_TYPES,
     **RAID_SENSOR_TYPES,
     **MYTHICPLUS_SENSOR_TYPES,
+    **DETAIL_SENSOR_TYPES,
+    **COLLECTION_SENSOR_TYPES,
+    **GUILD_SENSOR_TYPES,
+    **REGION_SENSOR_TYPES,
+    **ACCOUNT_CHARACTER_SENSOR_TYPES,
+    **ACCOUNT_SENSOR_TYPES,
+    **REALM_LEADERBOARD_SENSOR_TYPES,
+    **AUCTION_SENSOR_TYPES,
     **HOF_SENSOR_TYPES,
+}
+
+# Character sensor groups, keyed by the group names used per game version
+CHARACTER_SENSOR_GROUPS = {
+    "basic": BASIC_SENSOR_TYPES,
+    "pvp": PVP_SENSOR_TYPES,
+    "raid": RAID_SENSOR_TYPES,
+    "mythicplus": MYTHICPLUS_SENSOR_TYPES,
+    "details": DETAIL_SENSOR_TYPES,
+    "collections": COLLECTION_SENSOR_TYPES,
+    "guild": GUILD_SENSOR_TYPES,
+}
+
+# Character sensors per game version, verified against the live API (EU, 2026-10).
+# None means every sensor of the group is available.
+VERSION_SENSOR_SUPPORT = {
+    "retail": {
+        "basic": None,
+        "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_rbg_rating", "pvp_shuffle_rating",
+                "pvp_blitz_rating", "pvp_honor_level", "pvp_wins_season", "pvp_honorable_kills"},
+        "raid": None,
+        "mythicplus": None,
+        "details": None,
+        "collections": None,
+        "guild": None,
+    },
+    # Classic Progression (currently Mists of Pandaria): no professions, titles
+    # list, dungeon encounters or collections endpoints; no versatility stat
+    "classic": {
+        "basic": None,
+        "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season", "pvp_honorable_kills"},
+        "details": {"stat_health", "stat_crit", "stat_haste", "stat_mastery", "active_title",
+                    "reputations", "talents", "deaths", "quests_completed", "hunter_pet"},
+        "guild": None,
+    },
+    # Classic Anniversary (Burning Crusade): no achievements
+    "classicann": {
+        "basic": {"character_level", "character_item_level", "guild_name", "character_equipment",
+                  "character_status"},
+        "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season", "pvp_honorable_kills"},
+        "details": {"stat_health", "stat_crit", "stat_haste", "active_title", "reputations",
+                    "talents", "hunter_pet"},
+        "guild": None,
+    },
+    # Classic Era (Vanilla): no achievements, no arenas, but the old PvP rank
+    "classic1x": {
+        "basic": {"character_level", "character_item_level", "guild_name", "character_equipment",
+                  "character_status"},
+        "pvp": {"pvp_honorable_kills", "pvp_rank"},
+        "details": {"stat_health", "stat_crit", "active_title", "reputations", "talents",
+                    "hunter_pet"},
+        "guild": None,
+    },
+    # WoW Forever: API coverage is unknown until launch, so only the
+    # profile-based basics are exposed. Missing values stay unknown.
+    "forever": {
+        "basic": None,
+    },
 }
 
 # Item quality colors for UI, keyed by the API's quality type
@@ -294,85 +704,21 @@ CLASS_COLORS = {
 
 
 def get_sensor_types_for_version(game_version: str) -> dict:
-    """Return the sensor type groups applicable for a given game version.
+    """Return the character sensor groups applicable for a given game version.
 
-    Returns a dict with keys: basic, pvp, raid, mythicplus
-    Each value is a dict of sensor_type -> config (subset of the full dicts above).
-
-    Feature availability per version (based on Blizzard API documentation):
-      - retail:     all endpoints available
-      - classic:    no /encounters/raids, no M+, no RBG/Honor Level
-      - classicann: like classic, plus no Item Level from API
-      - classic1x:  no Item Level, no Achievements, no rated PvP brackets, no raids, no M+
-      - forever:    basic profile data only (API not documented yet)
-
-    Note: The /character/encounters/raids endpoint is ONLY available for Retail.
-    Classic versions do not have this endpoint in the Blizzard API.
+    Returns a dict with keys: basic, pvp, raid, mythicplus, details, collections, guild.
+    Each value is a dict of sensor_type -> config (subset of the group's sensors);
+    groups a version does not support are empty. Unknown versions get the basics.
     """
-    if game_version == "retail":
-        return {
-            "basic": dict(BASIC_SENSOR_TYPES),
-            "pvp": dict(PVP_SENSOR_TYPES),
-            "raid": dict(RAID_SENSOR_TYPES),
-            "mythicplus": dict(MYTHICPLUS_SENSOR_TYPES),
+    support = VERSION_SENSOR_SUPPORT.get(game_version, VERSION_SENSOR_SUPPORT["forever"])
+    result = {}
+    for group, sensors in CHARACTER_SENSOR_GROUPS.items():
+        if group not in support:
+            result[group] = {}
+            continue
+        allowed = support[group]
+        result[group] = {
+            key: config for key, config in sensors.items()
+            if allowed is None or key in allowed
         }
-
-    if game_version == "classic":
-        # Classic Progression (currently Mists of Pandaria Classic): has ilvl, achievements, 2v2/3v3
-        # No raid encounters endpoint, no M+, no RBG/Honor Level
-        return {
-            "basic": dict(BASIC_SENSOR_TYPES),
-            "pvp": {
-                k: v for k, v in PVP_SENSOR_TYPES.items()
-                if k in ("pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season")
-            },
-            "raid": {},
-            "mythicplus": {},
-        }
-
-    if game_version == "classicann":
-        # Burning Crusade Classic (Anniversary): no ilvl, has achievements, 2v2/3v3
-        # No raid encounters endpoint, no M+, no RBG/Honor Level
-        return {
-            "basic": {
-                k: v for k, v in BASIC_SENSOR_TYPES.items()
-                if k in ("character_level", "guild_name", "achievement_points")
-            },
-            "pvp": {
-                k: v for k, v in PVP_SENSOR_TYPES.items()
-                if k in ("pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season")
-            },
-            "raid": {},
-            "mythicplus": {},
-        }
-
-    if game_version == "forever":
-        # WoW: Forever: API coverage is unknown until launch, so only the
-        # profile-based basics are exposed. Missing values stay unknown.
-        return {
-            "basic": dict(BASIC_SENSOR_TYPES),
-            "pvp": {},
-            "raid": {},
-            "mythicplus": {},
-        }
-
-    if game_version == "classic1x":
-        # Classic Era (Vanilla): no ilvl, no achievements, limited PvP (no rated brackets)
-        # No raid encounters endpoint, no M+
-        return {
-            "basic": {
-                k: v for k, v in BASIC_SENSOR_TYPES.items()
-                if k in ("character_level", "guild_name")
-            },
-            "pvp": {},
-            "raid": {},
-            "mythicplus": {},
-        }
-
-    # Unknown version fallback: basic only
-    return {
-        "basic": dict(BASIC_SENSOR_TYPES),
-        "pvp": {},
-        "raid": {},
-        "mythicplus": {},
-    }
+    return result

@@ -5,15 +5,17 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_REGION, CONF_LOCALE
 from .api_client import WoWBlizzardAPIClient
-from .sensor import async_create_coordinator
+from .sensor import async_create_coordinator, account_issue_id, account_store_key
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.IMAGE]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.IMAGE, Platform.EVENT]
 
 
 def _strip_cached_realms(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -67,6 +69,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Delete stored account values and the login notice when the integration is removed."""
+    await Store(hass, 1, account_store_key(entry.entry_id)).async_remove()
+    ir.async_delete_issue(hass, DOMAIN, account_issue_id(entry.entry_id))
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

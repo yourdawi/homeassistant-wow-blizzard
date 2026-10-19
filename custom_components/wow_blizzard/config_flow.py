@@ -5,9 +5,11 @@ from typing import Dict, Any, List, Optional
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.data_entry_flow import FlowResult, section
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
+from homeassistant.helpers.config_entry_oauth2_flow import LocalOAuth2Implementation
+from yarl import URL
 
 from .const import (
     DOMAIN,
@@ -22,13 +24,27 @@ from .const import (
     CONF_ENABLE_RAIDS,
     CONF_ENABLE_MYTHIC_PLUS,
     CONF_ENABLE_HALL_OF_FAME,
+    CONF_ENABLE_CHARACTER_DETAILS,
+    CONF_ENABLE_COLLECTIONS,
+    CONF_ENABLE_GUILD,
+    CONF_ENABLE_REGION_DATA,
+    CONF_ENABLE_MYTHIC_LEADERBOARD,
+    CONF_AUCTION_ITEMS,
+    CONF_ACCOUNT_TOKEN,
+    FEATURE_DEFAULTS,
+    OAUTH_AUTHORIZE_URLS,
+    OAUTH_AUTHORIZE_URL_DEFAULT,
+    OAUTH_TOKEN_URLS,
+    OAUTH_TOKEN_URL_DEFAULT,
+    OAUTH_SCOPE,
     DEFAULT_REGION,
     CONF_GAME_VERSION,
     CONF_LOCALE,
     CONF_NAMESPACE_SUFFIX,
     GAME_VERSIONS,
 )
-from .api_client import WoWBlizzardAPIClient, InvalidCredentials
+from .api_client import WoWBlizzardAPIClient, InvalidCredentials, UserTokenExpired
+from .parsers import parse_account_characters
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,7 +54,15 @@ FEATURE_KEYS = [
     CONF_ENABLE_RAIDS,
     CONF_ENABLE_MYTHIC_PLUS,
     CONF_ENABLE_HALL_OF_FAME,
+    CONF_ENABLE_CHARACTER_DETAILS,
+    CONF_ENABLE_COLLECTIONS,
+    CONF_ENABLE_GUILD,
+    CONF_ENABLE_REGION_DATA,
+    CONF_ENABLE_MYTHIC_LEADERBOARD,
 ]
+
+# Game versions whose account characters can be imported after a Battle.net login
+ACCOUNT_GAME_VERSIONS = ["retail", "classic", "classicann", "classic1x"]
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -80,9 +104,14 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
-STEP_FEATURES_DATA_SCHEMA = vol.Schema(
-    {vol.Optional(key, default=True): bool for key in FEATURE_KEYS}
-)
+def features_schema(current: Dict[str, Any]) -> vol.Schema:
+    """Feature toggles plus the item IDs whose auction prices are tracked."""
+    schema = {
+        vol.Optional(key, default=current.get(key, FEATURE_DEFAULTS[key])): bool
+        for key in FEATURE_KEYS
+    }
+    schema[vol.Optional(CONF_AUCTION_ITEMS, default=current.get(CONF_AUCTION_ITEMS, ""))] = str
+    return vol.Schema(schema)
 
 STEP_GAME_VERSION_SCHEMA = vol.Schema(
     {
@@ -101,6 +130,15 @@ STEP_GAME_VERSION_SCHEMA = vol.Schema(
         ),
     }
 )
+
+
+def _selected_values(data: Any) -> List[str]:
+    """All picked character keys from the nested version/realm sections."""
+    if isinstance(data, dict):
+        return [value for item in data.values() for value in _selected_values(item)]
+    if isinstance(data, list):
+        return [value for value in data if isinstance(value, str)]
+    return []
 
 
 def game_version_label(game_version: str) -> str:
@@ -323,6 +361,10 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
         self.characters = []
         self.current_character = {}
         self._realm_cache = {}
+        self._account_token = None
+        self._account_error: Optional[str] = None
+        self._account_selected: List[str] = []
+        self._account_characters: Dict[str, Dict[str, Any]] = {}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -359,14 +401,200 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
         if user_input is None:
             return self.async_show_form(
                 step_id="features",
-                data_schema=STEP_FEATURES_DATA_SCHEMA,
+                data_schema=features_schema({}),
                 description_placeholders={
                     "region": self.data[CONF_REGION].upper()
                 }
             )
 
         self.data.update(user_input)
-        return await self.async_step_character()
+        return await self.async_step_add_method()
+
+    async def async_step_add_method(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Add a character by hand or import characters with a Battle.net login."""
+        return self.async_show_menu(step_id="add_method", menu_options=["character", "account_login"])
+
+    def _oauth_implementation(self) -> LocalOAuth2Implementation:
+        region = self.data[CONF_REGION]
+        return LocalOAuth2Implementation(
+            self.hass,
+            DOMAIN,
+            self.data[CONF_CLIENT_ID],
+            self.data[CONF_CLIENT_SECRET],
+            OAUTH_AUTHORIZE_URLS.get(region, OAUTH_AUTHORIZE_URL_DEFAULT),
+            OAUTH_TOKEN_URLS.get(region, OAUTH_TOKEN_URL_DEFAULT),
+        )
+
+    async def async_step_account_login(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Send the user to the Battle.net login and receive the code."""
+        if user_input is None:
+            try:
+                url = await self._oauth_implementation().async_generate_authorize_url(self.flow_id)
+            except RuntimeError:
+                # No my.home-assistant.io and no browser request to build the redirect URL from
+                self._account_error = "oauth_redirect_unavailable"
+                return await self.async_step_account_failed()
+            url = str(URL(url).update_query({"scope": OAUTH_SCOPE}))
+            return self.async_external_step(step_id="account_login", url=url)
+
+        self._account_token = None
+        if "code" in user_input:
+            client = _client_for(self.data)
+            try:
+                self._account_token = await client.exchange_authorization_code(
+                    user_input["code"], user_input["state"]["redirect_uri"]
+                )
+            except Exception:
+                _LOGGER.exception("Battle.net login failed")
+            finally:
+                await client.close()
+        return self.async_external_step_done(next_step_id="account_select")
+
+    async def async_step_account_failed(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Explain a failed login; nothing is lost, the user goes back and can add characters by hand."""
+        if user_input is not None:
+            if self.source == config_entries.SOURCE_RECONFIGURE:
+                # The existing configuration stays as it is
+                return self.async_abort(reason="account_login_skipped")
+            return await self.async_step_add_method()
+        return self.async_show_form(
+            step_id="account_failed",
+            data_schema=vol.Schema({}),
+            errors={"base": self._account_error or "account_login_failed"},
+        )
+
+    async def async_step_account_select(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Pick characters of the logged-in account."""
+        if not self._account_token:
+            self._account_error = "account_login_failed"
+            return await self.async_step_account_failed()
+
+        if not self._account_characters:
+            client = _client_for(self.data)
+            try:
+                for game_version in ACCOUNT_GAME_VERSIONS:
+                    try:
+                        profile = await client.get_account_profile(self._account_token["access_token"], game_version)
+                    except UserTokenExpired:
+                        self._account_token = None
+                        self._account_error = "account_login_failed"
+                        return await self.async_step_account_failed()
+                    for char in parse_account_characters(profile):
+                        if char.get("realm_slug") and char.get("name"):
+                            self._account_characters[f"{game_version}|{char['realm_slug']}|{char['name']}"] = {
+                                **char, CONF_GAME_VERSION: game_version,
+                            }
+            finally:
+                await client.close()
+
+        existing = {character_id(c) for c in self.characters}
+        available = {
+            key: c for key, c in self._account_characters.items()
+            if character_id({CONF_REALM: c["realm_slug"], CONF_CHARACTER_NAME: c["name"], CONF_GAME_VERSION: c[CONF_GAME_VERSION]}) not in existing
+        }
+
+        if user_input is not None:
+            self._account_selected = [key for key in _selected_values(user_input) if key in available]
+            return await self.async_step_account_options()
+
+        # Game version (foldable section) > realm (dropdown) > characters, so
+        # long rosters stay readable; a single game version starts unfolded.
+        grouped: Dict[str, Dict[str, List[Any]]] = {}
+        for key, c in available.items():
+            grouped.setdefault(c[CONF_GAME_VERSION], {}).setdefault(c["realm"] or c["realm_slug"], []).append((key, c))
+
+        schema: Dict[Any, Any] = {}
+        for game_version in ACCOUNT_GAME_VERSIONS:
+            realms = grouped.get(game_version)
+            if not realms:
+                continue
+            realm_schema: Dict[Any, Any] = {}
+            for realm in sorted(realms):
+                chars = sorted(realms[realm], key=lambda kv: (-(kv[1].get("level") or 0), kv[1]["name"]))
+                options = [
+                    {"value": key, "label": f"{c['name']} (Lv {c.get('level')}, {c.get('class')})"}
+                    for key, c in chars
+                ]
+                # HA does not nest sections; a dropdown keeps each realm folded until clicked
+                realm_schema[vol.Optional(f"{realm} ({len(chars)})", default=[])] = selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=options, mode=selector.SelectSelectorMode.DROPDOWN, multiple=True
+                    )
+                )
+            schema[vol.Required(game_version)] = section(
+                vol.Schema(realm_schema), {"collapsed": len(grouped) > 1}
+            )
+
+        return self.async_show_form(
+            step_id="account_select",
+            data_schema=vol.Schema(schema),
+            description_placeholders={"character_count": str(len(available))},
+        )
+
+    async def async_step_account_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """After picking characters: keep the login for account data (optional)."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="account_options",
+                data_schema=vol.Schema({
+                    # Preselected when renewing an existing login
+                    vol.Optional("keep_login", default=CONF_ACCOUNT_TOKEN in self.data): bool,
+                }),
+                description_placeholders={"selected_count": str(len(self._account_selected))},
+            )
+
+        existing = {character_id(c) for c in self.characters}
+        for key in self._account_selected:
+            char = self._account_characters[key]
+            game_version = char[CONF_GAME_VERSION]
+            new = {
+                CONF_REALM: char["realm_slug"],
+                CONF_CHARACTER_NAME: char["name"],
+                CONF_GAME_VERSION: game_version,
+            }
+            if character_id(new) in existing:
+                continue
+            existing.add(character_id(new))
+            self.characters.append({
+                **new,
+                CONF_NAMESPACE_SUFFIX: GAME_VERSIONS[game_version]["namespaces"][0],
+                "display_name": f"{char['name']} - {char['realm']} ({game_version_label(game_version)})",
+                "level": char.get("level"),
+                "character_class": char.get("class") or "Unknown",
+                "race": "",
+            })
+        if user_input.get("keep_login"):
+            self.data[CONF_ACCOUNT_TOKEN] = self._account_token
+        else:
+            # Unticked: no account data (and no reminders about the login)
+            self.data.pop(CONF_ACCOUNT_TOKEN, None)
+        if self.source == config_entries.SOURCE_RECONFIGURE:
+            entry = self._get_reconfigure_entry()
+            return self.async_update_reload_and_abort(
+                entry,
+                title=entry_title(self.characters),
+                data={**self.data, CONF_CHARACTERS: self.characters},
+            )
+        return await self.async_step_character_menu()
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Log in with Battle.net again: import characters and refresh the account login."""
+        entry = self._get_reconfigure_entry()
+        self.data = dict(entry.data)
+        self.characters = list(entry.data.get(CONF_CHARACTERS, []))
+        return await self.async_step_account_login()
 
     async def async_step_character(
         self, user_input: dict[str, Any] | None = None
@@ -411,12 +639,12 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
     ) -> FlowResult:
         """Manage added characters list and actions."""
         if len(self.characters) == 0:
-            return await self.async_step_character()
+            return await self.async_step_add_method()
 
         if user_input is not None:
             action = user_input["action"]
             if action == "add":
-                return await self.async_step_character()
+                return await self.async_step_add_method()
             elif action == "remove":
                 return await self.async_step_remove_character()
             elif action == "finish":
@@ -536,6 +764,8 @@ class WoWBlizzardOptionsFlowHandler(CharacterStepMixin, config_entries.OptionsFl
                 return await self.async_step_add_character()
             elif action == "remove_character":
                 return await self.async_step_remove_character()
+            elif action == "remove_account":
+                return await self.async_step_remove_account()
 
         current_characters = self.config_entry.data.get(CONF_CHARACTERS, [])
         options = [
@@ -544,6 +774,8 @@ class WoWBlizzardOptionsFlowHandler(CharacterStepMixin, config_entries.OptionsFl
         ]
         if len(current_characters) > 1:
             options.append({"value": "remove_character", "label": "Remove Character(s)"})
+        if CONF_ACCOUNT_TOKEN in self.config_entry.data:
+            options.append({"value": "remove_account", "label": "Remove Battle.net login"})
 
         return self.async_show_form(
             step_id="init",
@@ -572,14 +804,23 @@ class WoWBlizzardOptionsFlowHandler(CharacterStepMixin, config_entries.OptionsFl
 
         return self.async_show_form(
             step_id="features",
-            data_schema=vol.Schema({
-                vol.Optional(key, default=options.get(key, data.get(key, True))): bool
-                for key in FEATURE_KEYS
+            data_schema=features_schema({
+                key: options.get(key, data.get(key, FEATURE_DEFAULTS.get(key, "")))
+                for key in FEATURE_KEYS + [CONF_AUCTION_ITEMS]
             }),
             description_placeholders={
                 "character_count": len(current_characters),
             }
         )
+
+    async def async_step_remove_account(self, user_input=None):
+        """Forget the Battle.net login; characters and all other data stay."""
+        if user_input is not None:
+            new_data = {k: v for k, v in self.config_entry.data.items() if k != CONF_ACCOUNT_TOKEN}
+            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+            # Creating the options entry reloads the integration
+            return self.async_create_entry(title="", data=dict(self.config_entry.options))
+        return self.async_show_form(step_id="remove_account", data_schema=vol.Schema({}))
 
     async def async_step_add_character(self, user_input=None):
         """Handle character game version selection step in options."""
