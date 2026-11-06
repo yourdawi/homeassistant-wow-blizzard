@@ -43,6 +43,7 @@ from .const import (
     CONF_GAME_VERSION,
     CONF_LOCALE,
     CONF_NAMESPACE_SUFFIX,
+    CONF_RULESET_ID,
     ALL_SENSOR_TYPES,
     SERVER_SENSOR_TYPES,
     PVP_SENSOR_TYPES,
@@ -68,6 +69,8 @@ from .const import (
     ITEM_QUALITY_COLORS,
     GAME_VERSIONS,
     get_sensor_types_for_version,
+    NO_VALUE_TEXT,
+    no_value_text,
 )
 from .api_client import WoWBlizzardAPIClient, UserTokenExpired
 from .parsers import (
@@ -135,6 +138,9 @@ def assign_realm_keys(characters: List[Dict[str, Any]]) -> Dict[str, Dict[str, s
         seen_pairs.add((realm, game_version))
         key = realm if realm not in realms else f"{realm}-{game_version}"
         realms[key] = {"realm": realm, "game_version": game_version}
+        if char.get(CONF_RULESET_ID) is not None:
+            # WoW Forever: the ruleset carries the server status
+            realms[key]["ruleset_id"] = char[CONF_RULESET_ID]
     return realms
 
 
@@ -324,10 +330,22 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             })
         return items
 
-    async def _fetch_server_data(self, realm: str, game_version: str = "retail") -> Dict[str, Any]:
+    async def _fetch_server_data(self, realm: str, game_version: str = "retail", ruleset_id: Optional[int] = None) -> Dict[str, Any]:
         """Fetch server status data."""
         if not self.features.get(CONF_ENABLE_SERVER_STATUS, False):
             return {}
+
+        if ruleset_id is not None:
+            # WoW Forever: no realms, the ruleset (Normal, PvP ...) has the status
+            ruleset = await self.client.get_ruleset(ruleset_id, game_version)
+            status = ruleset.get("status") or {}
+            if not status:
+                return {}
+            return {
+                "realm_status": status.get("name", "Unknown"),
+                "realm_status_type": status.get("type"),
+                "ruleset": ruleset.get("name"),
+            }
 
         try:
             realm_info = await self.client.get_realm_info(realm, game_version=game_version)
@@ -413,6 +431,10 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             for sensor, bracket in brackets.items():
                 data = await self.client.get_character_pvp_bracket(realm, character_name, bracket, game_version)
                 await asyncio.sleep(0.1)
+                if not data and self.client.last_status == 404:
+                    # No rated games in this bracket: rating 0 instead of unknown
+                    result[sensor] = 0
+                    continue
                 if not data or "rating" not in data:
                     continue
                 season_id = (data.get("season") or {}).get("id")
@@ -602,6 +624,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             if not sensors & set(supported):
                 continue
             data = await self.client.get_character_resource(realm, character_name, resource, game_version)
+            if not data and self.client.last_status == 404 and resource in ("reputations", "encounters/dungeons"):
+                # Blizzard answers 404 when a character has none of these yet: that is 0, not unknown
+                data = {"_links": {}}
             _merge(result, parser(data))
             await asyncio.sleep(0.1)
 
@@ -672,7 +697,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         }
         # Recent achievements and boss kills, shown as events
         activity = await self.client.get_guild_activity(guild_path, game_version)
-        if activity:
+        if "activities" in activity:
+            # Some game versions (e.g. Anniversary, Forever) answer without a feed
             self._guild_activity[cache_key] = parse_guild_activity(activity)
         data["guild_key"] = cache_key
         self._guild_cache[cache_key] = (now, data)
@@ -1043,7 +1069,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             server_data = {}
             previous_servers = self._previous("servers")
             for realm_key, realm in self.realms.items():
-                realm_data = await self._fetch_server_data(realm["realm"], game_version=realm["game_version"])
+                realm_data = await self._fetch_server_data(
+                    realm["realm"], game_version=realm["game_version"], ruleset_id=realm.get("ruleset_id")
+                )
                 server_data[realm_key] = realm_data or previous_servers.get(realm_key, {})
                 await asyncio.sleep(0.1)
 
@@ -1282,6 +1310,9 @@ async def async_setup_entry(
     if features[CONF_ENABLE_SERVER_STATUS]:
         for realm_key, realm in coordinator.realms.items():
             for sensor_type in SERVER_SENSOR_TYPES:
+                if "ruleset_id" in realm and sensor_type != "realm_status":
+                    # WoW Forever rulesets only report their status
+                    continue
                 entities.append(
                     WoWServerSensor(coordinator, sensor_type, realm_key, realm["realm"], realm["game_version"])
                 )
@@ -1385,7 +1416,12 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         """Return the state of the sensor."""
-        return self._char_data.get(self._sensor_type)
+        char_data = self._char_data
+        value = char_data.get(self._sensor_type)
+        if value is None and self._sensor_type in NO_VALUE_TEXT and "character_level" in char_data:
+            # Profile loaded, but no title / no guild: say so instead of "unknown"
+            return no_value_text(self._sensor_type, self.coordinator.client.locale)
+        return value
 
     @property
     def entity_picture(self):
@@ -1529,7 +1565,8 @@ class WoWServerSensor(CoordinatorEntity, SensorEntity):
     def device_info(self):
         """Return device info."""
         realm_name = self._realm.replace("-", " ").title()
-        if self._realm_key != self._realm:
+        if self._realm_key != self._realm or GAME_VERSIONS.get(self._game_version, {}).get("realmless"):
+            # Also for WoW Forever, whose "realm" is a ruleset such as "Normal"
             realm_name = f"{realm_name} ({_game_version_label(self._game_version)})"
         return {
             "identifiers": {(DOMAIN, f"server_{self._realm_key}")},

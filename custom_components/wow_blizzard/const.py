@@ -94,11 +94,14 @@ GAME_VERSIONS = {
     "classic": {"label": "Classic Progression", "namespaces": ["-classic"]},
     "classic1x": {"label": "Classic Era", "namespaces": ["-classic1x"]},
     "classicann": {"label": "Classic Anniversary", "namespaces": ["-classicann"]},
-    # WoW: Forever (launch 2026-11-04). Blizzard has not documented its API
-    # namespace yet, so these are candidates; update once it is published.
-    "forever": {"label": "WoW Forever", "namespaces": ["-forever", "-camelot"]},
+    # WoW Forever (since 2026-11-04): namespace "forever", verified live. It has
+    # no realms: characters have a first and last name and play on a ruleset
+    # (Normal, PvP, Role-play ...), so profile paths have no realm segment.
+    "forever": {"label": "WoW Forever", "namespaces": ["-forever"], "realmless": True},
 }
 CONF_NAMESPACE_SUFFIX = "namespace_suffix"
+# WoW Forever: ruleset (game mode) of a character, used for the server status
+CONF_RULESET_ID = "ruleset_id"
 
 # Hall of Fame (public worldofwarcraft.blizzard.com GraphQL endpoint).
 # Known persisted query hashes; if Blizzard rotates them, the client re-reads
@@ -666,12 +669,40 @@ VERSION_SENSOR_SUPPORT = {
                     "hunter_pet"},
         "guild": None,
     },
-    # WoW Forever: API coverage is unknown until launch, so only the
-    # profile-based basics are exposed. Missing values stay unknown.
+    # WoW Forever (Vanilla based, 1.60): verified against the live API (EU,
+    # 2026-11). No arenas, Mythic+, token, weekly period or housing decor.
     "forever": {
         "basic": None,
+        "pvp": {"pvp_honorable_kills", "pvp_rank"},
+        "raid": {"raid_progress_normal", "raid_kills_total"},
+        "details": {"professions", "stat_health", "stat_crit", "active_title", "reputations",
+                    "talents", "dungeons_completed", "deaths", "quests_completed", "hunter_pet"},
+        "collections": {"mounts_collected", "pets_collected", "toys_collected", "heirlooms_collected"},
+        "guild": None,
     },
 }
+
+# Shown instead of "unknown" when a character has no title or no guild. In the
+# language of the API locale, like all other names the API returns.
+NO_VALUE_TEXT = {
+    "active_title": {
+        "de": "Kein Titel", "en": "No title", "es": "Sin título", "fr": "Aucun titre",
+        "it": "Nessun titolo", "pt": "Sem título", "ru": "Нет звания", "ko": "칭호 없음",
+        "zh": "无头衔",
+    },
+    "guild_name": {
+        "de": "Keine Gilde", "en": "No guild", "es": "Sin hermandad", "fr": "Aucune guilde",
+        "it": "Nessuna gilda", "pt": "Sem guilda", "ru": "Нет гильдии", "ko": "길드 없음",
+        "zh": "无公会",
+    },
+}
+
+
+def no_value_text(sensor_type: str, locale: str) -> str:
+    """Localized "no title" / "no guild" for the API locale (falls back to English)."""
+    texts = NO_VALUE_TEXT[sensor_type]
+    return texts.get((locale or "en")[:2].lower(), texts["en"])
+
 
 # Item quality colors for UI, keyed by the API's quality type
 ITEM_QUALITY_COLORS = {
@@ -710,7 +741,7 @@ def get_sensor_types_for_version(game_version: str) -> dict:
     Each value is a dict of sensor_type -> config (subset of the group's sensors);
     groups a version does not support are empty. Unknown versions get the basics.
     """
-    support = VERSION_SENSOR_SUPPORT.get(game_version, VERSION_SENSOR_SUPPORT["forever"])
+    support = VERSION_SENSOR_SUPPORT.get(game_version, {"basic": None})
     result = {}
     for group, sensors in CHARACTER_SENSOR_GROUPS.items():
         if group not in support:

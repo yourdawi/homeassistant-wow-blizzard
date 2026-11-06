@@ -50,18 +50,20 @@ Each character is added with its game version. The integration only creates the 
 | Classic Progression (currently Mists of Pandaria) | `profile-classic-{region}` | All | 2v2, 3v3, wins, honorable kills | No | No | No professions, versatility or dungeons | No | Yes | No |
 | Classic Anniversary (Burning Crusade) | `profile-classicann-{region}` | No achievement points | 2v2, 3v3, wins, honorable kills | No | No | Health, crit, haste, title, reputations, talents, hunter pets | No | Yes | No |
 | Classic Era (Vanilla) | `profile-classic1x-{region}` | No achievement points | Honorable kills, PvP rank | No | No | Health, crit, title, reputations, talents, hunter pets | No | Yes | No |
-| WoW Forever | detected at setup | All | No | No | No | No | No | No | No |
+| WoW Forever | `profile-forever-{region}` | All | Honorable kills, PvP rank | Normal progress, total kills | No | No versatility, haste or mastery | Mounts, pets, toys, heirlooms | Yes | No |
 
-The support per version was checked against the live API (EU, October 2026). The WoW Token price is available for Retail and Classic Progression; Blizzard does not offer it for Classic Era and Anniversary.
+The support per version was checked against the live API (EU, October 2026; WoW Forever November 2026). The WoW Token price is available for Retail and Classic Progression; Blizzard does not offer it for Classic Era and Anniversary.
 
 ### WoW Forever
 
-WoW Forever launches on November 4, 2026. As of this release Blizzard has not documented an API namespace for it. The integration ships with candidate namespaces and probes them when you add a Forever character:
+WoW Forever (since November 4, 2026) uses the API namespace `forever` (`profile-forever-eu`, `dynamic-forever-eu`, ...). Blizzard's documentation does not list it yet; the integration checks it when you add a Forever character.
 
-- If one of them answers, it is stored with the character and used from then on.
-- If none answers, setup shows "This game version is not available in the Blizzard API yet". Try again after Blizzard enables the API. If it still fails, please open an issue.
+WoW Forever has **no realms**. Characters have a first and last name and play in a game mode (Blizzard calls it ruleset: Normal, PvP, Role-play, Role-play PvP). So adding a Forever character only asks for the name, for example `Arthas Menethil`; the game mode comes from the character. It takes the place of the realm:
 
-Forever support starts with the basic sensors (level, item level, guild, achievement points). More will follow once the API is known.
+- The character device is named after it, e.g. `Arthas Menethil (normal)`.
+- The server device, e.g. `Normal (WoW Forever) Server`, only has **Realm Status** (the status of the game mode). Population and queue do not exist for Forever.
+
+Not available for Forever in the API: arena ratings, Mythic+, WoW Token, weekly reset and housing decor. Its auction house is split into 15 houses per game mode with about 10 MB each, which is too much to download hourly, so auction prices are not offered for Forever.
 
 ## Requirements
 
@@ -121,7 +123,7 @@ config/
 
 Choose **Enter realm and name** or **Log in with Battle.net**.
 
-**Log in with Battle.net** (optional) opens the Battle.net login. Afterwards all characters of your account (Retail and all Classic versions) are listed and you tick the ones to add. With **Also load account data** the login is kept and the integration adds gold and account collections. Blizzard logins last 24 hours and cannot be renewed automatically. An expired login never breaks the integration: everything that does not need the login keeps updating, gold and account values keep their last state (also across restarts), and a notice under **Settings > Repairs** reminds you that you can log in again with **Reconfigure**. Logging in again is optional; you can ignore the notice or remove the login. If the login fails or is cancelled during setup, nothing is lost and you can add characters by hand. The login needs My Home Assistant (part of `default_config`) and the redirect URL from step 1.
+**Log in with Battle.net** (optional) opens the Battle.net login. Afterwards all characters of your account (Retail, all Classic versions and WoW Forever) are listed and you tick the ones to add. With **Also load account data** the login is kept and the integration adds gold and account collections. Blizzard logins last 24 hours and cannot be renewed automatically. An expired login never breaks the integration: everything that does not need the login keeps updating, gold and account values keep their last state (also across restarts), and a notice under **Settings > Repairs** reminds you that you can log in again with **Reconfigure**. Logging in again is optional; you can ignore the notice or remove the login. If the login fails or is cancelled during setup, nothing is lost and you can add characters by hand. The login needs My Home Assistant (part of `default_config`) and the redirect URL from step 1.
 
 **Enter realm and name:**
 
@@ -153,7 +155,7 @@ Each character becomes a device named `<Character> (<realm>)`, each realm become
 | --- | --- | --- |
 | Level | `sensor.thrall_stormrage_level` | |
 | Item Level | `sensor.thrall_stormrage_item_level` | Equipped item level |
-| Guild | `sensor.thrall_stormrage_guild` | |
+| Guild | `sensor.thrall_stormrage_guild` | "No guild" if the character is in none |
 | Achievement Points | `sensor.thrall_stormrage_achievement_points` | |
 | Equipment Details | `sensor.thrall_stormrage_equipment_details` | Number of equipped items; gear per slot in attributes |
 | 2v2 Arena Rating | `sensor.thrall_stormrage_2v2_arena_rating` | PvP |
@@ -177,7 +179,7 @@ The rated PvP sensors only count the current season. Blizzard returns the last s
 | Professions | `sensor.thrall_stormrage_professions` | Primary professions; skill of the newest tier per profession in `professions` |
 | Health | `sensor.thrall_stormrage_health` | Details; primary stats, armor, power in attributes |
 | Critical Strike / Haste / Mastery / Versatility | `sensor.thrall_stormrage_haste` | Details, in percent |
-| Title | `sensor.thrall_stormrage_title` | Details, active title; Retail adds `title_count` |
+| Title | `sensor.thrall_stormrage_title` | Details, active title ("No title" if none is selected); Retail adds `title_count` |
 | Reputations | `sensor.thrall_stormrage_reputations` | Details, number of known factions; standing per faction in `factions` |
 | Talents | `sensor.thrall_stormrage_talents` | Details; Retail: hero talent tree with `loadout_code`, Classic Progression: specialization with `talent_list` and `glyphs`, Era/Anniversary: points per tree |
 | Dungeons Completed | `sensor.thrall_stormrage_dungeons_completed` | Details, dungeons of the newest expansion with at least one completed difficulty |
@@ -242,7 +244,7 @@ Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, nam
 
 ### Guild activity
 
-Each guild of your characters gets an event entity on the device of the first character in it, e.g. `event.thrall_stormrage_guild_activity`. It fires `achievement` (attributes `character`, `achievement`, `achievement_id`) and `encounter` (`encounter`, `encounter_id`, `difficulty`, `difficulty_name`) for every new entry in the guild's activity feed. Activity is checked hourly; entries from before Home Assistant started are not replayed.
+Each guild of your characters gets an event entity on the device of the first character in it, e.g. `event.thrall_stormrage_guild_activity`. It fires `achievement` (attributes `character`, `achievement`, `achievement_id`) and `encounter` (`encounter`, `encounter_id`, `difficulty`, `difficulty_name`) for every new entry in the guild's activity feed. Activity is checked hourly; entries from before Home Assistant started are not replayed. A new event entity starts with the guild's newest entry instead of `unknown`. Blizzard has no activity feed for Classic Anniversary and WoW Forever guilds, so those get no event entity.
 
 ```yaml
 automation:
@@ -420,7 +422,7 @@ Check the client ID and secret at https://develop.battle.net/access/clients.
 - New characters, or characters that have not logged in for a long time, may not be in the API until they log in and log out once.
 
 **Values are missing or unknown**
-- PvP ratings appear only after the character has played rated games this season.
+- PvP ratings show `0` until the character has played rated games in that bracket this season.
 - Mythic+ values need at least one run in the current season.
 - Some sensors are not offered for some game versions (see [Supported game versions](#supported-game-versions)).
 
@@ -444,7 +446,7 @@ logger:
 - Account data needs a Battle.net login of the player, which Blizzard limits to 24 hours without a way to renew it automatically.
 - Classic Era and Anniversary auction houses are listed by the API but return no data.
 - Hall of Fame data comes from the public website rather than the official API and can break when Blizzard changes the site.
-- WoW Forever support depends on Blizzard publishing its API namespace (see [WoW Forever](#wow-forever)).
+- WoW Forever auction prices are not supported (see [WoW Forever](#wow-forever)).
 - Weekly activities (Great Vault, weekly quests) are not part of the public game data API for other accounts, so they cannot be tracked.
 
 ## Contributing
