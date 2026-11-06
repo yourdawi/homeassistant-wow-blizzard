@@ -28,10 +28,12 @@ async def async_setup_entry(
 
     entities = []
     seen = set()
+    feeds = (coordinator.data or {}).get("guild_activity") or {}
     for character in coordinator.characters:
         char_data = (coordinator.data or {}).get(character["key"]) or {}
         guild_key = char_data.get("guild_key")
-        if not guild_key or guild_key in seen:
+        # Only guilds with an activity feed (not every game version has one)
+        if not guild_key or guild_key in seen or guild_key not in feeds:
             continue
         seen.add(guild_key)
         # The entity sits on the device of the first character in that guild
@@ -80,6 +82,21 @@ class WoWGuildActivityEvent(CoordinatorEntity, EventEntity):
         self._attr_icon = "mdi:bullhorn"
         # Only activity newer than what was there at startup is reported
         self._last_timestamp = self._newest_timestamp()
+
+    async def async_added_to_hass(self) -> None:
+        """Start from the newest known activity instead of "unknown" when first created."""
+        await super().async_added_to_hass()
+        if self.state is not None:
+            # Restored from before a restart
+            return
+        newest = next((a for a in self._activities() if a.get("type") in EVENT_TYPES), None)
+        if newest:
+            # Only when the entity is new, so no automation can react to this
+            self._trigger_event(
+                newest["type"],
+                {**{k: v for k, v in newest.items() if k != "type"}, "guild": self._guild_name},
+            )
+            self.async_write_ha_state()
 
     def _activities(self) -> list[dict[str, Any]]:
         if not self.coordinator.data:

@@ -41,6 +41,7 @@ from .const import (
     CONF_GAME_VERSION,
     CONF_LOCALE,
     CONF_NAMESPACE_SUFFIX,
+    CONF_RULESET_ID,
     GAME_VERSIONS,
 )
 from .api_client import WoWBlizzardAPIClient, InvalidCredentials, UserTokenExpired
@@ -62,7 +63,7 @@ FEATURE_KEYS = [
 ]
 
 # Game versions whose account characters can be imported after a Battle.net login
-ACCOUNT_GAME_VERSIONS = ["retail", "classic", "classicann", "classic1x"]
+ACCOUNT_GAME_VERSIONS = ["retail", "classic", "classicann", "classic1x", "forever"]
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -179,8 +180,22 @@ def create_realm_selector_config(realm_options: List[Dict[str, str]]) -> selecto
     )
 
 
-def character_details_schema(realms_list: List[Dict[str, Any]]) -> vol.Schema:
+def is_realmless(game_version: str) -> bool:
+    """WoW Forever has no realms; characters are found by first and last name."""
+    return bool(GAME_VERSIONS.get(game_version, {}).get("realmless"))
+
+
+def details_complete(user_input: Dict[str, Any], game_version: str) -> bool:
+    """Whether the realm/name form was filled; an empty form goes back to the menu."""
+    if is_realmless(game_version):
+        return bool(user_input.get(CONF_CHARACTER_NAME))
+    return bool(user_input.get(CONF_REALM) and user_input.get(CONF_CHARACTER_NAME))
+
+
+def character_details_schema(realms_list: List[Dict[str, Any]], realmless: bool = False) -> vol.Schema:
     """Schema for realm + character name, with a realm dropdown when realms are known."""
+    if realmless:
+        return vol.Schema({vol.Optional(CONF_CHARACTER_NAME): str})
     realm_options = [
         {"value": realm["slug"], "label": realm_display_name(realm)}
         for realm in realms_list
@@ -271,12 +286,19 @@ async def validate_character(
     if not character_data or "name" not in character_data:
         raise CharacterNotFound(f"Character {character[CONF_CHARACTER_NAME]} not found on {character[CONF_REALM]}")
 
+    name = character_data["name"]
+    if character_data.get("surname"):
+        # WoW Forever: two-part names
+        name = f"{name} {character_data['surname']}"
+    ruleset = character_data.get("ruleset") or {}
     return {
-        "name": character_data["name"],
+        "name": name,
         "level": character_data.get("level", "Unknown"),
         "character_class": character_data.get("character_class", {}).get("name", "Unknown"),
         "race": character_data.get("race", {}).get("name", "Unknown"),
-        "realm": character_data.get("realm", {}).get("name", character[CONF_REALM]),
+        # WoW Forever has rulesets (Normal, PvP, Role-play ...) instead of realms
+        "realm": (character_data.get("realm") or {}).get("name") or ruleset.get("name") or character[CONF_REALM],
+        "ruleset_id": ruleset.get("id"),
     }
 
 
@@ -309,6 +331,10 @@ class CharacterStepMixin:
         realms = await self._get_realms(data, game_version)
         errors = {}
         placeholders = {"game_version": game_version_label(game_version)}
+        realmless = is_realmless(game_version)
+        if realmless:
+            # Own form text: first and last name instead of realm and name
+            step_id = f"{step_id}_forever"
 
         if realms["suffix"] is None:
             errors["base"] = "game_version_unavailable"
@@ -317,23 +343,31 @@ class CharacterStepMixin:
 
         if user_input is not None and not errors:
             character = {
-                CONF_REALM: user_input[CONF_REALM],
-                CONF_CHARACTER_NAME: user_input[CONF_CHARACTER_NAME],
+                CONF_REALM: user_input.get(CONF_REALM, ""),
+                CONF_CHARACTER_NAME: user_input[CONF_CHARACTER_NAME].strip(),
                 CONF_GAME_VERSION: game_version,
             }
-            if character_id(character) in [character_id(c) for c in existing]:
+            if not realmless and character_id(character) in [character_id(c) for c in existing]:
                 errors["base"] = "character_already_added"
             else:
                 try:
                     info = await validate_character(self.hass, data, character, game_version, realms["suffix"])
-                    return {
-                        **character,
-                        CONF_NAMESPACE_SUFFIX: realms["suffix"],
-                        "display_name": f"{info['name']} - {info['realm']} ({game_version_label(game_version)})",
-                        "level": info["level"],
-                        "character_class": info["character_class"],
-                        "race": info["race"],
-                    }
+                    if realmless:
+                        # The ruleset takes the place of the realm (device name, server status)
+                        character[CONF_REALM] = WoWBlizzardAPIClient.realm_to_slug(info["realm"])
+                        character[CONF_CHARACTER_NAME] = info["name"]
+                        character[CONF_RULESET_ID] = info["ruleset_id"]
+                    if realmless and character_id(character) in [character_id(c) for c in existing]:
+                        errors["base"] = "character_already_added"
+                    else:
+                        return {
+                            **character,
+                            CONF_NAMESPACE_SUFFIX: realms["suffix"],
+                            "display_name": f"{info['name']} - {info['realm']} ({game_version_label(game_version)})",
+                            "level": info["level"],
+                            "character_class": info["character_class"],
+                            "race": info["race"],
+                        }
                 except CharacterNotFound:
                     errors["base"] = "character_not_found"
                 except CannotConnect:
@@ -344,7 +378,7 @@ class CharacterStepMixin:
 
         return self.async_show_form(
             step_id=step_id,
-            data_schema=character_details_schema(realms["realms"]),
+            data_schema=character_details_schema(realms["realms"], realmless),
             errors=errors,
             description_placeholders=placeholders,
         )
@@ -489,6 +523,8 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
                         return await self.async_step_account_failed()
                     for char in parse_account_characters(profile):
                         if char.get("realm_slug") and char.get("name"):
+                            if is_realmless(game_version) and char.get("ruleset_id"):
+                                char = {**char, CONF_RULESET_ID: char["ruleset_id"]}
                             self._account_characters[f"{game_version}|{char['realm_slug']}|{char['name']}"] = {
                                 **char, CONF_GAME_VERSION: game_version,
                             }
@@ -565,6 +601,8 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
             if character_id(new) in existing:
                 continue
             existing.add(character_id(new))
+            if char.get(CONF_RULESET_ID):
+                new[CONF_RULESET_ID] = char[CONF_RULESET_ID]
             self.characters.append({
                 **new,
                 CONF_NAMESPACE_SUFFIX: GAME_VERSIONS[game_version]["namespaces"][0],
@@ -619,7 +657,7 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
     ) -> FlowResult:
         """Handle character details addition step."""
         # Submitting the form empty goes back to the menu
-        if user_input is not None and not (user_input.get(CONF_REALM) and user_input.get(CONF_CHARACTER_NAME)):
+        if user_input is not None and not details_complete(user_input, self.current_character[CONF_GAME_VERSION]):
             return await self.async_step_character_menu()
 
         result = await self._character_details(
@@ -633,6 +671,12 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
             self.characters.append(result)
             return await self.async_step_character_menu()
         return result
+
+    async def async_step_character_details_forever(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """WoW Forever variant of the character form (first and last name)."""
+        return await self.async_step_character_details(user_input)
 
     async def async_step_character_menu(
         self, user_input: dict[str, Any] | None = None
@@ -839,7 +883,7 @@ class WoWBlizzardOptionsFlowHandler(CharacterStepMixin, config_entries.OptionsFl
     async def async_step_add_character_details(self, user_input=None):
         """Handle character details addition step in options."""
         # Submitting the form empty goes back to the options menu
-        if user_input is not None and not (user_input.get(CONF_REALM) and user_input.get(CONF_CHARACTER_NAME)):
+        if user_input is not None and not details_complete(user_input, self._current_character[CONF_GAME_VERSION]):
             return await self.async_step_init()
 
         current_characters = list(self.config_entry.data.get(CONF_CHARACTERS, []))
@@ -853,6 +897,10 @@ class WoWBlizzardOptionsFlowHandler(CharacterStepMixin, config_entries.OptionsFl
         if CONF_REALM in result:
             return self._save_characters(current_characters + [result])
         return result
+
+    async def async_step_add_character_details_forever(self, user_input=None):
+        """WoW Forever variant of the character form (first and last name)."""
+        return await self.async_step_add_character_details(user_input)
 
     async def async_step_remove_character(self, user_input=None):
         """Handle character removal in options flow."""

@@ -97,6 +97,13 @@
         "data": {
           "keep_login": "Account-Daten laden (Gold, Account-Sammlungen), solange der Login gilt"
         }
+      },
+      "character_details_forever": {
+        "title": "WoW-Forever-Charakter hinzufügen",
+        "description": "WoW Forever hat keine Realms. Gib Vor- und Nachname des Charakters ein, zum Beispiel `Arthas Menethil`. Den Spielmodus (Normal, PvP, Rollenspiel ...) übernimmt die Integration vom Charakter.",
+        "data": {
+          "character_name": "Vor- und Nachname"
+        }
       }
     },
     "error": {
@@ -167,6 +174,13 @@
       "remove_account": {
         "title": "Battle.net-Login entfernen",
         "description": "Die Integration vergisst den Battle.net-Login. Gold- und Account-Sensoren werden entfernt; Charaktere und alle anderen Daten bleiben. Du kannst dich jederzeit über Neu konfigurieren wieder anmelden."
+      },
+      "add_character_details_forever": {
+        "title": "WoW-Forever-Charakter hinzufügen",
+        "description": "WoW Forever hat keine Realms. Gib Vor- und Nachname des Charakters ein, zum Beispiel `Arthas Menethil`. Den Spielmodus (Normal, PvP, Rollenspiel ...) übernimmt die Integration vom Charakter.",
+        "data": {
+          "character_name": "Vor- und Nachname"
+        }
       }
     },
     "error": {

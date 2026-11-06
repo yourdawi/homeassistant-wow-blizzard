@@ -2,6 +2,8 @@
 import re
 from typing import Any, Dict, Optional
 
+from .api_client import WoWBlizzardAPIClient
+
 # Achievement statistic IDs (stable across locales)
 STATISTIC_TOTAL_DEATHS = 60
 STATISTIC_QUESTS_COMPLETED = 98
@@ -182,10 +184,13 @@ def parse_talents(data: Dict[str, Any]) -> Dict[str, Any]:
 
 def parse_dungeons(data: Dict[str, Any]) -> Dict[str, Any]:
     """Dungeon encounters: dungeons completed in the newest expansion."""
-    expansions = (data or {}).get("expansions") or []
+    if not data:
+        return {}
+    expansions = data.get("expansions") or []
     current = max(expansions, key=lambda e: (e.get("expansion") or {}).get("id", 0), default=None)
     if current is None:
-        return {}
+        # Valid answer without any dungeon (e.g. a new character)
+        return {"dungeons_completed": 0}
     dungeons = {}
     for instance in current.get("instances") or []:
         name = (instance.get("instance") or {}).get("name")
@@ -382,9 +387,18 @@ def parse_account_characters(data: Dict[str, Any]) -> list:
     characters = []
     for account in (data or {}).get("wow_accounts") or []:
         for char in account.get("characters") or []:
-            realm = char.get("realm") or {}
+            # WoW Forever: no realm but a ruleset, and a surname
+            ruleset = char.get("ruleset") or {}
+            realm = char.get("realm") or {
+                "name": ruleset.get("name"),
+                "slug": WoWBlizzardAPIClient.realm_to_slug(ruleset.get("name") or "forever"),
+            }
+            name = char.get("name")
+            if name and char.get("surname"):
+                name = f"{name} {char['surname']}"
             characters.append({
-                "name": char.get("name"),
+                "name": name,
+                "ruleset_id": ruleset.get("id"),
                 "id": char.get("id"),
                 "realm": realm.get("name"),
                 "realm_slug": realm.get("slug"),

@@ -97,6 +97,13 @@
         "data": {
           "keep_login": "Load account data (gold, account collections) while the login is valid"
         }
+      },
+      "character_details_forever": {
+        "title": "Add WoW Forever character",
+        "description": "WoW Forever has no realms. Enter the character's first and last name, for example `Arthas Menethil`. The game mode (Normal, PvP, Role-play ...) is taken from the character.",
+        "data": {
+          "character_name": "First and last name"
+        }
       }
     },
     "error": {
@@ -167,6 +174,13 @@
       "remove_account": {
         "title": "Remove Battle.net login",
         "description": "The integration forgets the Battle.net login. Gold and account sensors are removed; characters and all other data stay. You can log in again any time with Reconfigure."
+      },
+      "add_character_details_forever": {
+        "title": "Add WoW Forever character",
+        "description": "WoW Forever has no realms. Enter the character's first and last name, for example `Arthas Menethil`. The game mode (Normal, PvP, Role-play ...) is taken from the character.",
+        "data": {
+          "character_name": "First and last name"
+        }
       }
     },
     "error": {
