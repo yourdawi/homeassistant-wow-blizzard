@@ -45,7 +45,7 @@
       },
       "character_menu": {
         "title": "WoW Characters Manager",
-        "description": "Currently added characters ({character_count}):<br/>{character_list}<br/><br/>Choose your next action.",
+        "description": "Currently added characters ({character_count}):\n\n{character_list}\n\nChoose your next action.",
         "data": {
           "action": "Next Action"
         }
@@ -59,7 +59,7 @@
       },
       "add_method": {
         "title": "Add characters",
-        "description": "Add a character by hand, or log in with Battle.net to pick characters from your account. The login needs `https://my.home-assistant.io/redirect/oauth` as redirect URL of your Battle.net API client.",
+        "description": "Add a character by hand, or log in with Battle.net to pick characters from your account. The login needs `{redirect_url}` as redirect URL of your Battle.net API client.",
         "menu_options": {
           "character": "Enter realm and name",
           "account_login": "Log in with Battle.net"
@@ -89,7 +89,7 @@
       },
       "account_failed": {
         "title": "Battle.net login not completed",
-        "description": "Nothing is lost. Continue to add characters by hand or try the login again. If this keeps failing, check that `https://my.home-assistant.io/redirect/oauth` is a redirect URL of your Battle.net API client."
+        "description": "Nothing is lost. Continue to add characters by hand or try the login again. If this keeps failing, check that `{redirect_url}` is a redirect URL of your Battle.net API client."
       },
       "account_options": {
         "title": "Account data",
