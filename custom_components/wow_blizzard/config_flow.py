@@ -47,6 +47,8 @@ from .const import (
 from .api_client import WoWBlizzardAPIClient, InvalidCredentials, UserTokenExpired
 from .parsers import parse_account_characters
 
+OAUTH_REDIRECT_URL = "https://my.home-assistant.io/redirect/oauth"
+
 _LOGGER = logging.getLogger(__name__)
 
 FEATURE_KEYS = [
@@ -82,21 +84,21 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
                 translation_key="regions",
             )
         ),
-        vol.Required(CONF_LOCALE, default="en_US"): selector.SelectSelector(
+        vol.Required(CONF_LOCALE, default="en_us"): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 options=[
-                    {"value": "en_US", "label": "English (United States)"},
-                    {"value": "es_MX", "label": "Spanish (Mexico)"},
-                    {"value": "pt_BR", "label": "Portuguese"},
-                    {"value": "de_DE", "label": "German"},
-                    {"value": "en_GB", "label": "English (Great Britain)"},
-                    {"value": "es_ES", "label": "Spanish (Spain)"},
-                    {"value": "fr_FR", "label": "French"},
-                    {"value": "it_IT", "label": "Italian"},
-                    {"value": "ru_RU", "label": "Russian"},
-                    {"value": "ko_KR", "label": "Korean"},
-                    {"value": "zh_TW", "label": "Chinese (Traditional)"},
-                    {"value": "zh_CN", "label": "Chinese (Simplified)"},
+                    {"value": "en_us", "label": "English (United States)"},
+                    {"value": "es_mx", "label": "Spanish (Mexico)"},
+                    {"value": "pt_br", "label": "Portuguese"},
+                    {"value": "de_de", "label": "German"},
+                    {"value": "en_gb", "label": "English (Great Britain)"},
+                    {"value": "es_es", "label": "Spanish (Spain)"},
+                    {"value": "fr_fr", "label": "French"},
+                    {"value": "it_it", "label": "Italian"},
+                    {"value": "ru_ru", "label": "Russian"},
+                    {"value": "ko_kr", "label": "Korean"},
+                    {"value": "zh_tw", "label": "Chinese (Traditional)"},
+                    {"value": "zh_cn", "label": "Chinese (Simplified)"},
                 ],
                 mode=selector.SelectSelectorMode.DROPDOWN,
                 translation_key="locales",
@@ -448,7 +450,11 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Add a character by hand or import characters with a Battle.net login."""
-        return self.async_show_menu(step_id="add_method", menu_options=["character", "account_login"])
+        return self.async_show_menu(
+            step_id="add_method",
+            menu_options=["character", "account_login"],
+            description_placeholders={"redirect_url": OAUTH_REDIRECT_URL},
+        )
 
     def _oauth_implementation(self) -> LocalOAuth2Implementation:
         region = self.data[CONF_REGION]
@@ -501,6 +507,7 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
             step_id="account_failed",
             data_schema=vol.Schema({}),
             errors={"base": self._account_error or "account_login_failed"},
+            description_placeholders={"redirect_url": OAUTH_REDIRECT_URL},
         )
 
     async def async_step_account_select(
@@ -694,7 +701,7 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
             elif action == "finish":
                 return await self.async_step_final()
 
-        char_list = "<br/>".join([f"- {c['display_name']} (Lv {c['level']})" for c in self.characters])
+        char_list = "\n".join([f"- {c['display_name']} (Lv {c['level']})" for c in self.characters])
 
         menu_options = [
             {"value": "add", "label": "Add another character"},

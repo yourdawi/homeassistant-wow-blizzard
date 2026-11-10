@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version in manifest.json from the release tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          path = "custom_components/wow_blizzard/manifest.json"
+          with open(path, encoding="utf-8") as f:
+              manifest = json.load(f)
+          manifest["version"] = os.environ["TAG"].removeprefix("v")
+          with open(path, "w", encoding="utf-8") as f:
+              json.dump(manifest, f, indent=2, ensure_ascii=False)
+              f.write("\n")
+          print("version:", manifest["version"])
+          PY
+
+      - name: Build wow_blizzard.zip
+        run: |
+          cd custom_components/wow_blizzard
+          zip -r "$GITHUB_WORKSPACE/wow_blizzard.zip" . -x "__pycache__/*" "*.pyc"
+
+      - name: Upload zip to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" wow_blizzard.zip --clobber

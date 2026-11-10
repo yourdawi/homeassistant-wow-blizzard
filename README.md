@@ -1,4 +1,11 @@
-# World of Warcraft Blizzard API for Home Assistant
+# World of Warcraft for Home Assistant
+
+<!-- ha-marketplace:exclude-start -->
+[![Validate](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/validate.yaml/badge.svg)](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/validate.yaml)
+[![Validate with hassfest](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/hassfest.yaml)
+
+[![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=yourdawi&repository=homeassistant-wow-blizzard&category=integration)
+<!-- ha-marketplace:exclude-end -->
 
 A custom integration that brings World of Warcraft character, realm and Hall of Fame data into Home Assistant, using the official Blizzard Battle.net API.
 
@@ -69,22 +76,33 @@ Not available for Forever in the API: arena ratings, Mythic+, WoW Token, weekly 
 
 - Home Assistant 2024.11 or newer
 - A Battle.net API client (free): https://develop.battle.net/access/clients
-- HACS (recommended)
 
+<!-- ha-marketplace:exclude-start -->
 ## Installation
 
-### HACS
+### Marketplace (Home Assistant 2026.11 and newer)
+
+Since Home Assistant 2026.11 the Marketplace (formerly HACS) is part of Home Assistant.
+
+[![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=yourdawi&repository=homeassistant-wow-blizzard&category=integration)
+
+1. Click the button above, or go to **Settings > Marketplace** and search for **World of Warcraft**. If it is not listed yet, add `https://github.com/yourdawi/homeassistant-wow-blizzard` as a repository by link with the type **Integration**.
+2. Select **Download**.
+3. Continue with [Configuration](#configuration). A restart is only needed for updates.
+
+### HACS (Home Assistant before 2026.11)
 
 1. Open HACS and select **Integrations**.
 2. Open the menu and select **Custom repositories**.
 3. Add `https://github.com/yourdawi/homeassistant-wow-blizzard` with the category **Integration**.
-4. Install **World of Warcraft Blizzard API**.
+4. Install **World of Warcraft**.
 5. Restart Home Assistant.
 
 ### Manual
 
-1. Copy `custom_components/wow_blizzard` into `config/custom_components/` of your Home Assistant installation.
-2. Restart Home Assistant.
+1. Download `wow_blizzard.zip` from the [latest release](https://github.com/yourdawi/homeassistant-wow-blizzard/releases/latest).
+2. Unpack it into `config/custom_components/wow_blizzard/` of your Home Assistant installation.
+3. Restart Home Assistant.
 
 ```
 config/
@@ -103,6 +121,7 @@ config/
       translations/
       brand/
 ```
+<!-- ha-marketplace:exclude-end -->
 
 ## Configuration
 
@@ -114,7 +133,9 @@ config/
 
 ### 2. Add the integration
 
-1. Go to **Settings > Devices & Services > Add Integration** and search for **World of Warcraft Blizzard API**.
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=wow_blizzard)
+
+1. Click the button above, or go to **Settings > Devices & Services > Add Integration** and search for **World of Warcraft**.
 2. Enter the client ID and secret, select your **region** (US, EU, KR, TW, CN) and the **API locale**. The locale sets the language of names returned by the API, such as classes, realm status and raid names.
 3. Choose which feature groups to enable: realm status, PvP, raids, Mythic+, Hall of Fame, character details, collections, guild, region data (WoW Token, weekly reset) and the Mythic+ realm leaderboards (off by default, they download about 8 MB per realm and hour).
 4. Optionally enter item IDs to track auction prices, for example `210796, 224025`. You find the ID in the item's Wowhead URL. Leave the field empty to skip the auction house.
@@ -135,7 +156,7 @@ Submitting the realm form empty takes you back to the menu.
 
 ### Changing the configuration later
 
-Open **Settings > Devices & Services > World of Warcraft Blizzard API > Configure**:
+Open **Settings > Devices & Services > World of Warcraft > Configure**:
 
 - **Add a Character** adds another character, in any game version.
 - **Remove Character(s)** removes characters. At least one has to remain.

@@ -1,9 +1,7 @@
 {
-  "name": "World of Warcraft Blizzard API",
+  "name": "World of Warcraft",
   "content_in_root": false,
-  "render_readme": true,
-  "domains": ["sensor"],
+  "filename": "wow_blizzard.zip",
   "homeassistant": "2024.11.0",
-  "hacs": "1.6.0",
-  "iot_class": "cloud_polling"
+  "zip_release": true
 }

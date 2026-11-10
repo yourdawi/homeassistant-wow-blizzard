@@ -45,7 +45,7 @@
       },
       "character_menu": {
         "title": "WoW Charakter-Manager",
-        "description": "Aktuell hinzugefügte Charaktere ({character_count}):<br/>{character_list}<br/><br/>Wähle deine nächste Aktion.",
+        "description": "Aktuell hinzugefügte Charaktere ({character_count}):\n\n{character_list}\n\nWähle deine nächste Aktion.",
         "data": {
           "action": "Nächste Aktion"
         }
@@ -59,7 +59,7 @@
       },
       "add_method": {
         "title": "Charaktere hinzufügen",
-        "description": "Füge einen Charakter von Hand hinzu oder melde dich mit Battle.net an, um Charaktere aus deinem Account auszuwählen. Für den Login muss `https://my.home-assistant.io/redirect/oauth` als Redirect-URL in deinem Battle.net-API-Client eingetragen sein.",
+        "description": "Füge einen Charakter von Hand hinzu oder melde dich mit Battle.net an, um Charaktere aus deinem Account auszuwählen. Für den Login muss `{redirect_url}` als Redirect-URL in deinem Battle.net-API-Client eingetragen sein.",
         "menu_options": {
           "character": "Realm und Namen eingeben",
           "account_login": "Mit Battle.net anmelden"
@@ -89,7 +89,7 @@
       },
       "account_failed": {
         "title": "Battle.net-Anmeldung nicht abgeschlossen",
-        "description": "Es geht nichts verloren. Weiter, um Charaktere von Hand hinzuzufügen oder die Anmeldung erneut zu versuchen. Klappt es dauerhaft nicht, prüfe, ob `https://my.home-assistant.io/redirect/oauth` als Redirect-URL im Battle.net-API-Client eingetragen ist."
+        "description": "Es geht nichts verloren. Weiter, um Charaktere von Hand hinzuzufügen oder die Anmeldung erneut zu versuchen. Klappt es dauerhaft nicht, prüfe, ob `{redirect_url}` als Redirect-URL im Battle.net-API-Client eingetragen ist."
       },
       "account_options": {
         "title": "Account-Daten",
@@ -417,18 +417,18 @@
     },
     "locales": {
       "options": {
-        "en_US": "Englisch (USA)",
-        "es_MX": "Spanisch (Mexiko)",
-        "pt_BR": "Portugiesisch",
-        "de_DE": "Deutsch",
-        "en_GB": "Englisch (Großbritannien)",
-        "es_ES": "Spanisch (Spanien)",
-        "fr_FR": "Französisch",
-        "it_IT": "Italienisch",
-        "ru_RU": "Russisch",
-        "ko_KR": "Koreanisch",
-        "zh_TW": "Chinesisch (Traditionell)",
-        "zh_CN": "Chinesisch (Vereinfacht)"
+        "en_us": "Englisch (USA)",
+        "es_mx": "Spanisch (Mexiko)",
+        "pt_br": "Portugiesisch",
+        "de_de": "Deutsch",
+        "en_gb": "Englisch (Großbritannien)",
+        "es_es": "Spanisch (Spanien)",
+        "fr_fr": "Französisch",
+        "it_it": "Italienisch",
+        "ru_ru": "Russisch",
+        "ko_kr": "Koreanisch",
+        "zh_tw": "Chinesisch (Traditionell)",
+        "zh_cn": "Chinesisch (Vereinfacht)"
       }
     },
     "game_versions": {
