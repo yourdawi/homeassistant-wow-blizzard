@@ -100,8 +100,9 @@ Since Home Assistant 2026.11 the Marketplace (formerly HACS) is part of Home Ass
 
 ### Manual
 
-1. Copy `custom_components/wow_blizzard` into `config/custom_components/` of your Home Assistant installation.
-2. Restart Home Assistant.
+1. Download `wow_blizzard.zip` from the [latest release](https://github.com/yourdawi/homeassistant-wow-blizzard/releases/latest).
+2. Unpack it into `config/custom_components/wow_blizzard/` of your Home Assistant installation.
+3. Restart Home Assistant.
 
 ```
 config/
