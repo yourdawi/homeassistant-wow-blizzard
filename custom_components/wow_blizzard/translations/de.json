@@ -417,18 +417,18 @@
     },
     "locales": {
       "options": {
-        "en_US": "Englisch (USA)",
-        "es_MX": "Spanisch (Mexiko)",
-        "pt_BR": "Portugiesisch",
-        "de_DE": "Deutsch",
-        "en_GB": "Englisch (Großbritannien)",
-        "es_ES": "Spanisch (Spanien)",
-        "fr_FR": "Französisch",
-        "it_IT": "Italienisch",
-        "ru_RU": "Russisch",
-        "ko_KR": "Koreanisch",
-        "zh_TW": "Chinesisch (Traditionell)",
-        "zh_CN": "Chinesisch (Vereinfacht)"
+        "en_us": "Englisch (USA)",
+        "es_mx": "Spanisch (Mexiko)",
+        "pt_br": "Portugiesisch",
+        "de_de": "Deutsch",
+        "en_gb": "Englisch (Großbritannien)",
+        "es_es": "Spanisch (Spanien)",
+        "fr_fr": "Französisch",
+        "it_it": "Italienisch",
+        "ru_ru": "Russisch",
+        "ko_kr": "Koreanisch",
+        "zh_tw": "Chinesisch (Traditionell)",
+        "zh_cn": "Chinesisch (Vereinfacht)"
       }
     },
     "game_versions": {

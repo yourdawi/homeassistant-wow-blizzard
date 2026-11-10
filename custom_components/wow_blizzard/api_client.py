@@ -60,6 +60,16 @@ class WoWBlizzardAPIClient:
         "cn": "zh_CN",
     }
 
+    @staticmethod
+    def normalize_locale(locale: Optional[str]) -> Optional[str]:
+        """Return Blizzard's locale format (en_US) for en_us, en-US or en_US."""
+        if not locale:
+            return None
+        language, _, country = locale.replace("-", "_").partition("_")
+        if not country:
+            return language.lower()
+        return f"{language.lower()}_{country.upper()}"
+
     def __init__(
         self,
         client_id: str,
@@ -75,8 +85,8 @@ class WoWBlizzardAPIClient:
         self.api_url = API_URLS.get(self.region)
         self.token_url = TOKEN_URLS.get(self.region)
         
-        self.locale = locale or self.REGION_LOCALES.get(self.region, "en_US")
-        
+        self.locale = self.normalize_locale(locale) or self.REGION_LOCALES.get(self.region, "en_US")
+
         self._session = session
         self._owns_session = session is None
         self._access_token = None
