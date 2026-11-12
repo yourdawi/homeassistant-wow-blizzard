@@ -339,6 +339,15 @@
       "guild_members": {
         "name": "Gildenmitglieder"
       },
+      "guild_max_level_members": {
+        "name": "Gildenmitglieder auf Höchststufe"
+      },
+      "guild_rank": {
+        "name": "Gildenrang"
+      },
+      "guild_achievements": {
+        "name": "Gildenerfolge"
+      },
       "wow_token_price": {
         "name": "WoW-Marken-Preis"
       },
@@ -398,7 +407,9 @@
           "event_type": {
             "state": {
               "achievement": "Erfolg",
-              "encounter": "Boss-Kill"
+              "encounter": "Boss-Kill",
+              "member_joined": "Mitglied beigetreten",
+              "member_left": "Mitglied ausgetreten"
             }
           }
         }

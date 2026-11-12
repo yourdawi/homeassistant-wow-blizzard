@@ -470,6 +470,21 @@ class WoWBlizzardAPIClient:
         params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(f"/data/wow/guild/{guild_path}/activity", params)
 
+    async def get_guild_roster(self, guild_path: str, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the members of a guild with level, class and rank (up to 1000 members)."""
+        params = {"namespace": self.get_namespace("profile", game_version)}
+        return await self._make_request(f"/data/wow/guild/{guild_path}/roster", params, parse_in_thread=True)
+
+    async def get_guild_achievements(self, guild_path: str, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the achievements of a guild with progress per category and recent completions."""
+        params = {"namespace": self.get_namespace("profile", game_version)}
+        return await self._make_request(f"/data/wow/guild/{guild_path}/achievements", params, parse_in_thread=True)
+
+    async def get_playable_classes(self, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the playable classes (ID and localized name)."""
+        params = {"namespace": self.get_namespace("static", game_version)}
+        return await self._make_request("/data/wow/playable-class/index", params)
+
     async def get_mythic_leaderboard_index(self, connected_realm_id: int) -> Dict[str, Any]:
         """Get the current Mythic+ leaderboards (one per dungeon) of a connected realm."""
         params = {"namespace": self.get_namespace("dynamic", "retail")}

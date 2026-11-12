@@ -339,6 +339,15 @@
       "guild_members": {
         "name": "Guild Members"
       },
+      "guild_max_level_members": {
+        "name": "Guild Members at Max Level"
+      },
+      "guild_rank": {
+        "name": "Guild Rank"
+      },
+      "guild_achievements": {
+        "name": "Guild Achievements"
+      },
       "wow_token_price": {
         "name": "WoW Token Price"
       },
@@ -398,7 +407,9 @@
           "event_type": {
             "state": {
               "achievement": "Achievement",
-              "encounter": "Boss kill"
+              "encounter": "Boss kill",
+              "member_joined": "Member joined",
+              "member_left": "Member left"
             }
           }
         }

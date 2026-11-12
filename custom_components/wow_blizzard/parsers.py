@@ -1,5 +1,6 @@
 """Parse Battle.net API documents into sensor values and attributes."""
 import re
+from urllib.parse import unquote
 from typing import Any, Dict, Optional
 
 from .api_client import WoWBlizzardAPIClient
@@ -258,7 +259,9 @@ def _merge(result: Dict[str, Any], part: Dict[str, Any]) -> None:
     """Merge parsed values into result, combining the per-sensor attributes."""
     for key, value in part.items():
         if key == "attrs":
-            result.setdefault("attrs", {}).update(value)
+            attrs = result.setdefault("attrs", {})
+            for sensor, sensor_attrs in value.items():
+                attrs[sensor] = {**(attrs.get(sensor) or {}), **sensor_attrs}
         else:
             result[key] = value
 
@@ -357,6 +360,126 @@ def parse_guild_activity(data: Dict[str, Any]) -> list:
         elif activity_type:
             events.append({"type": activity_type, "timestamp": timestamp})
     return sorted(events, key=lambda e: e.get("timestamp") or 0, reverse=True)
+
+
+def roster_member_key(character: Dict[str, Any]) -> str:
+    """Stable key of a roster member, the end of its profile path.
+
+    "{realmSlug}/{name}", or "{first-last}" for WoW Forever, whose roster has
+    no realm and only the first name in "name". Matches character_path().
+    """
+    href = (character.get("key") or {}).get("href") or ""
+    match = re.search(r"/profile/wow/character/([^?]+)", href)
+    if match:
+        return unquote(match.group(1)).lower()
+    realm = (character.get("realm") or {}).get("slug") or ""
+    return f"{realm}/{(character.get('name') or '').lower()}"
+
+
+def parse_guild_roster(data: Dict[str, Any], class_names: Dict[int, str]) -> Dict[str, Any]:
+    """Members of a guild roster and member statistics for the guild sensors.
+
+    Returns {"members": {key: member}, "sensors": {...}}. The roster has no
+    rank names, only numbers (0 is the guild master).
+    """
+    members: Dict[str, Dict[str, Any]] = {}
+    for entry in (data or {}).get("members") or []:
+        character = entry.get("character") or {}
+        if not character.get("name"):
+            continue
+        key = roster_member_key(character)
+        members[key] = {
+            # WoW Forever: full "First Last" from the profile path
+            "name": character.get("name") if "/" in key else key.replace("-", " ").title(),
+            "realm": (character.get("realm") or {}).get("slug"),
+            "level": character.get("level"),
+            "class_id": (character.get("playable_class") or {}).get("id"),
+            "rank": entry.get("rank"),
+        }
+    if not members:
+        return {}
+
+    levels = [m["level"] for m in members.values() if isinstance(m["level"], int)]
+    max_level = max(levels) if levels else None
+    by_rank: Dict[int, int] = {}
+    by_class: Dict[str, int] = {}
+    by_class_max: Dict[str, int] = {}
+    for member in members.values():
+        if isinstance(member["rank"], int):
+            by_rank[member["rank"]] = by_rank.get(member["rank"], 0) + 1
+        class_name = class_names.get(member["class_id"]) or str(member["class_id"])
+        by_class[class_name] = by_class.get(class_name, 0) + 1
+        if max_level is not None and member["level"] == max_level:
+            by_class_max[class_name] = by_class_max.get(class_name, 0) + 1
+
+    guild_master = next((m for m in members.values() if m["rank"] == 0), None)
+    return {"members": members, "sensors": {
+        "guild_max_level_members": sum(by_class_max.values()) if max_level is not None else None,
+        "attrs": {
+            "guild_members": {
+                "members_by_rank": dict(sorted(by_rank.items())),
+                "members_by_class": dict(sorted(by_class.items(), key=lambda i: -i[1])),
+                "guild_master": guild_master["name"] if guild_master else None,
+            },
+            "guild_max_level_members": {
+                "max_level": max_level,
+                "members_by_class": dict(sorted(by_class_max.items(), key=lambda i: -i[1])),
+            },
+        },
+    }}
+
+
+def roster_changes(old: Dict[str, Any], new: Dict[str, Any], timestamp: int) -> list:
+    """Members who joined or left between two roster snapshots, as plain events."""
+    events = []
+    for key in sorted(new.keys() - old.keys()):
+        member = new[key]
+        events.append({"type": "member_joined", "timestamp": timestamp, "character": member["name"],
+                       "character_realm": member["realm"], "level": member["level"]})
+    for key in sorted(old.keys() - new.keys()):
+        member = old[key]
+        events.append({"type": "member_left", "timestamp": timestamp, "character": member["name"],
+                       "character_realm": member["realm"], "level": member["level"]})
+    return events
+
+
+def parse_guild_achievements(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Completed guild achievements, progress per category and recent completions."""
+    if not data or ("achievements" not in data and "total_quantity" not in data):
+        return {}
+    achievements = data.get("achievements") or []
+    completed = data.get("total_quantity")
+    if not isinstance(completed, int):
+        completed = sum(1 for a in achievements if a.get("completed_timestamp"))
+
+    categories = {
+        (entry.get("category") or {}).get("name"): {
+            "quantity": entry.get("quantity"),
+            "points": entry.get("points"),
+        }
+        for entry in data.get("category_progress") or []
+        if (entry.get("category") or {}).get("name")
+    }
+    recent = sorted(
+        (
+            {
+                "achievement": (event.get("achievement") or {}).get("name"),
+                "achievement_id": (event.get("achievement") or {}).get("id"),
+                "timestamp": event.get("timestamp"),
+            }
+            for event in data.get("recent_events") or []
+        ),
+        key=lambda e: e.get("timestamp") or 0,
+        reverse=True,
+    )
+    return {
+        "guild_achievements": completed,
+        "attrs": {"guild_achievements": {
+            "total_points": data.get("total_points"),
+            "categories": categories,
+            "recent_achievements": recent[:10],
+        }},
+    }
 
 
 def summarize_auctions(data: Dict[str, Any], item_ids: set) -> Dict[int, Dict[str, Any]]:

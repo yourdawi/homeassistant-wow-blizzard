@@ -538,6 +538,27 @@ GUILD_SENSOR_TYPES = {
         "device_class": None,
         "state_class": "measurement",
     },
+    "guild_max_level_members": {
+        "name": "Guild Members at Max Level",
+        "icon": "mdi:account-star-outline",
+        "unit": "members",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "guild_rank": {
+        "name": "Guild Rank",
+        "icon": "mdi:chevron-triple-up",
+        "unit": None,
+        "device_class": None,
+        "state_class": None,
+    },
+    "guild_achievements": {
+        "name": "Guild Achievements",
+        "icon": "mdi:trophy-variant-outline",
+        "unit": "achievements",
+        "device_class": None,
+        "state_class": "measurement",
+    },
 }
 
 # Region-wide sensors (WoW Token, weekly reset)
@@ -658,7 +679,7 @@ VERSION_SENSOR_SUPPORT = {
         "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season", "pvp_honorable_kills"},
         "details": {"stat_health", "stat_crit", "stat_haste", "active_title", "reputations",
                     "talents", "hunter_pet"},
-        "guild": None,
+        "guild": {"guild_members", "guild_max_level_members", "guild_rank"},
     },
     # Classic Era (Vanilla): no achievements, no arenas, but the old PvP rank
     "classic1x": {
@@ -667,7 +688,7 @@ VERSION_SENSOR_SUPPORT = {
         "pvp": {"pvp_honorable_kills", "pvp_rank"},
         "details": {"stat_health", "stat_crit", "active_title", "reputations", "talents",
                     "hunter_pet"},
-        "guild": None,
+        "guild": {"guild_members", "guild_max_level_members", "guild_rank"},
     },
     # WoW Forever (Vanilla based, 1.60): verified against the live API (EU,
     # 2026-11). No arenas, Mythic+, token, weekly period or housing decor.
@@ -678,7 +699,8 @@ VERSION_SENSOR_SUPPORT = {
         "details": {"professions", "stat_health", "stat_crit", "active_title", "reputations",
                     "talents", "dungeons_completed", "deaths", "quests_completed", "hunter_pet"},
         "collections": {"mounts_collected", "pets_collected", "toys_collected", "heirlooms_collected"},
-        "guild": None,
+        # Guild achievements answer without data (EU, 2026-11)
+        "guild": {"guild_members", "guild_max_level_members", "guild_rank"},
     },
 }
 

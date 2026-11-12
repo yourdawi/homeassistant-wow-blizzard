@@ -34,7 +34,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 | Characters | Level, item level, guild, achievement points, profile status, portrait as entity picture, full-body render as image entity, equipment per slot. Any number of characters across realms and game versions. |
 | Character details | Professions, health and secondary stats, title, reputations, talents, dungeons completed, deaths, quests completed, hunter pets. |
 | Collections | Number of mounts, pets, toys, heirlooms and housing decor. |
-| Guild | Member count, guild achievement points and an event entity for new guild achievements and boss kills. |
+| Guild | Member count, members at max level by class, your guild rank, completed guild achievements and an event entity for new guild achievements, boss kills and members joining or leaving. |
 | Realms | Realm status, population and whether a login queue is active. |
 | Region | WoW Token price (Retail and Classic Progression), the next weekly reset, the PvP season with its title cutoffs and, opt-in, the weekly Mythic+ affixes. |
 | PvP | 2v2, 3v3, RBG, Solo Shuffle and Blitz ratings of the current season, honor level, season wins, honorable kills and the Classic Era PvP rank. |
@@ -210,7 +210,10 @@ The rated PvP sensors only count the current season. Blizzard returns the last s
 | Mounts / Pets / Toys / Heirlooms / Housing Decor | `sensor.thrall_stormrage_mounts` | Collections, Retail |
 | Solo Shuffle Rating / Blitz Rating | `sensor.thrall_stormrage_solo_shuffle_rating` | PvP, Retail, for the active specialization; `legend_cutoff` attribute |
 | Gold | `sensor.thrall_stormrage_gold` | Battle.net login only; gold gained/lost, deaths, location and hearthstone in attributes |
-| Guild Members | `sensor.thrall_stormrage_guild_members` | Guild, only for characters in a guild; achievement points, realm, faction, creation date in attributes |
+| Guild Members | `sensor.thrall_stormrage_guild_members` | Guild, only for characters in a guild; achievement points, realm, faction, creation date, guild master and members per rank and class in attributes |
+| Guild Members at Max Level | `sensor.thrall_stormrage_guild_members_at_max_level` | Guild; members at the highest level in the guild (`max_level`), per class in `members_by_class` |
+| Guild Rank | `sensor.thrall_stormrage_guild_rank` | Guild; the character's rank number, 0 is the guild master (the API has no rank names) |
+| Guild Achievements | `sensor.thrall_stormrage_guild_achievements` | Guild, Retail and Classic Progression; `total_points`, progress per category and the 10 most recent achievements |
 
 Attributes on every character sensor: `character_name`, `realm`, `character_class`, `class_color`, `character_race`, `character_level`, `guild`, `faction`, `active_spec`, `last_login`, `game_version`, `category`.
 
@@ -265,7 +268,7 @@ Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, nam
 
 ### Guild activity
 
-Each guild of your characters gets an event entity on the device of the first character in it, e.g. `event.thrall_stormrage_guild_activity`. It fires `achievement` (attributes `character`, `achievement`, `achievement_id`) and `encounter` (`encounter`, `encounter_id`, `difficulty`, `difficulty_name`) for every new entry in the guild's activity feed. Activity is checked hourly; entries from before Home Assistant started are not replayed. A new event entity starts with the guild's newest entry instead of `unknown`. Blizzard has no activity feed for Classic Anniversary and WoW Forever guilds, so those get no event entity.
+Each guild of your characters gets an event entity on the device of the first character in it, e.g. `event.thrall_stormrage_guild_activity`. It fires `achievement` (attributes `character`, `achievement`, `achievement_id`) and `encounter` (`encounter`, `encounter_id`, `difficulty`, `difficulty_name`) for every new entry in the guild's activity feed, and `member_joined` / `member_left` (`character`, `character_realm`, `level`) when the guild roster changes. Activity and roster are checked hourly; entries from before Home Assistant started are not replayed, and roster changes are found by comparing two checks, so joins and leaves while Home Assistant was off are not reported. A new event entity starts with the guild's newest feed entry instead of `unknown`. Blizzard has no activity feed for Classic Anniversary and WoW Forever guilds; those only get roster events.
 
 ```yaml
 automation:
@@ -424,7 +427,7 @@ automation:
 
 - All data is refreshed every 5 minutes in one update cycle.
 - Data from the Battle.net API reflects what Blizzard has processed, which usually lags the game by a few minutes and may be refreshed only after logout.
-- Character details and collections are only fetched again when the character's last login changes, and at least every 6 hours. Guild data and guild activity are cached for 1 hour, the weekly period until the reset, the PvP season for 6 hours.
+- Character details and collections are only fetched again when the character's last login changes, and at least every 6 hours. Guild data, roster, guild achievements and guild activity are cached for 1 hour, the weekly period until the reset, the PvP season for 6 hours.
 - Auction prices and Mythic+ leaderboards are refreshed hourly, account data (gold) every 15 minutes while the Battle.net login is valid. Large responses are decoded outside the event loop.
 - If a character profile cannot be fetched (API error, maintenance), the last known values are kept, so graphs do not drop to 0. The profile status sensor then shows whether the character still exists.
 - On HTTP 429 (rate limit) the request is retried up to two times, waiting at most 30 seconds. The Battle.net API allows 36,000 requests per hour, and each character uses roughly 4 to 10 requests per update depending on the enabled features, plus up to 13 after a new login.

@@ -80,7 +80,10 @@ from .parsers import (
     _merge,
     bracket_slug,
     parse_account_characters,
+    parse_guild_achievements,
     parse_guild_activity,
+    parse_guild_roster,
+    roster_changes,
     parse_mythic_leaderboard,
     parse_pvp_rewards,
     summarize_auctions,
@@ -199,6 +202,11 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._auction_cache: Optional[Any] = None
         self._account_cache: Optional[Any] = None
         self._guild_activity: Dict[str, List[Dict[str, Any]]] = {}
+        # Guild members per guild (to spot joins and leaves), the joins and
+        # leaves of the last roster check, class names per game version
+        self._guild_rosters: Dict[str, Dict[str, Any]] = {}
+        self._guild_roster_events: Dict[str, List[Dict[str, Any]]] = {}
+        self._class_names: Dict[str, Dict[int, str]] = {}
         self.account_expired = False
         # Last good account values and where they are kept across restarts
         self._account_last: Dict[str, Any] = {}
@@ -670,7 +678,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         return data
 
     async def _fetch_guild_data(self, guild_path: Optional[str], game_version: str) -> Dict[str, Any]:
-        """Fetch guild member count and achievement points, cached per guild."""
+        """Fetch guild details, roster statistics and achievements, cached per guild."""
         if not self.features.get(CONF_ENABLE_GUILD, False) or not guild_path:
             return {}
         if not get_sensor_types_for_version(game_version)["guild"]:
@@ -700,9 +708,66 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         if "activities" in activity:
             # Some game versions (e.g. Anniversary, Forever) answer without a feed
             self._guild_activity[cache_key] = parse_guild_activity(activity)
+
+        # Members by level, class and rank; joins and leaves since the last check
+        roster = parse_guild_roster(
+            await self.client.get_guild_roster(guild_path, game_version),
+            await self._get_class_names(game_version),
+        )
+        if roster:
+            _merge(data, roster["sensors"])
+            previous_members = self._guild_rosters.get(cache_key)
+            if previous_members is not None:
+                self._guild_roster_events[cache_key] = roster_changes(
+                    previous_members, roster["members"], int(now.timestamp() * 1000)
+                )
+            else:
+                self._guild_roster_events.setdefault(cache_key, [])
+            self._guild_rosters[cache_key] = roster["members"]
+        elif cached and "guild_max_level_members" in cached[1]:
+            # Keep the last roster values on API errors
+            data["guild_max_level_members"] = cached[1]["guild_max_level_members"]
+
+        # Completed guild achievements (versions without achievements answer 404)
+        achievements = parse_guild_achievements(
+            await self.client.get_guild_achievements(guild_path, game_version)
+        )
+        if achievements:
+            _merge(data, achievements)
+        elif cached and "guild_achievements" in cached[1]:
+            data["guild_achievements"] = cached[1]["guild_achievements"]
+        if cached:
+            # Attributes of values that could not be refreshed
+            fresh = data.setdefault("attrs", {})
+            for key, attrs in (cached[1].get("attrs") or {}).items():
+                fresh[key] = {**attrs, **(fresh.get(key) or {})}
         data["guild_key"] = cache_key
         self._guild_cache[cache_key] = (now, data)
         return data
+
+    async def _get_class_names(self, game_version: str) -> Dict[int, str]:
+        """Localized class names by class ID (the roster only has IDs)."""
+        if game_version not in self._class_names:
+            index = await self.client.get_playable_classes(game_version)
+            names = {
+                c.get("id"): c.get("name")
+                for c in index.get("classes") or []
+                if isinstance(c.get("id"), int) and c.get("name")
+            }
+            if not names:
+                # Try again with the next roster refresh
+                return {}
+            self._class_names[game_version] = names
+        return self._class_names[game_version]
+
+    def _guild_rank(self, guild_key: Optional[str], realm: str, character_name: str, game_version: str) -> Optional[int]:
+        """Rank of a character in its guild roster (0 = guild master)."""
+        members = self._guild_rosters.get(guild_key or "")
+        if not members:
+            return None
+        path = self.client.character_path(realm, character_name, game_version)
+        member = members.get(path.removeprefix("/profile/wow/character/"))
+        return member["rank"] if member else None
 
     async def _fetch_region_data(self) -> Dict[str, Any]:
         """Fetch WoW Token prices and the weekly reset for the region."""
@@ -1049,6 +1114,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 mythicplus_data = await self._fetch_mythicplus_data(realm, name, game_version=game_version)
                 slow_data = await self._fetch_slow_character_data(char_key, realm, name, game_version, basic_data)
                 guild_data = await self._fetch_guild_data(basic_data.get("guild_path"), game_version)
+                guild_rank = self._guild_rank(guild_data.get("guild_key"), realm, name, game_version)
+                if guild_rank is not None:
+                    guild_data = {**guild_data, "guild_rank": guild_rank}
 
                 # Combine all character data
                 char_data = {
@@ -1101,6 +1169,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
             all_data["auctions"] = await self._fetch_auctions() or self._previous("auctions")
             all_data["guild_activity"] = dict(self._guild_activity)
+            all_data["guild_roster_events"] = dict(self._guild_roster_events)
 
             account = await self._fetch_account_data()
             if self.hass is not None:
@@ -1294,9 +1363,14 @@ async def async_setup_entry(
             ]
         if features[CONF_ENABLE_COLLECTIONS]:
             sensor_types += list(version_sensors["collections"])
-        if features[CONF_ENABLE_GUILD] and ((coordinator.data or {}).get(char_key) or {}).get("guild_path"):
-            # Guild sensors only for characters in a guild (reload after joining one)
-            sensor_types += list(version_sensors["guild"])
+        char_data = (coordinator.data or {}).get(char_key) or {}
+        if features[CONF_ENABLE_GUILD] and char_data.get("guild_path"):
+            # Guild sensors only for characters in a guild (reload after joining one);
+            # roster and achievements only where the API answered for that guild
+            sensor_types += [
+                key for key in version_sensors["guild"]
+                if key == "guild_members" or key in char_data
+            ]
         if coordinator.account_token and game_version != "forever":
             # Gold needs the player's Battle.net login
             sensor_types += list(ACCOUNT_CHARACTER_SENSOR_TYPES)
@@ -1374,6 +1448,7 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
     _unrecorded_attributes = frozenset({
         "equipped_items", "equipped_items_list", "factions", "professions",
         "talent_list", "talent_points", "glyphs", "loadout_code", "dungeons", "pets",
+        "categories", "recent_achievements",
     })
 
     def __init__(
