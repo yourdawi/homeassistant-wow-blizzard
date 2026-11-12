@@ -414,6 +414,13 @@ DETAIL_SENSOR_TYPES = {
         "device_class": None,
         "state_class": "total_increasing",
     },
+    "active_quests": {
+        "name": "Active Quests",
+        "icon": "mdi:book-open-page-variant-outline",
+        "unit": "quests",
+        "device_class": None,
+        "state_class": "measurement",
+    },
     "hunter_pet": {
         "name": "Hunter Pet",
         "icon": "mdi:paw",
@@ -449,6 +456,13 @@ COLLECTION_SENSOR_TYPES = {
         "name": "Heirlooms",
         "icon": "mdi:treasure-chest",
         "unit": "heirlooms",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "transmogs_collected": {
+        "name": "Transmog Appearances",
+        "icon": "mdi:tshirt-crew-outline",
+        "unit": "appearances",
         "device_class": None,
         "state_class": "measurement",
     },
@@ -586,6 +600,12 @@ REGION_SENSOR_TYPES = {
         "unit": None,
         "device_class": "timestamp",
     },
+    "mythicplus_season": {
+        "name": "M+ Season",
+        "icon": "mdi:key-chain-variant",
+        "unit": None,
+        "device_class": None,
+    },
     "pvp_season": {
         "name": "PvP Season",
         "icon": "mdi:sword-cross",
@@ -700,8 +720,10 @@ VERSION_SENSOR_SUPPORT = {
         "pvp": {"pvp_honorable_kills", "pvp_rank"},
         "raid": {"raid_progress_normal", "raid_kills_total"},
         "details": {"professions", "stat_health", "stat_crit", "active_title", "reputations",
-                    "talents", "dungeons_completed", "deaths", "quests_completed", "hunter_pet"},
-        "collections": {"mounts_collected", "pets_collected", "toys_collected", "heirlooms_collected"},
+                    "talents", "dungeons_completed", "deaths", "quests_completed", "active_quests",
+                    "hunter_pet"},
+        "collections": {"mounts_collected", "pets_collected", "toys_collected", "heirlooms_collected",
+                        "transmogs_collected"},
         # Guild achievements answer without data (EU, 2026-11)
         "guild": {"guild_members", "guild_max_level_members", "guild_rank"},
     },

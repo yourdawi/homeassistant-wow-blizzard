@@ -86,7 +86,9 @@ from .parsers import (
     parse_guild_roster,
     roster_changes,
     parse_mythic_leaderboard,
+    parse_active_quests,
     parse_pvp_leaderboard,
+    parse_transmogs,
     parse_pvp_rewards,
     summarize_auctions,
     parse_achievement_statistics,
@@ -209,6 +211,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._guild_rosters: Dict[str, Dict[str, Any]] = {}
         self._guild_roster_events: Dict[str, List[Dict[str, Any]]] = {}
         self._class_names: Dict[str, Dict[int, str]] = {}
+        # Current Mythic+ season: {"fetched", "season"}
+        self._mythic_season: Dict[str, Any] = {}
         # PvP leaderboards per "season:bracket": (fetch time, ranks by character ID)
         self._pvp_leaderboard_cache: Dict[str, Any] = {}
         self.account_expired = False
@@ -631,6 +635,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             ("specializations", parse_talents, {"talents"}),
             ("encounters/dungeons", parse_dungeons, {"dungeons_completed"}),
             ("achievements/statistics", parse_achievement_statistics, {"deaths", "quests_completed"}),
+            ("quests", parse_active_quests, {"active_quests"}),
         ]
         if class_id == HUNTER_CLASS_ID:
             sources.append(("hunter-pets", parse_hunter_pets, {"hunter_pet"}))
@@ -654,7 +659,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         return result
 
     async def _fetch_collections_data(self, realm: str, character_name: str, game_version: str) -> Dict[str, Any]:
-        """Fetch the number of collected mounts, pets, toys and heirlooms."""
+        """Fetch the number of collected mounts, pets, toys, heirlooms, decor and transmogs."""
         supported = get_sensor_types_for_version(game_version)["collections"]
         if not self.features.get(CONF_ENABLE_COLLECTIONS, False) or not supported:
             return {}
@@ -666,6 +671,12 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             if data:
                 result[sensor] = len(data.get(list_key) or [])
             await asyncio.sleep(0.1)
+        if "transmogs_collected" in supported:
+            # Up to 5 MB for big collections, decoded off the event loop
+            data = await self.client.get_character_resource(
+                realm, character_name, "collections/transmogs", game_version, parse_in_thread=True
+            )
+            _merge(result, parse_transmogs(data))
         return result
 
     async def _fetch_slow_character_data(self, char_key: str, realm: str, character_name: str, game_version: str, basic: Dict[str, Any]) -> Dict[str, Any]:
@@ -864,6 +875,28 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             "fetched": datetime.now(),
             "season": season,
             "cutoffs": parse_pvp_rewards(rewards) if rewards else self._pvp_season.get("cutoffs", {}),
+        }
+
+    async def _mythic_season_region_data(self) -> Dict[str, Any]:
+        """Region sensor for the current Mythic+ season, refreshed every few hours."""
+        if not self.features.get(CONF_ENABLE_MYTHIC_PLUS, False) or not self.has_retail:
+            return {}
+        fetched = self._mythic_season.get("fetched")
+        if not fetched or datetime.now() - fetched >= timedelta(seconds=PVP_SEASON_REFRESH_INTERVAL):
+            season = await self.client.get_current_mythic_season()
+            if season:
+                self._mythic_season = {"fetched": datetime.now(), "season": season}
+        season = self._mythic_season.get("season")
+        if not season:
+            return {}
+        return {
+            "mythicplus_season": season.get("season_name") or season.get("id"),
+            "attrs": {"mythicplus_season": {
+                "season_id": season.get("id"),
+                "season_start": _format_timestamp(season.get("start_timestamp")),
+                "season_end": _format_timestamp(season.get("end_timestamp")),
+                "weeks": len(season.get("periods") or []),
+            }},
         }
 
     def _pvp_region_data(self) -> Dict[str, Any]:
@@ -1209,6 +1242,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
             region_data = await self._fetch_region_data()
             _merge(region_data, self._pvp_region_data())
+            _merge(region_data, await self._mythic_season_region_data())
 
             leaderboards = await self._fetch_mythic_leaderboards()
             all_data["mythic_leaderboards"] = leaderboards.get("realms") or {}
@@ -1458,6 +1492,10 @@ async def async_setup_entry(
         for sensor_type in region_sensors:
             entities.append(WoWRegionSensor(coordinator, sensor_type, entry.entry_id))
 
+    # Mythic+ season (Retail)
+    if features[CONF_ENABLE_MYTHIC_PLUS] and coordinator.has_retail:
+        entities.append(WoWRegionSensor(coordinator, "mythicplus_season", entry.entry_id))
+
     # PvP season and title cutoffs (Retail)
     if features[CONF_ENABLE_PVP] and coordinator.has_retail:
         for sensor_type in ("pvp_season", "pvp_cutoff_gladiator", "pvp_cutoff_hero"):
@@ -1498,7 +1536,7 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
     _unrecorded_attributes = frozenset({
         "equipped_items", "equipped_items_list", "factions", "professions",
         "talent_list", "talent_points", "glyphs", "loadout_code", "dungeons", "pets",
-        "categories", "recent_achievements",
+        "categories", "recent_achievements", "quests", "appearances_per_slot",
     })
 
     def __init__(

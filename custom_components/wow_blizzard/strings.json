@@ -350,6 +350,15 @@
       "guild_achievements": {
         "name": "Guild Achievements"
       },
+      "active_quests": {
+        "name": "Active Quests"
+      },
+      "transmogs_collected": {
+        "name": "Transmog Appearances"
+      },
+      "mythicplus_season": {
+        "name": "M+ Season"
+      },
       "wow_token_price": {
         "name": "WoW Token Price"
       },

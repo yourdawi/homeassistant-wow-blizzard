@@ -21,6 +21,36 @@ COLLECTION_ENDPOINTS = {
 }
 
 
+def parse_active_quests(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Quests in the quest log of a character."""
+    if not data or ("in_progress" not in data and "completed" not in data):
+        return {}
+    quests = [q.get("name") for q in data.get("in_progress") or [] if q.get("name")]
+    return {"active_quests": len(quests), "attrs": {"active_quests": {"quests": quests}}}
+
+
+def parse_transmogs(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Collected transmog appearances (per slot) and appearance sets."""
+    if not data or "slots" not in data:
+        return {}
+    # Keyed by the language independent slot type: several slots share a
+    # localized name (e.g. weapon slots), which would overwrite each other
+    per_slot: Dict[str, int] = {}
+    total = 0
+    for slot in data.get("slots") or []:
+        count = len(slot.get("appearances") or [])
+        total += count
+        slot_type = ((slot.get("slot") or {}).get("type") or "unknown").lower()
+        per_slot[slot_type] = per_slot.get(slot_type, 0) + count
+    return {
+        "transmogs_collected": total,
+        "attrs": {"transmogs_collected": {
+            "appearance_sets": len(data.get("appearance_sets") or []),
+            "appearances_per_slot": per_slot,
+        }},
+    }
+
+
 def _guild_path(guild: Dict[str, Any]) -> Optional[str]:
     """Extract "{realmSlug}/{nameSlug}" from the guild link of a profile."""
     href = ((guild or {}).get("key") or {}).get("href") or ""

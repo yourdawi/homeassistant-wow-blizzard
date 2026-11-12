@@ -350,6 +350,15 @@
       "guild_achievements": {
         "name": "Gildenerfolge"
       },
+      "active_quests": {
+        "name": "Aktive Quests"
+      },
+      "transmogs_collected": {
+        "name": "Transmog-Vorlagen"
+      },
+      "mythicplus_season": {
+        "name": "M+ Saison"
+      },
       "wow_token_price": {
         "name": "WoW-Marken-Preis"
       },

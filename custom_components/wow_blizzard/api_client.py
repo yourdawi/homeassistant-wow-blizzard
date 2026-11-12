@@ -279,11 +279,11 @@ class WoWBlizzardAPIClient:
         params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(endpoint, params)
 
-    async def get_character_resource(self, realm: str, character_name: str, resource: str, game_version: str = "retail") -> Dict[str, Any]:
+    async def get_character_resource(self, realm: str, character_name: str, resource: str, game_version: str = "retail", parse_in_thread: bool = False) -> Dict[str, Any]:
         """Get a character sub-resource such as "status", "professions" or "collections/mounts"."""
         endpoint = self.character_path(realm, character_name, game_version) + f"/{resource}"
         params = {"namespace": self.get_namespace("profile", game_version)}
-        return await self._make_request(endpoint, params)
+        return await self._make_request(endpoint, params, parse_in_thread=parse_in_thread)
 
     # === Realm/Server Methods ===
     
@@ -444,6 +444,15 @@ class WoWBlizzardAPIClient:
         if not isinstance(season_id, int):
             return {}
         return await self._make_request(f"/data/wow/pvp-season/{season_id}", params)
+
+    async def get_current_mythic_season(self) -> Dict[str, Any]:
+        """Get the current Mythic+ season (id, name, start, weekly periods)."""
+        params = {"namespace": self.get_namespace("dynamic", "retail")}
+        index = await self._make_request("/data/wow/mythic-keystone/season/index", params)
+        season_id = (index.get("current_season") or {}).get("id")
+        if not isinstance(season_id, int):
+            return {}
+        return await self._make_request(f"/data/wow/mythic-keystone/season/{season_id}", params)
 
     async def get_pvp_rewards(self, season_id: int) -> Dict[str, Any]:
         """Get the rating cutoffs for the titles of a PvP season."""

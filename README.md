@@ -32,11 +32,11 @@ Use it to track levels and item level over time, watch realm status on reset day
 | Area | What you get |
 | --- | --- |
 | Characters | Level, item level, guild, achievement points, profile status, portrait as entity picture, full-body render as image entity, equipment per slot. Any number of characters across realms and game versions. |
-| Character details | Professions, health and secondary stats, title, reputations, talents, dungeons completed, deaths, quests completed, hunter pets. |
-| Collections | Number of mounts, pets, toys, heirlooms and housing decor. |
+| Character details | Professions, health and secondary stats, title, reputations, talents, dungeons completed, deaths, quests completed, active quests, hunter pets. |
+| Collections | Number of mounts, pets, toys, heirlooms, transmog appearances and housing decor. |
 | Guild | Member count, members at max level by class, your guild rank, completed guild achievements and an event entity for new guild achievements, boss kills and members joining or leaving. |
 | Realms | Realm status, population and whether a login queue is active. |
-| Region | WoW Token price (Retail and Classic Progression), the next weekly reset, the PvP season with its title cutoffs and, opt-in, the weekly Mythic+ affixes. |
+| Region | WoW Token price (Retail and Classic Progression), the next weekly reset, the Mythic+ season, the PvP season with its title cutoffs and, opt-in, the weekly Mythic+ affixes. |
 | PvP | 2v2, 3v3, RBG, Solo Shuffle and Blitz ratings of the current season, honor level, season wins, honorable kills and the Classic Era PvP rank. |
 | Raids | Bosses defeated per difficulty in the current expansion, plus a lifetime total. |
 | Mythic+ | Season score, highest key, best runs, timed runs, weekly best key. |
@@ -55,10 +55,10 @@ Each character is added with its game version. The integration only creates the 
 | Game version | API namespace | Basic | PvP | Raids | Mythic+ | Details | Collections | Guild | Hall of Fame |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Retail | `profile-{region}` | All | All except PvP rank | Yes | Yes | All | Yes | Yes | Yes |
-| Classic Progression (currently Mists of Pandaria) | `profile-classic-{region}` | All | 2v2, 3v3, wins, honorable kills | No | No | No professions, versatility or dungeons | No | Yes | No |
+| Classic Progression (currently Mists of Pandaria) | `profile-classic-{region}` | All | 2v2, 3v3, wins, honorable kills | No | No | No professions, versatility, dungeons or active quests | No | Yes | No |
 | Classic Anniversary (Burning Crusade) | `profile-classicann-{region}` | No achievement points | 2v2, 3v3, wins, honorable kills | No | No | Health, crit, haste, title, reputations, talents, hunter pets | No | Yes | No |
 | Classic Era (Vanilla) | `profile-classic1x-{region}` | No achievement points | Honorable kills, PvP rank | No | No | Health, crit, title, reputations, talents, hunter pets | No | Yes | No |
-| WoW Forever | `profile-forever-{region}` | All | Honorable kills, PvP rank | Normal progress, total kills | No | No versatility, haste or mastery | Mounts, pets, toys, heirlooms | Yes | No |
+| WoW Forever | `profile-forever-{region}` | All | Honorable kills, PvP rank | Normal progress, total kills | No | No versatility, haste or mastery | Mounts, pets, toys, heirlooms, transmogs | Yes | No |
 
 The support per version was checked against the live API (EU, October 2026; WoW Forever November 2026). The WoW Token price is available for Retail and Classic Progression; Blizzard does not offer it for Classic Era and Anniversary.
 
@@ -209,8 +209,10 @@ With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail
 | Dungeons Completed | `sensor.thrall_stormrage_dungeons_completed` | Details, dungeons of the newest expansion with at least one completed difficulty |
 | Deaths | `sensor.thrall_stormrage_deaths` | Details, lifetime |
 | Quests Completed | `sensor.thrall_stormrage_quests_completed` | Details, lifetime |
+| Active Quests | `sensor.thrall_stormrage_active_quests` | Details, Retail and WoW Forever; quest names in `quests` |
 | Hunter Pet | `sensor.thrall_stormrage_hunter_pet` | Details, hunters only; summoned pet, all pets in `pets` |
 | Mounts / Pets / Toys / Heirlooms / Housing Decor | `sensor.thrall_stormrage_mounts` | Collections, Retail |
+| Transmog Appearances | `sensor.thrall_stormrage_transmog_appearances` | Collections, Retail and WoW Forever; `appearance_sets` and `appearances_per_slot` in attributes. The response can be several MB, it is only fetched after a new login and at most every 6 hours |
 | Solo Shuffle Rating / Blitz Rating | `sensor.thrall_stormrage_solo_shuffle_rating` | PvP, Retail, for the active specialization; `legend_cutoff` attribute |
 | Gold | `sensor.thrall_stormrage_gold` | Battle.net login only; gold gained/lost, deaths, location and hearthstone in attributes |
 | Guild Members | `sensor.thrall_stormrage_guild_members` | Guild, only for characters in a guild; achievement points, realm, faction, creation date, guild master and members per rank and class in attributes |
@@ -256,6 +258,7 @@ Region-wide data lives on the device `WoW <REGION>`, for example `WoW EU`.
 | WoW Token Price | `sensor.wow_eu_wow_token_price` | Retail, in gold; `last_updated` attribute |
 | WoW Token Price (Classic) | `sensor.wow_eu_wow_token_price_classic` | Only with a Classic Progression character |
 | Weekly Reset | `sensor.wow_eu_weekly_reset` | Timestamp of the next weekly reset (Retail) |
+| M+ Season | `sensor.wow_eu_m_season` | Mythic+, Retail; season ID, start and number of weeks in attributes |
 | PvP Season | `sensor.wow_eu_pvp_season` | PvP, Retail; season ID and start in attributes |
 | Gladiator Cutoff | `sensor.wow_eu_gladiator_cutoff` | 3v3 rating needed for Gladiator this season |
 | Hero Cutoff | `sensor.wow_eu_hero_cutoff` | RBG rating for Hero of the Alliance/Horde, per faction in attributes |
@@ -430,7 +433,7 @@ automation:
 
 - All data is refreshed every 5 minutes in one update cycle.
 - Data from the Battle.net API reflects what Blizzard has processed, which usually lags the game by a few minutes and may be refreshed only after logout.
-- Character details and collections are only fetched again when the character's last login changes, and at least every 6 hours. Guild data, roster, guild achievements and guild activity are cached for 1 hour, the weekly period until the reset, the PvP season for 6 hours.
+- Character details and collections are only fetched again when the character's last login changes, and at least every 6 hours. Guild data, roster, guild achievements and guild activity are cached for 1 hour, the weekly period until the reset, the Mythic+ and PvP seasons for 6 hours.
 - Auction prices, Mythic+ and PvP leaderboards are refreshed hourly, account data (gold) every 15 minutes while the Battle.net login is valid. Large responses are decoded outside the event loop.
 - If a character profile cannot be fetched (API error, maintenance), the last known values are kept, so graphs do not drop to 0. The profile status sensor then shows whether the character still exists.
 - On HTTP 429 (rate limit) the request is retried up to two times, waiting at most 30 seconds. The Battle.net API allows 36,000 requests per hour, and each character uses roughly 4 to 10 requests per update depending on the enabled features, plus up to 13 after a new login.
