@@ -66,6 +66,9 @@ FEATURE_KEYS = [
     CONF_ENABLE_PVP_LEADERBOARD,
 ]
 
+# The profile API only knows characters from this level on
+MIN_API_LEVEL = 10
+
 # Game versions whose account characters can be imported after a Battle.net login
 ACCOUNT_GAME_VERSIONS = ["retail", "classic", "classicann", "classic1x", "forever"]
 
@@ -545,6 +548,10 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
             key: c for key, c in self._account_characters.items()
             if character_id({CONF_REALM: c["realm_slug"], CONF_CHARACTER_NAME: c["name"], CONF_GAME_VERSION: c[CONF_GAME_VERSION]}) not in existing
         }
+        # Blizzard's profile API has no data for characters below level 10
+        too_low = [key for key, c in available.items() if isinstance(c.get("level"), int) and c["level"] < MIN_API_LEVEL]
+        for key in too_low:
+            available.pop(key)
 
         if user_input is not None:
             self._account_selected = [key for key in _selected_values(user_input) if key in available]
@@ -581,7 +588,7 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
         return self.async_show_form(
             step_id="account_select",
             data_schema=vol.Schema(schema),
-            description_placeholders={"character_count": str(len(available))},
+            description_placeholders={"character_count": str(len(available)), "hidden_count": str(len(too_low))},
         )
 
     async def async_step_account_options(

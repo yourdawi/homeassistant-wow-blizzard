@@ -72,7 +72,7 @@
       },
       "account_select": {
         "title": "Characters of your account",
-        "description": "Open a game version and a realm, then tick the characters to add ({character_count} available, already configured ones are hidden).",
+        "description": "Open a game version and a realm, then tick the characters to add ({character_count} available, already configured ones are hidden). {hidden_count} characters below level 10 are not listed, the Battle.net API has no data for them.",
         "sections": {
           "retail": {
             "name": "Retail"

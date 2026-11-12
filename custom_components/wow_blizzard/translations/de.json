@@ -72,7 +72,7 @@
       },
       "account_select": {
         "title": "Charaktere deines Accounts",
-        "description": "Öffne eine Spielversion und einen Realm und hake die gewünschten Charaktere an ({character_count} verfügbar, bereits eingerichtete sind ausgeblendet).",
+        "description": "Öffne eine Spielversion und einen Realm und hake die gewünschten Charaktere an ({character_count} verfügbar, bereits eingerichtete sind ausgeblendet). {hidden_count} Charaktere unter Stufe 10 werden nicht angezeigt, die Battle.net-API hat für sie keine Daten.",
         "sections": {
           "retail": {
             "name": "Retail"

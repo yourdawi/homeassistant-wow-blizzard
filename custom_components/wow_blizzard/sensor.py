@@ -147,6 +147,10 @@ def assign_realm_keys(characters: List[Dict[str, Any]]) -> Dict[str, Dict[str, s
     for char in characters:
         realm = char[CONF_REALM]
         game_version = char[CONF_GAME_VERSION]
+        if GAME_VERSIONS.get(game_version, {}).get("realmless") and char.get(CONF_RULESET_ID) is None:
+            # WoW Forever without a known game mode (e.g. imported while the
+            # profile was unavailable): there is no realm to report on
+            continue
         if (realm, game_version) in seen_pairs:
             continue
         seen_pairs.add((realm, game_version))
@@ -1625,8 +1629,10 @@ async def async_setup_entry(
                 key for key in version_sensors["guild"]
                 if key == "guild_members" or key in char_data
             ]
-        if coordinator.account_token and game_version != "forever":
-            # Gold needs the player's Battle.net login
+        if coordinator.account_token and "character_gold" in char_data:
+            # Gold needs the player's Battle.net login and only exists for the
+            # characters of that account (Blizzard has no gold for Classic
+            # Progression and Anniversary)
             sensor_types += list(ACCOUNT_CHARACTER_SENSOR_TYPES)
 
         for sensor_type in sensor_types:
@@ -1693,7 +1699,12 @@ async def async_setup_entry(
 
     # Account-wide data from the Battle.net login
     if coordinator.account_token:
+        account = (coordinator.data or {}).get("account") or {}
+        collections = set(ACCOUNT_COLLECTIONS) | {"account_transmogs"}
         for sensor_type in ACCOUNT_SENSOR_TYPES:
+            if account and sensor_type in collections and sensor_type not in account:
+                # The API does not answer for this collection (e.g. housing decor)
+                continue
             entities.append(WoWAccountSensor(coordinator, sensor_type, entry.entry_id))
 
     async_add_entities(entities)
