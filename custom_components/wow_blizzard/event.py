@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, CONF_REALM, CONF_CHARACTER_NAME, CONF_GAME_VERSION, CONF_ENABLE_GUILD
+from .entries import add_character_entities
 from .sensor import WoWDataUpdateCoordinator, _game_version_label
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,31 +40,27 @@ async def async_setup_entry(
             continue
         seen.add(guild_key)
         # The entity sits on the device of the first character in that guild
-        entities.append(
-            WoWGuildActivityEvent(
-                coordinator,
-                guild_key,
-                char_data.get("guild_name"),
-                character["key"],
-                character[CONF_CHARACTER_NAME],
-                character[CONF_REALM],
-                character[CONF_GAME_VERSION],
-            )
-        )
+        entities.append((character, WoWGuildActivityEvent(
+            coordinator,
+            guild_key,
+            char_data.get("guild_name"),
+            character["key"],
+            character[CONF_CHARACTER_NAME],
+            character[CONF_REALM],
+            character[CONF_GAME_VERSION],
+        )))
     # New achievements per character (character details)
     for character in coordinator.characters:
         char_data = (coordinator.data or {}).get(character["key"]) or {}
         if "achievements_completed" in char_data:
-            entities.append(
-                WoWCharacterAchievementEvent(
-                    coordinator,
-                    character["key"],
-                    character[CONF_CHARACTER_NAME],
-                    character[CONF_REALM],
-                    character[CONF_GAME_VERSION],
-                )
-            )
-    async_add_entities(entities)
+            entities.append((character, WoWCharacterAchievementEvent(
+                coordinator,
+                character["key"],
+                character[CONF_CHARACTER_NAME],
+                character[CONF_REALM],
+                character[CONF_GAME_VERSION],
+            )))
+    add_character_entities(entry, async_add_entities, entities)
 
 
 class WoWGuildActivityEvent(CoordinatorEntity, EventEntity):

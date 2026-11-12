@@ -1,9 +1,12 @@
-"""Config flow realm selector"""
+"""Config flow: one entry per game version, characters as subentries."""
 import logging
+from types import MappingProxyType
+from typing import Any, Dict, List, Optional
+
 import voluptuous as vol
-from typing import Dict, Any, List, Optional
 
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry, ConfigSubentryFlow, SubentryFlowResult
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult, section
 from homeassistant.exceptions import HomeAssistantError
@@ -18,7 +21,7 @@ from .const import (
     CONF_REGION,
     CONF_REALM,
     CONF_CHARACTER_NAME,
-    CONF_CHARACTERS,
+    CONF_CHARACTER_KEY,
     CONF_ENABLE_SERVER_STATUS,
     CONF_ENABLE_PVP,
     CONF_ENABLE_RAIDS,
@@ -32,6 +35,7 @@ from .const import (
     CONF_ENABLE_PVP_LEADERBOARD,
     CONF_AUCTION_ITEMS,
     CONF_ACCOUNT_TOKEN,
+    ACCOUNT_GOLD_VERSIONS,
     FEATURE_DEFAULTS,
     OAUTH_AUTHORIZE_URLS,
     OAUTH_AUTHORIZE_URL_DEFAULT,
@@ -44,8 +48,20 @@ from .const import (
     CONF_NAMESPACE_SUFFIX,
     CONF_RULESET_ID,
     GAME_VERSIONS,
+    SUBENTRY_CHARACTER,
 )
 from .api_client import WoWBlizzardAPIClient, InvalidCredentials, UserTokenExpired
+from .entries import (
+    character_title,
+    character_unique_id,
+    entries_for,
+    entry_characters,
+    entry_game_version,
+    entry_title,
+    entry_unique_id,
+    game_version_label,
+    new_character_key,
+)
 from .parsers import parse_account_characters
 
 OAUTH_REDIRECT_URL = "https://my.home-assistant.io/redirect/oauth"
@@ -66,51 +82,74 @@ FEATURE_KEYS = [
     CONF_ENABLE_PVP_LEADERBOARD,
 ]
 
+# Entry data copied into the entries of other game versions (Battle.net import)
+SHARED_KEYS = [CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_REGION, CONF_LOCALE, *FEATURE_KEYS, CONF_AUCTION_ITEMS]
+
 # The profile API only knows characters from this level on
 MIN_API_LEVEL = 10
 
 # Game versions whose account characters can be imported after a Battle.net login
 ACCOUNT_GAME_VERSIONS = ["retail", "classic", "classicann", "classic1x", "forever"]
 
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_CLIENT_ID): str,
-        vol.Required(CONF_CLIENT_SECRET): str,
-        vol.Required(CONF_REGION, default=DEFAULT_REGION): selector.SelectSelector(
+REGION_OPTIONS = [
+    {"value": "us", "label": "Americas (US)"},
+    {"value": "eu", "label": "Europe (EU)"},
+    {"value": "kr", "label": "Korea (KR)"},
+    {"value": "tw", "label": "Taiwan (TW)"},
+    {"value": "cn", "label": "China (CN)"},
+]
+LOCALE_OPTIONS = [
+    {"value": "en_us", "label": "English (United States)"},
+    {"value": "es_mx", "label": "Spanish (Mexico)"},
+    {"value": "pt_br", "label": "Portuguese"},
+    {"value": "de_de", "label": "German"},
+    {"value": "en_gb", "label": "English (Great Britain)"},
+    {"value": "es_es", "label": "Spanish (Spain)"},
+    {"value": "fr_fr", "label": "French"},
+    {"value": "it_it", "label": "Italian"},
+    {"value": "ru_ru", "label": "Russian"},
+    {"value": "ko_kr", "label": "Korean"},
+    {"value": "zh_tw", "label": "Chinese (Traditional)"},
+    {"value": "zh_cn", "label": "Chinese (Simplified)"},
+]
+GAME_VERSION_OPTIONS = [
+    {"value": "retail", "label": "Retail"},
+    {"value": "classic", "label": "Classic Progression (e.g. Mists of Pandaria)"},
+    {"value": "classic1x", "label": "Classic Era (Vanilla)"},
+    {"value": "classicann", "label": "Classic Anniversary (Burning Crusade)"},
+    {"value": "forever", "label": "WoW Forever"},
+]
+
+
+def user_schema(defaults: Dict[str, Any]) -> vol.Schema:
+    """API credentials, prefilled from an existing entry so they need not be typed again."""
+    return vol.Schema({
+        vol.Required(CONF_CLIENT_ID, default=defaults.get(CONF_CLIENT_ID, vol.UNDEFINED)): str,
+        vol.Required(CONF_CLIENT_SECRET, default=defaults.get(CONF_CLIENT_SECRET, vol.UNDEFINED)): str,
+        vol.Required(CONF_REGION, default=defaults.get(CONF_REGION, DEFAULT_REGION)): selector.SelectSelector(
             selector.SelectSelectorConfig(
-                options=[
-                    {"value": "us", "label": "Americas (US)"},
-                    {"value": "eu", "label": "Europe (EU)"},
-                    {"value": "kr", "label": "Korea (KR)"},
-                    {"value": "tw", "label": "Taiwan (TW)"},
-                    {"value": "cn", "label": "China (CN)"},
-                ],
-                mode=selector.SelectSelectorMode.DROPDOWN,
-                translation_key="regions",
+                options=REGION_OPTIONS, mode=selector.SelectSelectorMode.DROPDOWN, translation_key="regions",
             )
         ),
-        vol.Required(CONF_LOCALE, default="en_us"): selector.SelectSelector(
+        vol.Required(CONF_LOCALE, default=defaults.get(CONF_LOCALE, "en_us")): selector.SelectSelector(
             selector.SelectSelectorConfig(
-                options=[
-                    {"value": "en_us", "label": "English (United States)"},
-                    {"value": "es_mx", "label": "Spanish (Mexico)"},
-                    {"value": "pt_br", "label": "Portuguese"},
-                    {"value": "de_de", "label": "German"},
-                    {"value": "en_gb", "label": "English (Great Britain)"},
-                    {"value": "es_es", "label": "Spanish (Spain)"},
-                    {"value": "fr_fr", "label": "French"},
-                    {"value": "it_it", "label": "Italian"},
-                    {"value": "ru_ru", "label": "Russian"},
-                    {"value": "ko_kr", "label": "Korean"},
-                    {"value": "zh_tw", "label": "Chinese (Traditional)"},
-                    {"value": "zh_cn", "label": "Chinese (Simplified)"},
-                ],
-                mode=selector.SelectSelectorMode.DROPDOWN,
-                translation_key="locales",
+                options=LOCALE_OPTIONS, mode=selector.SelectSelectorMode.DROPDOWN, translation_key="locales",
             )
         ),
-    }
-)
+    })
+
+
+def game_version_schema(available: List[str]) -> vol.Schema:
+    """Game versions that have no entry yet in the region."""
+    options = [o for o in GAME_VERSION_OPTIONS if o["value"] in available]
+    return vol.Schema({
+        vol.Required(CONF_GAME_VERSION, default=options[0]["value"]): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=options, mode=selector.SelectSelectorMode.DROPDOWN, translation_key="game_versions",
+            )
+        ),
+    })
+
 
 def features_schema(current: Dict[str, Any]) -> vol.Schema:
     """Feature toggles plus the item IDs whose auction prices are tracked."""
@@ -121,24 +160,6 @@ def features_schema(current: Dict[str, Any]) -> vol.Schema:
     schema[vol.Optional(CONF_AUCTION_ITEMS, default=current.get(CONF_AUCTION_ITEMS, ""))] = str
     return vol.Schema(schema)
 
-STEP_GAME_VERSION_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_GAME_VERSION, default="retail"): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    {"value": "retail", "label": "Retail"},
-                    {"value": "classic", "label": "Classic Progression (e.g. Mists of Pandaria)"},
-                    {"value": "classic1x", "label": "Classic Era (Vanilla)"},
-                    {"value": "classicann", "label": "Classic Anniversary (Burning Crusade)"},
-                    {"value": "forever", "label": "WoW Forever"},
-                ],
-                mode=selector.SelectSelectorMode.DROPDOWN,
-                translation_key="game_versions",
-            )
-        ),
-    }
-)
-
 
 def _selected_values(data: Any) -> List[str]:
     """All picked character keys from the nested version/realm sections."""
@@ -147,23 +168,6 @@ def _selected_values(data: Any) -> List[str]:
     if isinstance(data, list):
         return [value for value in data if isinstance(value, str)]
     return []
-
-
-def game_version_label(game_version: str) -> str:
-    """Human readable game version label."""
-    return GAME_VERSIONS.get(game_version, {}).get("label", game_version)
-
-
-def character_id(character: Dict[str, Any]) -> str:
-    """Identifier of a configured character, unique per game version."""
-    return f"{character.get(CONF_GAME_VERSION, 'retail')}:{character[CONF_REALM]}-{character[CONF_CHARACTER_NAME]}"
-
-
-def entry_title(characters: List[Dict[str, Any]]) -> str:
-    """Config entry title for the configured characters."""
-    if len(characters) == 1:
-        return characters[0]["display_name"]
-    return f"WoW API ({len(characters)} characters)"
 
 
 def realm_display_name(realm: Dict[str, Any]) -> str:
@@ -177,32 +181,15 @@ def realm_display_name(realm: Dict[str, Any]) -> str:
     return str(realm.get("id", ""))
 
 
-def create_realm_selector_config(realm_options: List[Dict[str, str]]) -> selector.SelectSelectorConfig:
-    """Create a searchable realm selector that also accepts typed realm names."""
-    return selector.SelectSelectorConfig(
-        options=realm_options,
-        mode=selector.SelectSelectorMode.DROPDOWN,
-        custom_value=True,
-        sort=True,
-    )
-
-
 def is_realmless(game_version: str) -> bool:
     """WoW Forever has no realms; characters are found by first and last name."""
     return bool(GAME_VERSIONS.get(game_version, {}).get("realmless"))
 
 
-def details_complete(user_input: Dict[str, Any], game_version: str) -> bool:
-    """Whether the realm/name form was filled; an empty form goes back to the menu."""
-    if is_realmless(game_version):
-        return bool(user_input.get(CONF_CHARACTER_NAME))
-    return bool(user_input.get(CONF_REALM) and user_input.get(CONF_CHARACTER_NAME))
-
-
 def character_details_schema(realms_list: List[Dict[str, Any]], realmless: bool = False) -> vol.Schema:
-    """Schema for realm + character name, with a realm dropdown when realms are known."""
+    """Schema for realm + character name, with a searchable realm dropdown when realms are known."""
     if realmless:
-        return vol.Schema({vol.Optional(CONF_CHARACTER_NAME): str})
+        return vol.Schema({vol.Required(CONF_CHARACTER_NAME): str})
     realm_options = [
         {"value": realm["slug"], "label": realm_display_name(realm)}
         for realm in realms_list
@@ -210,10 +197,12 @@ def character_details_schema(realms_list: List[Dict[str, Any]], realmless: bool 
     ]
     realm_field: Any = str
     if realm_options:
-        realm_field = selector.SelectSelector(create_realm_selector_config(realm_options))
+        realm_field = selector.SelectSelector(selector.SelectSelectorConfig(
+            options=realm_options, mode=selector.SelectSelectorMode.DROPDOWN, custom_value=True, sort=True,
+        ))
     return vol.Schema({
-        vol.Optional(CONF_REALM): realm_field,
-        vol.Optional(CONF_CHARACTER_NAME): str,
+        vol.Required(CONF_REALM): realm_field,
+        vol.Required(CONF_CHARACTER_NAME): str,
     })
 
 
@@ -226,15 +215,13 @@ def _client_for(data: Dict[str, Any]) -> WoWBlizzardAPIClient:
     )
 
 
-async def validate_api_credentials(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
+async def validate_api_credentials(hass: HomeAssistant, data: dict[str, Any]) -> None:
     """Validate the API credentials by making a test call."""
     client = _client_for(data)
-
     try:
         realms = await client.get_all_realms()
         if not realms or "realms" not in realms:
             raise CannotConnect("Unable to fetch realms - API credentials may be invalid")
-        return {"realms": realms["realms"]}
     except InvalidCredentials as e:
         raise InvalidAuth(str(e)) from e
     except CannotConnect:
@@ -250,7 +237,7 @@ async def load_realms(data: Dict[str, Any], game_version: str) -> Dict[str, Any]
     """Resolve the namespace for a game version and load its realm list.
 
     Returns {"suffix": str | None, "realms": [...]}. A suffix of None means the
-    API does not offer this game version (yet), e.g. WoW Forever before launch.
+    API does not offer this game version (yet).
     """
     client = _client_for(data)
     try:
@@ -268,22 +255,18 @@ async def load_realms(data: Dict[str, Any], game_version: str) -> Dict[str, Any]
 
 
 async def validate_character(
-    hass: HomeAssistant,
     data: dict[str, Any],
     character: dict[str, str],
     game_version: str,
     namespace_suffix: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Validate that a character exists."""
+    """Validate that a character exists and return its details."""
     client = _client_for(data)
     if namespace_suffix is not None:
         client.set_namespace_suffix(game_version, namespace_suffix)
-
     try:
         character_data = await client.get_character_profile(
-            character[CONF_REALM],
-            character[CONF_CHARACTER_NAME],
-            game_version=game_version
+            character[CONF_REALM], character[CONF_CHARACTER_NAME], game_version=game_version
         )
     except Exception as e:
         raise CannotConnect(f"Cannot connect: {e}") from e
@@ -309,8 +292,55 @@ async def validate_character(
     }
 
 
-class CharacterStepMixin:
-    """Shared realm loading and character validation for config and options flows."""
+def character_subentry(
+    hass: HomeAssistant, game_version: str, character: Dict[str, Any], realm_name: Optional[str], taken: set
+) -> Dict[str, Any]:
+    """Subentry data (ConfigSubentryData) of a character; taken holds keys given out in this batch."""
+    key = character.get(CONF_CHARACTER_KEY) or new_character_key(
+        hass, character[CONF_REALM], character[CONF_CHARACTER_NAME], game_version
+    )
+    if key in taken:
+        key = f"{character[CONF_REALM]}-{character[CONF_CHARACTER_NAME]}-{game_version}"
+    taken.add(key)
+    data = {
+        CONF_REALM: character[CONF_REALM],
+        CONF_CHARACTER_NAME: character[CONF_CHARACTER_NAME],
+        CONF_CHARACTER_KEY: key,
+        CONF_NAMESPACE_SUFFIX: character.get(CONF_NAMESPACE_SUFFIX, GAME_VERSIONS[game_version]["namespaces"][0]),
+        "level": character.get("level"),
+        "character_class": character.get("character_class"),
+        "race": character.get("race", ""),
+    }
+    if character.get(CONF_RULESET_ID) is not None:
+        data[CONF_RULESET_ID] = character[CONF_RULESET_ID]
+    return {
+        "data": data,
+        "subentry_type": SUBENTRY_CHARACTER,
+        "title": character_title(character[CONF_CHARACTER_NAME], realm_name),
+        "unique_id": character_unique_id(character[CONF_REALM], character[CONF_CHARACTER_NAME]),
+    }
+
+
+def add_subentries(hass: HomeAssistant, entry: ConfigEntry, subentries: List[Dict[str, Any]]) -> int:
+    """Add character subentries to an existing entry, skipping characters it already has."""
+    existing = {s.unique_id for s in entry.subentries.values()}
+    added = 0
+    for sub in subentries:
+        if sub["unique_id"] in existing:
+            continue
+        hass.config_entries.async_add_subentry(entry, ConfigSubentry(
+            data=MappingProxyType(sub["data"]),
+            subentry_type=sub["subentry_type"],
+            title=sub["title"],
+            unique_id=sub["unique_id"],
+        ))
+        existing.add(sub["unique_id"])
+        added += 1
+    return added
+
+
+class CharacterFormMixin:
+    """Realm loading and the realm/name form, shared by the config and subentry flows."""
 
     _realm_cache: Dict[str, Dict[str, Any]]
 
@@ -323,26 +353,24 @@ class CharacterStepMixin:
                 return {"suffix": GAME_VERSIONS[game_version]["namespaces"][0], "realms": [], "error": True}
         return self._realm_cache[game_version]
 
-    async def _character_details(
+    async def _character_form(
         self,
         step_id: str,
         data: Dict[str, Any],
         game_version: str,
-        existing: List[Dict[str, Any]],
+        existing_ids: set,
         user_input: Optional[Dict[str, Any]],
     ):
         """Show or process the realm/name form.
 
-        Returns a FlowResult to show, or a new character dict once validated.
+        Returns a form to show, or (character, realm name) once validated.
         """
         realms = await self._get_realms(data, game_version)
         errors = {}
-        placeholders = {"game_version": game_version_label(game_version)}
         realmless = is_realmless(game_version)
         if realmless:
             # Own form text: first and last name instead of realm and name
             step_id = f"{step_id}_forever"
-
         if realms["suffix"] is None:
             errors["base"] = "game_version_unavailable"
         elif realms.get("error"):
@@ -352,72 +380,80 @@ class CharacterStepMixin:
             character = {
                 CONF_REALM: user_input.get(CONF_REALM, ""),
                 CONF_CHARACTER_NAME: user_input[CONF_CHARACTER_NAME].strip(),
-                CONF_GAME_VERSION: game_version,
             }
-            if not realmless and character_id(character) in [character_id(c) for c in existing]:
-                errors["base"] = "character_already_added"
-            else:
-                try:
-                    info = await validate_character(self.hass, data, character, game_version, realms["suffix"])
-                    if realmless:
-                        # The ruleset takes the place of the realm (device name, server status)
-                        character[CONF_REALM] = WoWBlizzardAPIClient.realm_to_slug(info["realm"])
-                        character[CONF_CHARACTER_NAME] = info["name"]
-                        character[CONF_RULESET_ID] = info["ruleset_id"]
-                    if realmless and character_id(character) in [character_id(c) for c in existing]:
-                        errors["base"] = "character_already_added"
-                    else:
-                        return {
-                            **character,
-                            CONF_NAMESPACE_SUFFIX: realms["suffix"],
-                            "display_name": f"{info['name']} - {info['realm']} ({game_version_label(game_version)})",
-                            "level": info["level"],
-                            "character_class": info["character_class"],
-                            "race": info["race"],
-                        }
-                except CharacterNotFound:
-                    errors["base"] = "character_not_found"
-                except CannotConnect:
-                    errors["base"] = "cannot_connect"
-                except Exception:
-                    _LOGGER.exception("Unexpected exception validating character")
-                    errors["base"] = "unknown"
+            try:
+                info = await validate_character(data, character, game_version, realms["suffix"])
+                if realmless:
+                    # The ruleset takes the place of the realm (device name, server status)
+                    character[CONF_REALM] = WoWBlizzardAPIClient.realm_to_slug(info["realm"])
+                    character[CONF_CHARACTER_NAME] = info["name"]
+                    character[CONF_RULESET_ID] = info["ruleset_id"]
+                if character_unique_id(character[CONF_REALM], character[CONF_CHARACTER_NAME]) in existing_ids:
+                    errors["base"] = "character_already_added"
+                else:
+                    character.update({
+                        CONF_NAMESPACE_SUFFIX: realms["suffix"],
+                        "level": info["level"],
+                        "character_class": info["character_class"],
+                        "race": info["race"],
+                    })
+                    return character, info["realm"]
+            except CharacterNotFound:
+                errors["base"] = "character_not_found"
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected exception validating character")
+                errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id=step_id,
             data_schema=character_details_schema(realms["realms"], realmless),
             errors=errors,
-            description_placeholders=placeholders,
+            description_placeholders={"game_version": game_version_label(game_version)},
         )
 
 
-class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for WoW Blizzard API."""
+class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domain=DOMAIN):
+    """One config entry per region and game version."""
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self):
         """Initialize."""
-        self.data = {}
-        self.characters = []
-        self.current_character = {}
+        self.data: Dict[str, Any] = {}
         self._realm_cache = {}
         self._account_token = None
         self._account_error: Optional[str] = None
         self._account_selected: List[str] = []
         self._account_characters: Dict[str, Dict[str, Any]] = {}
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle the initial step - API credentials."""
-        errors = {}
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
+        """The "Add character" button."""
+        return {SUBENTRY_CHARACTER: CharacterSubentryFlow}
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Get options flow."""
+        return WoWBlizzardOptionsFlowHandler()
+
+    @property
+    def _game_version(self) -> str:
+        return self.data.get(CONF_GAME_VERSION, "retail")
+
+    # --- setup: credentials, game version, features ---------------------------------
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """API credentials (prefilled from an existing entry)."""
+        errors = {}
         if user_input is not None:
             try:
                 await validate_api_credentials(self.hass, user_input)
                 self.data.update(user_input)
-                return await self.async_step_features()
+                return await self.async_step_game_version()
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
             except CannotConnect:
@@ -426,40 +462,109 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
 
+        existing = self._async_current_entries()
+        defaults = dict(existing[0].data) if existing else {}
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
+            data_schema=user_schema(user_input or defaults),
             errors=errors,
-            description_placeholders={
-                "setup_url": "https://develop.battle.net/access/clients"
-            }
+            description_placeholders={"setup_url": "https://develop.battle.net/access/clients"},
         )
 
-    async def async_step_features(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle feature selection step."""
-        if user_input is None:
-            return self.async_show_form(
-                step_id="features",
-                data_schema=features_schema({}),
-                description_placeholders={
-                    "region": self.data[CONF_REGION].upper()
-                }
-            )
+    async def async_step_game_version(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Pick the game version of this entry (one entry per game version and region)."""
+        configured = entries_for(self.hass, self.data[CONF_REGION])
+        available = [o["value"] for o in GAME_VERSION_OPTIONS if o["value"] not in configured]
+        if not available:
+            return self.async_abort(reason="all_versions_configured")
+        if user_input is not None:
+            self.data[CONF_GAME_VERSION] = user_input[CONF_GAME_VERSION]
+            await self.async_set_unique_id(entry_unique_id(self.data[CONF_REGION], self._game_version))
+            self._abort_if_unique_id_configured()
+            return await self.async_step_features()
+        return self.async_show_form(
+            step_id="game_version",
+            data_schema=game_version_schema(available),
+            description_placeholders={"region": self.data[CONF_REGION].upper()},
+        )
 
-        self.data.update(user_input)
-        return await self.async_step_add_method()
+    async def async_step_features(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Feature selection, preset from an existing entry of the region."""
+        if user_input is not None:
+            self.data.update(user_input)
+            return await self.async_step_add_method()
+        others = list(entries_for(self.hass, self.data[CONF_REGION]).values())
+        current = {**others[0].data, **others[0].options} if others else {}
+        return self.async_show_form(
+            step_id="features",
+            data_schema=features_schema(current),
+            description_placeholders={
+                "region": self.data[CONF_REGION].upper(),
+                "game_version": game_version_label(self._game_version),
+            },
+        )
 
-    async def async_step_add_method(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Add a character by hand or import characters with a Battle.net login."""
+    async def async_step_add_method(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """First character by hand, import with a Battle.net login, or none yet."""
         return self.async_show_menu(
             step_id="add_method",
-            menu_options=["character", "account_login"],
-            description_placeholders={"redirect_url": OAUTH_REDIRECT_URL},
+            menu_options=["character", "account_login", "finish"],
+            description_placeholders={
+                "redirect_url": OAUTH_REDIRECT_URL,
+                "game_version": game_version_label(self._game_version),
+            },
         )
+
+    async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Create the entry without characters; they are added with "Add character"."""
+        return self._create_entry([])
+
+    async def async_step_character(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Realm and name of the first character."""
+        result = await self._character_form("character", self.data, self._game_version, set(), user_input)
+        if isinstance(result, tuple):
+            character, realm_name = result
+            return self._create_entry([character_subentry(self.hass, self._game_version, character, realm_name, set())])
+        return result
+
+    async def async_step_character_forever(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """WoW Forever variant of the character form (first and last name)."""
+        return await self.async_step_character(user_input)
+
+    def _create_entry(self, subentries: List[Dict[str, Any]]) -> FlowResult:
+        return self.async_create_entry(
+            title=entry_title(self._game_version, self.data[CONF_REGION]),
+            data=self.data,
+            subentries=subentries,
+        )
+
+    # --- import: entries created for other game versions (Battle.net import, migration) ---
+
+    async def async_step_import(self, import_data: dict[str, Any]) -> FlowResult:
+        """Create the entry of a game version with its characters.
+
+        If the region already has an entry for that game version, the
+        characters are added to it instead.
+        """
+        data = dict(import_data)
+        subentries = data.pop("subentries", [])
+        options = data.pop("options", {})
+        region, game_version = data[CONF_REGION], data[CONF_GAME_VERSION]
+        existing = entries_for(self.hass, region).get(game_version)
+        if existing:
+            add_subentries(self.hass, existing, subentries)
+            if CONF_ACCOUNT_TOKEN in data:
+                self.hass.config_entries.async_update_entry(
+                    existing, data={**existing.data, CONF_ACCOUNT_TOKEN: data[CONF_ACCOUNT_TOKEN]}
+                )
+            return self.async_abort(reason="already_configured")
+        await self.async_set_unique_id(entry_unique_id(region, game_version))
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(
+            title=entry_title(game_version, region), data=data, options=options, subentries=subentries,
+        )
+
+    # --- Battle.net login: import characters of all game versions ------------------
 
     def _oauth_implementation(self) -> LocalOAuth2Implementation:
         region = self.data[CONF_REGION]
@@ -472,9 +577,7 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
             OAUTH_TOKEN_URLS.get(region, OAUTH_TOKEN_URL_DEFAULT),
         )
 
-    async def async_step_account_login(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_account_login(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Send the user to the Battle.net login and receive the code."""
         if user_input is None:
             try:
@@ -499,13 +602,10 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
                 await client.close()
         return self.async_external_step_done(next_step_id="account_select")
 
-    async def async_step_account_failed(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Explain a failed login; nothing is lost, the user goes back and can add characters by hand."""
+    async def async_step_account_failed(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Explain a failed login; nothing is lost."""
         if user_input is not None:
             if self.source == config_entries.SOURCE_RECONFIGURE:
-                # The existing configuration stays as it is
                 return self.async_abort(reason="account_login_skipped")
             return await self.async_step_add_method()
         return self.async_show_form(
@@ -515,10 +615,18 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
             description_placeholders={"redirect_url": OAUTH_REDIRECT_URL},
         )
 
-    async def async_step_account_select(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Pick characters of the logged-in account."""
+    def _configured_ids(self) -> set:
+        """"version:realm-name" of every configured character in the region."""
+        ids = set()
+        for game_version, entry in entries_for(self.hass, self.data[CONF_REGION]).items():
+            ids.update(
+                f"{game_version}:{character_unique_id(c[CONF_REALM], c[CONF_CHARACTER_NAME])}"
+                for c in entry_characters(entry)
+            )
+        return ids
+
+    async def async_step_account_select(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Pick characters of the logged-in account (all game versions)."""
         if not self._account_token:
             self._account_error = "account_login_failed"
             return await self.async_step_account_failed()
@@ -535,18 +643,16 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
                         return await self.async_step_account_failed()
                     for char in parse_account_characters(profile):
                         if char.get("realm_slug") and char.get("name"):
-                            if is_realmless(game_version) and char.get("ruleset_id"):
-                                char = {**char, CONF_RULESET_ID: char["ruleset_id"]}
                             self._account_characters[f"{game_version}|{char['realm_slug']}|{char['name']}"] = {
                                 **char, CONF_GAME_VERSION: game_version,
                             }
             finally:
                 await client.close()
 
-        existing = {character_id(c) for c in self.characters}
+        configured = self._configured_ids()
         available = {
             key: c for key, c in self._account_characters.items()
-            if character_id({CONF_REALM: c["realm_slug"], CONF_CHARACTER_NAME: c["name"], CONF_GAME_VERSION: c[CONF_GAME_VERSION]}) not in existing
+            if f"{c[CONF_GAME_VERSION]}:{character_unique_id(c['realm_slug'], c['name'])}" not in configured
         }
         # Blizzard's profile API has no data for characters below level 10
         too_low = [key for key, c in available.items() if isinstance(c.get("level"), int) and c["level"] < MIN_API_LEVEL]
@@ -557,8 +663,7 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
             self._account_selected = [key for key in _selected_values(user_input) if key in available]
             return await self.async_step_account_options()
 
-        # Game version (foldable section) > realm (dropdown) > characters, so
-        # long rosters stay readable; a single game version starts unfolded.
+        # Game version (foldable section) > realm (dropdown) > characters
         grouped: Dict[str, Dict[str, List[Any]]] = {}
         for key, c in available.items():
             grouped.setdefault(c[CONF_GAME_VERSION], {}).setdefault(c["realm"] or c["realm_slug"], []).append((key, c))
@@ -577,12 +682,10 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
                 ]
                 # HA does not nest sections; a dropdown keeps each realm folded until clicked
                 realm_schema[vol.Optional(f"{realm} ({len(chars)})", default=[])] = selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=options, mode=selector.SelectSelectorMode.DROPDOWN, multiple=True
-                    )
+                    selector.SelectSelectorConfig(options=options, mode=selector.SelectSelectorMode.DROPDOWN, multiple=True)
                 )
             schema[vol.Required(game_version)] = section(
-                vol.Schema(realm_schema), {"collapsed": len(grouped) > 1}
+                vol.Schema(realm_schema), {"collapsed": game_version != self._game_version}
             )
 
         return self.async_show_form(
@@ -591,286 +694,129 @@ class WoWBlizzardConfigFlow(CharacterStepMixin, config_entries.ConfigFlow, domai
             description_placeholders={"character_count": str(len(available)), "hidden_count": str(len(too_low))},
         )
 
-    async def async_step_account_options(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_account_options(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """After picking characters: keep the login for account data (optional)."""
         if user_input is None:
+            has_login = any(CONF_ACCOUNT_TOKEN in e.data for e in entries_for(self.hass, self.data[CONF_REGION]).values())
             return self.async_show_form(
                 step_id="account_options",
-                data_schema=vol.Schema({
-                    # Preselected when renewing an existing login
-                    vol.Optional("keep_login", default=CONF_ACCOUNT_TOKEN in self.data): bool,
-                }),
+                data_schema=vol.Schema({vol.Optional("keep_login", default=has_login or CONF_ACCOUNT_TOKEN in self.data): bool}),
                 description_placeholders={"selected_count": str(len(self._account_selected))},
             )
 
-        existing = {character_id(c) for c in self.characters}
+        keep_login = bool(user_input.get("keep_login"))
+        taken: set = set()
+        by_version: Dict[str, List[Dict[str, Any]]] = {}
         for key in self._account_selected:
             char = self._account_characters[key]
             game_version = char[CONF_GAME_VERSION]
-            new = {
+            character = {
                 CONF_REALM: char["realm_slug"],
                 CONF_CHARACTER_NAME: char["name"],
-                CONF_GAME_VERSION: game_version,
-            }
-            if character_id(new) in existing:
-                continue
-            existing.add(character_id(new))
-            if char.get(CONF_RULESET_ID):
-                new[CONF_RULESET_ID] = char[CONF_RULESET_ID]
-            self.characters.append({
-                **new,
-                CONF_NAMESPACE_SUFFIX: GAME_VERSIONS[game_version]["namespaces"][0],
-                "display_name": f"{char['name']} - {char['realm']} ({game_version_label(game_version)})",
                 "level": char.get("level"),
                 "character_class": char.get("class") or "Unknown",
-                "race": "",
-            })
-        if user_input.get("keep_login"):
+            }
+            if char.get("ruleset_id"):
+                character[CONF_RULESET_ID] = char["ruleset_id"]
+            by_version.setdefault(game_version, []).append(
+                character_subentry(self.hass, game_version, character, char.get("realm"), taken)
+            )
+
+        own = by_version.pop(self._game_version, [])
+        self._distribute(by_version, keep_login)
+        if keep_login and self._game_version in ACCOUNT_GOLD_VERSIONS:
             self.data[CONF_ACCOUNT_TOKEN] = self._account_token
         else:
-            # Unticked: no account data (and no reminders about the login)
             self.data.pop(CONF_ACCOUNT_TOKEN, None)
+
         if self.source == config_entries.SOURCE_RECONFIGURE:
             entry = self._get_reconfigure_entry()
-            return self.async_update_reload_and_abort(
-                entry,
-                title=entry_title(self.characters),
-                data={**self.data, CONF_CHARACTERS: self.characters},
-            )
-        return await self.async_step_character_menu()
+            add_subentries(self.hass, entry, own)
+            return self.async_update_reload_and_abort(entry, data=self.data)
+        return self._create_entry(own)
 
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    def _distribute(self, by_version: Dict[str, List[Dict[str, Any]]], keep_login: bool) -> None:
+        """Characters of other game versions go to their entries, created if missing.
+
+        A kept login is stored in every entry with account gold; other
+        entries keep their login when this one is not kept.
+        """
+        region = self.data[CONF_REGION]
+        entries = entries_for(self.hass, region)
+        shared = {k: self.data[k] for k in SHARED_KEYS if k in self.data}
+        for game_version, subentries in by_version.items():
+            if game_version in entries:
+                continue
+            import_data = {**shared, CONF_GAME_VERSION: game_version, "subentries": subentries}
+            if keep_login and game_version in ACCOUNT_GOLD_VERSIONS:
+                import_data[CONF_ACCOUNT_TOKEN] = self._account_token
+            self.hass.async_create_task(
+                self.hass.config_entries.flow.async_init(
+                    DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=import_data
+                )
+            )
+        for game_version, entry in entries.items():
+            if entry.entry_id == self.context.get("entry_id"):
+                continue
+            add_subentries(self.hass, entry, by_version.get(game_version, []))
+            if keep_login and game_version in ACCOUNT_GOLD_VERSIONS:
+                self.hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, CONF_ACCOUNT_TOKEN: self._account_token}
+                )
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Log in with Battle.net again: import characters and refresh the account login."""
         entry = self._get_reconfigure_entry()
         self.data = dict(entry.data)
-        self.characters = list(entry.data.get(CONF_CHARACTERS, []))
         return await self.async_step_account_login()
 
-    async def async_step_character(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle character game version selection step."""
-        if user_input is not None:
-            self.current_character = {
-                CONF_GAME_VERSION: user_input[CONF_GAME_VERSION]
-            }
-            return await self.async_step_character_details()
 
-        return self.async_show_form(
-            step_id="character",
-            data_schema=STEP_GAME_VERSION_SCHEMA,
-            description_placeholders={
-                "character_count": len(self.characters),
-            }
-        )
-
-    async def async_step_character_details(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle character details addition step."""
-        # Submitting the form empty goes back to the menu
-        if user_input is not None and not details_complete(user_input, self.current_character[CONF_GAME_VERSION]):
-            return await self.async_step_character_menu()
-
-        result = await self._character_details(
-            "character_details",
-            self.data,
-            self.current_character[CONF_GAME_VERSION],
-            self.characters,
-            user_input,
-        )
-        if CONF_REALM in result:
-            self.characters.append(result)
-            return await self.async_step_character_menu()
-        return result
-
-    async def async_step_character_details_forever(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """WoW Forever variant of the character form (first and last name)."""
-        return await self.async_step_character_details(user_input)
-
-    async def async_step_character_menu(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Manage added characters list and actions."""
-        if len(self.characters) == 0:
-            return await self.async_step_add_method()
-
-        if user_input is not None:
-            action = user_input["action"]
-            if action == "add":
-                return await self.async_step_add_method()
-            elif action == "remove":
-                return await self.async_step_remove_character()
-            elif action == "finish":
-                return await self.async_step_final()
-
-        char_list = "\n".join([f"- {c['display_name']} (Lv {c['level']})" for c in self.characters])
-
-        menu_options = [
-            {"value": "add", "label": "Add another character"},
-            {"value": "remove", "label": "Remove a character"},
-            {"value": "finish", "label": "Finish and save configuration"},
-        ]
-
-        schema = vol.Schema({
-            vol.Required("action", default="finish"): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=menu_options,
-                    mode=selector.SelectSelectorMode.LIST,
-                    translation_key="character_menu_actions",
-                )
-            )
-        })
-
-        return self.async_show_form(
-            step_id="character_menu",
-            data_schema=schema,
-            description_placeholders={
-                "character_list": char_list,
-                "character_count": len(self.characters),
-            }
-        )
-
-    async def async_step_remove_character(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Remove a character in initial setup."""
-        if user_input is not None:
-            to_remove = user_input["characters_to_remove"]
-            self.characters = [c for c in self.characters if character_id(c) not in to_remove]
-            return await self.async_step_character_menu()
-
-        options = [
-            {"value": character_id(c), "label": c["display_name"]}
-            for c in self.characters
-        ]
-
-        schema = vol.Schema({
-            vol.Required("characters_to_remove"): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=options,
-                    mode=selector.SelectSelectorMode.LIST,
-                    multiple=True,
-                )
-            )
-        })
-
-        return self.async_show_form(
-            step_id="remove_character",
-            data_schema=schema,
-            description_placeholders={
-                "character_count": len(self.characters)
-            }
-        )
-
-    async def async_step_final(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Final step - create the config entry."""
-        if not self.characters:
-            return self.async_abort(reason="no_characters")
-
-        # Create unique ID from region and characters
-        char_ids = [f"{c[CONF_REALM]}-{c[CONF_CHARACTER_NAME]}" for c in self.characters]
-        unique_id = f"{self.data[CONF_REGION]}-{'-'.join(sorted(char_ids))}"
-
-        await self.async_set_unique_id(unique_id)
-        self._abort_if_unique_id_configured()
-
-        self.data[CONF_CHARACTERS] = self.characters
-
-        return self.async_create_entry(title=entry_title(self.characters), data=self.data)
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry):
-        """Get options flow."""
-        return WoWBlizzardOptionsFlowHandler()
-
-
-class WoWBlizzardOptionsFlowHandler(CharacterStepMixin, config_entries.OptionsFlow):
-    """Handle options flow."""
+class CharacterSubentryFlow(CharacterFormMixin, ConfigSubentryFlow):
+    """The "Add character" button of an entry."""
 
     def __init__(self):
-        """Initialize options flow."""
-        self._current_character = {}
+        """Initialize."""
         self._realm_cache = {}
 
-    def _save_characters(self, characters: List[Dict[str, Any]]) -> FlowResult:
-        """Store a new character list and finish, keeping the feature options."""
-        new_data = dict(self.config_entry.data)
-        new_data[CONF_CHARACTERS] = characters
-        self.hass.config_entries.async_update_entry(
-            self.config_entry,
-            title=entry_title(characters),
-            data=new_data,
-        )
-        # Creating the options entry reloads the integration
-        return self.async_create_entry(title="", data=dict(self.config_entry.options))
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Realm and name of the character (the entry decides the game version)."""
+        entry = self._get_entry()
+        game_version = entry_game_version(entry)
+        existing = {s.unique_id for s in entry.subentries.values()}
+        result = await self._character_form("user", dict(entry.data), game_version, existing, user_input)
+        if isinstance(result, tuple):
+            character, realm_name = result
+            sub = character_subentry(self.hass, game_version, character, realm_name, set())
+            return self.async_create_entry(title=sub["title"], data=sub["data"], unique_id=sub["unique_id"])
+        return result
+
+    async def async_step_user_forever(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """WoW Forever variant of the character form (first and last name)."""
+        return await self.async_step_user(user_input)
+
+
+class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
+    """Features of an entry and the Battle.net login."""
 
     async def async_step_init(self, user_input=None):
-        """Manage the options flow main menu."""
-        if user_input is not None:
-            action = user_input["action"]
-            if action == "features":
-                return await self.async_step_features()
-            elif action == "add_character":
-                return await self.async_step_add_character()
-            elif action == "remove_character":
-                return await self.async_step_remove_character()
-            elif action == "remove_account":
-                return await self.async_step_remove_account()
-
-        current_characters = self.config_entry.data.get(CONF_CHARACTERS, [])
-        options = [
-            {"value": "add_character", "label": "Add a Character"},
-            {"value": "features", "label": "Configure Features"},
-        ]
-        if len(current_characters) > 1:
-            options.append({"value": "remove_character", "label": "Remove Character(s)"})
-        if CONF_ACCOUNT_TOKEN in self.config_entry.data:
-            options.append({"value": "remove_account", "label": "Remove Battle.net login"})
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema({
-                vol.Required("action", default="add_character"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=options,
-                        mode=selector.SelectSelectorMode.LIST,
-                        translation_key="options_menu_actions",
-                    )
-                )
-            }),
-            description_placeholders={
-                "character_count": len(current_characters),
-            }
-        )
+        """Features, or a menu when a Battle.net login can be removed."""
+        if CONF_ACCOUNT_TOKEN not in self.config_entry.data:
+            return await self.async_step_features()
+        return self.async_show_menu(step_id="init", menu_options=["features", "remove_account"])
 
     async def async_step_features(self, user_input=None):
-        """Manage the options features toggles."""
+        """Feature toggles and auction items."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
-
-        current_characters = self.config_entry.data.get(CONF_CHARACTERS, [])
         options = self.config_entry.options
         data = self.config_entry.data
-
         return self.async_show_form(
             step_id="features",
             data_schema=features_schema({
                 key: options.get(key, data.get(key, FEATURE_DEFAULTS.get(key, "")))
                 for key in FEATURE_KEYS + [CONF_AUCTION_ITEMS]
             }),
-            description_placeholders={
-                "character_count": len(current_characters),
-            }
+            description_placeholders={"game_version": game_version_label(entry_game_version(self.config_entry))},
         )
 
     async def async_step_remove_account(self, user_input=None):
@@ -881,77 +827,6 @@ class WoWBlizzardOptionsFlowHandler(CharacterStepMixin, config_entries.OptionsFl
             # Creating the options entry reloads the integration
             return self.async_create_entry(title="", data=dict(self.config_entry.options))
         return self.async_show_form(step_id="remove_account", data_schema=vol.Schema({}))
-
-    async def async_step_add_character(self, user_input=None):
-        """Handle character game version selection step in options."""
-        if user_input is not None:
-            self._current_character = {
-                CONF_GAME_VERSION: user_input[CONF_GAME_VERSION]
-            }
-            return await self.async_step_add_character_details()
-
-        return self.async_show_form(
-            step_id="add_character",
-            data_schema=STEP_GAME_VERSION_SCHEMA,
-            description_placeholders={}
-        )
-
-    async def async_step_add_character_details(self, user_input=None):
-        """Handle character details addition step in options."""
-        # Submitting the form empty goes back to the options menu
-        if user_input is not None and not details_complete(user_input, self._current_character[CONF_GAME_VERSION]):
-            return await self.async_step_init()
-
-        current_characters = list(self.config_entry.data.get(CONF_CHARACTERS, []))
-        result = await self._character_details(
-            "add_character_details",
-            self.config_entry.data,
-            self._current_character[CONF_GAME_VERSION],
-            current_characters,
-            user_input,
-        )
-        if CONF_REALM in result:
-            return self._save_characters(current_characters + [result])
-        return result
-
-    async def async_step_add_character_details_forever(self, user_input=None):
-        """WoW Forever variant of the character form (first and last name)."""
-        return await self.async_step_add_character_details(user_input)
-
-    async def async_step_remove_character(self, user_input=None):
-        """Handle character removal in options flow."""
-        current_characters = self.config_entry.data.get(CONF_CHARACTERS, [])
-
-        if user_input is not None:
-            to_remove = user_input["characters_to_remove"]
-            new_characters = [c for c in current_characters if character_id(c) not in to_remove]
-
-            # Enforce keeping at least 1 character
-            if not new_characters:
-                return self.async_abort(reason="no_characters")
-
-            return self._save_characters(new_characters)
-
-        options = [
-            {"value": character_id(c), "label": c["display_name"]}
-            for c in current_characters
-        ]
-
-        return self.async_show_form(
-            step_id="remove_character",
-            data_schema=vol.Schema({
-                vol.Required("characters_to_remove"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=options,
-                        mode=selector.SelectSelectorMode.LIST,
-                        multiple=True,
-                    )
-                )
-            }),
-            description_placeholders={
-                "character_count": len(current_characters),
-            }
-        )
 
 
 class CannotConnect(HomeAssistantError):

@@ -75,7 +75,7 @@ Not available for Forever in the API: arena ratings, Mythic+, WoW Token, weekly 
 
 ## Requirements
 
-- Home Assistant 2024.11 or newer
+- Home Assistant 2025.3 or newer (for the per-character entries)
 - A Battle.net API client (free): https://develop.battle.net/access/clients
 
 <!-- ha-marketplace:exclude-start -->
@@ -133,44 +133,46 @@ config/
 2. Create a new client. The client name must be unique across the whole Blizzard developer portal (for example `HA-WoW-<yourname>`); a name that is already taken makes the creation fail with an HTTP 500 error. Enter `https://my.home-assistant.io/redirect/oauth` as redirect URL. It is only used for the optional Battle.net login, but the form requires one anyway.
 3. Copy the **Client ID** and **Client Secret**.
 
-### 2. Add the integration
+### 2. Add a game version
+
+The integration has **one entry per game version** (Retail, Classic Progression, Classic Era, Classic Anniversary, WoW Forever), and every character is listed under its entry. Add one entry for each game version you play.
 
 [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=wow_blizzard)
 
 1. Click the button above, or go to **Settings > Devices & Services > Add Integration** and search for **World of Warcraft**.
-2. Enter the client ID and secret, select your **region** (US, EU, KR, TW, CN) and the **API locale**. The locale sets the language of names returned by the API, such as classes, realm status and raid names.
-3. Choose which feature groups to enable: realm status, PvP, raids, Mythic+, Hall of Fame, character details, collections, guild, region data (WoW Token, weekly reset) the Mythic+ realm leaderboards (off by default, they download about 8 MB per realm and hour) and the PvP leaderboard ranks (off by default, about 2 MB per bracket and hour).
-4. Optionally enter item IDs to track auction prices, for example `210796, 224025`. You find the ID in the item's Wowhead URL. Leave the field empty to skip the auction house.
+2. Enter the client ID and secret, select your **region** (US, EU, KR, TW, CN) and the **API locale**. The locale sets the language of names returned by the API, such as classes, realm status and raid names. For the second and later game versions the credentials of the first entry are filled in.
+3. Select the **game version**. Game versions that are already set up in the region are not offered again.
+4. Choose which feature groups to enable: realm status, PvP, raids, Mythic+, Hall of Fame, character details, collections, guild, region data (WoW Token, weekly reset), the Mythic+ realm leaderboards (off by default, they download about 8 MB per realm and hour) and the PvP leaderboard ranks (off by default, about 2 MB per bracket and hour).
+5. Optionally enter item IDs to track auction prices, for example `210796, 224025`. You find the ID in the item's Wowhead URL. Leave the field empty to skip the auction house.
 
 ### 3. Add characters
 
-Choose **Enter realm and name** or **Log in with Battle.net**.
+Finish the setup with **Enter realm and name**, **Log in with Battle.net** or **Finish without characters**. Afterwards every entry has an **Add character** button next to it.
 
-**Log in with Battle.net** (optional) opens the Battle.net login. Afterwards all characters of your account (Retail, all Classic versions and WoW Forever) are listed and you tick the ones to add. With **Also load account data** the login is kept and the integration adds gold and account collections. Blizzard logins last 24 hours and cannot be renewed automatically. An expired login never breaks the integration: everything that does not need the login keeps updating, gold and account values keep their last state (also across restarts), and a notice under **Settings > Repairs** reminds you that you can log in again with **Reconfigure**. Logging in again is optional; you can ignore the notice or remove the login. If the login fails or is cancelled during setup, nothing is lost and you can add characters by hand. The login needs My Home Assistant (part of `default_config`) and the redirect URL from step 1.
+**Add character / Enter realm and name:** pick the realm from the list (you can type to search) and enter the character name; upper and lower case do not matter. For WoW Forever enter the first and last name instead. The integration checks that the character exists.
 
-**Enter realm and name:**
+**Log in with Battle.net** (optional) opens the Battle.net login. Afterwards all characters of your account (Retail, all Classic versions and WoW Forever) are listed and you tick the ones to add. Characters of other game versions go to the entry of their game version, which is created if it does not exist yet. Characters below level 10 are not listed, the Battle.net API has no data for them.
 
-1. Select the game version.
-2. Pick the realm from the list (you can type to search) and enter the character name. Upper and lower case do not matter.
-3. The integration checks that the character exists, then shows the character list. Add more characters or finish.
-
-Submitting the realm form empty takes you back to the menu.
+With **Also load account data** the login is kept and the integration adds gold and account collections (Retail; Classic Era has gold per character, Classic Progression and Anniversary have no account data in the API). Blizzard logins last 24 hours and cannot be renewed automatically. An expired login never breaks the integration: everything that does not need the login keeps updating, gold and account values keep their last state (also across restarts), and a notice under **Settings > Repairs** reminds you that you can log in again with **Reconfigure**. Logging in again is optional; you can ignore the notice or remove the login. If the login fails or is cancelled during setup, nothing is lost and you can add characters by hand. The login needs My Home Assistant (part of `default_config`) and the redirect URL from step 1.
 
 ### Changing the configuration later
 
-Open **Settings > Devices & Services > World of Warcraft > Configure**:
+Open **Settings > Devices & Services > World of Warcraft**. Each game version is an entry with its characters listed below it. Every entry also has a **Realms** subentry with the realm servers, the region device (WoW Token, seasons), the auction house and the Hall of Fame, and the Retail entry has a **Battle.net Account** subentry while a login is kept. The integration creates these two itself.
 
-- **Add a Character** adds another character, in any game version.
-- **Remove Character(s)** removes characters. At least one has to remain.
-- **Configure Features** turns feature groups on or off and sets the auction item IDs.
-- **Remove Battle.net login** (only shown with a kept login) forgets the login and removes the gold and account sensors. Characters and everything else stay.
-- **Reconfigure** (in the integration's menu) logs in with Battle.net to import characters or renew the account login. Unticking **Also load account data** there removes the login as well.
+- **Add character** (next to the entry) adds a character of that game version.
+- To remove a character, open the menu of the character below its entry and delete it. Its devices and entities are removed.
+- **Configure** on an entry turns feature groups on or off and sets the auction item IDs. With a kept login it also offers **Remove Battle.net login**, which removes the gold and account sensors; characters and everything else stay.
+- **Reconfigure** (in the entry's menu) logs in with Battle.net to import more characters or renew the account login.
 
-The integration reloads on its own after every change.
+The entry reloads on its own after every change.
+
+### Upgrading from an older version
+
+Older versions kept all characters in one entry. On the first start the entry is split into one entry per game version, with every character as a subentry. Entity IDs, history and statistics stay the same.
 
 ## Entities
 
-Each character becomes a device named `<Character> (<realm>)`, each realm becomes `<Realm> Server`, and all Hall of Fame sensors share the device `WoW Leaderboards`. Home Assistant builds entity IDs from the device name and the sensor name in your system language at the time the entity is created. With English as the system language, the character "Thrall" on "stormrage" gets IDs like `sensor.thrall_stormrage_level`. You can rename any entity ID in the UI.
+Each character becomes a device named `<Character> (<realm>)`, each realm becomes `<Realm> Server`, and all Hall of Fame sensors share the device `WoW Leaderboards`. Devices belong to the entry of their game version. Home Assistant builds entity IDs from the device name and the sensor name in your system language at the time the entity is created. With English as the system language, the character "Thrall" on "stormrage" gets IDs like `sensor.thrall_stormrage_level`. You can rename any entity ID in the UI.
 
 ### Character sensors
 
@@ -255,7 +257,7 @@ If the same realm name exists in two game versions, the second device gets the g
 
 ### Region sensors
 
-Region-wide data lives on the device `WoW <REGION>`, for example `WoW EU`.
+Region-wide data lives on the device `WoW <REGION>`, for example `WoW EU`; Classic entries have their own, for example `WoW EU (Classic Progression)`.
 
 | Sensor | Example entity ID (English) | Notes |
 | --- | --- | --- |
@@ -444,7 +446,8 @@ automation:
 
 ## Update behavior
 
-- All data is refreshed every 5 minutes in one update cycle. The status of all realms of a game version comes from a single connected realm search request.
+- All data is refreshed every 5 minutes, each game version entry on its own. Characters are fetched in parallel; all entries with the same API client share a limit of 8 requests at a time and 40 per second. The status of all realms of a game version comes from a single connected realm search request.
+- Item icons and the slowly changing character data (details, collections, achievements) are stored, so a restart or reload only fetches what changed (e.g. 15 characters: about 13 seconds instead of about a minute).
 - Data from the Battle.net API reflects what Blizzard has processed, which usually lags the game by a few minutes and may be refreshed only after logout.
 - Character details and collections are only fetched again when the character's last login changes, and at least every 6 hours. Guild data, roster, guild achievements and guild activity are cached for 1 hour, the weekly period until the reset, the Mythic+ and PvP seasons for 6 hours.
 - Auction prices, Mythic+ and PvP leaderboards are refreshed hourly, account data (gold) every 15 minutes while the Battle.net login is valid. Large responses are decoded outside the event loop.

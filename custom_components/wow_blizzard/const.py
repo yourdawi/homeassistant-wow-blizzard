@@ -105,6 +105,20 @@ GAME_VERSIONS = {
 CONF_NAMESPACE_SUFFIX = "namespace_suffix"
 # WoW Forever: ruleset (game mode) of a character, used for the server status
 CONF_RULESET_ID = "ruleset_id"
+# One config entry per game version; each character is a subentry
+SUBENTRY_CHARACTER = "character"
+# Subentries the integration creates itself (no "add" button): realms with the
+# region devices, and the Battle.net account of the Retail entry
+SUBENTRY_REALMS = "realms"
+SUBENTRY_ACCOUNT = "account"
+# Entity key of a character (kept when entries were split, so entity IDs stay)
+CONF_CHARACTER_KEY = "key"
+# Stored realm keys of split entries (server unique IDs stay)
+CONF_REALM_KEYS = "realm_keys"
+# Entry ID the entry-bound unique IDs are built from (the original entry for split entries)
+CONF_UNIQUE_BASE = "unique_base"
+# Game versions whose account profile has gold (Classic Progression and Anniversary answer 404)
+ACCOUNT_GOLD_VERSIONS = ("retail", "classic1x")
 
 # Hall of Fame (public worldofwarcraft.blizzard.com GraphQL endpoint).
 # Known persisted query hashes; if Blizzard rotates them, the client re-reads

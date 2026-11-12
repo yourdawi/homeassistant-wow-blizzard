@@ -26,7 +26,6 @@ from .const import (
     CONF_REGION,
     CONF_REALM,
     CONF_CHARACTER_NAME,
-    CONF_CHARACTERS,
     CONF_ENABLE_SERVER_STATUS,
     CONF_ENABLE_PVP,
     CONF_ENABLE_RAIDS,
@@ -56,6 +55,9 @@ from .const import (
     REGION_SENSOR_TYPES,
     ACCOUNT_CHARACTER_SENSOR_TYPES,
     ACCOUNT_SENSOR_TYPES,
+    ACCOUNT_GOLD_VERSIONS,
+    SUBENTRY_ACCOUNT,
+    SUBENTRY_REALMS,
     REALM_LEADERBOARD_SENSOR_TYPES,
     AUCTION_SENSOR_TYPES,
     HOF_SENSOR_TYPES,
@@ -74,6 +76,7 @@ from .const import (
     no_value_text,
 )
 from .api_client import WoWBlizzardAPIClient, UserTokenExpired
+from .entries import entry_characters, entry_game_version, group_subentry_id, realm_keys, unique_base
 from .parsers import (
     COLLECTION_ENDPOINTS,
     HUNTER_CLASS_ID,
@@ -116,6 +119,9 @@ RAID_DIFFICULTY_SENSORS = {
     "HEROIC": "raid_progress_heroic",
     "MYTHIC": "raid_progress_mythic",
 }
+
+# Delay before the cache is written, so several changes are saved together
+CACHE_SAVE_DELAY = 60
 
 # Hall of Fame list sizes: split faction lists hold 100 guilds, unified lists 200
 HOF_FULL_SPLIT = 100
@@ -184,17 +190,25 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         features: Dict[str, bool],
         auction_items: Optional[List[int]] = None,
         account_token: Optional[Dict[str, Any]] = None,
+        game_version: Optional[str] = None,
+        realms: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
-        """Initialize."""
+        """Initialize.
+
+        Characters come with their entity key (see entries.entry_characters);
+        without game_version the characters are keyed here (single mixed list).
+        """
         self.client = client
         self.auction_items = list(auction_items or [])
         # Player's Battle.net login ({"access_token", "expires_at"}), optional
         self.account_token = account_token or {}
-        self.characters = assign_character_keys(characters)
+        self.characters = characters if all("key" in c for c in characters) else assign_character_keys(characters)
         self.features = features
-        self.realms = assign_realm_keys(self.characters)
-        self.has_retail = any(c[CONF_GAME_VERSION] == "retail" for c in self.characters)
-        self.has_classic_progression = any(c[CONF_GAME_VERSION] == "classic" for c in self.characters)
+        self.realms = realms if realms is not None else assign_realm_keys(self.characters)
+        # One config entry per game version
+        self.game_version = game_version or (self.characters[0][CONF_GAME_VERSION] if self.characters else "retail")
+        self.has_retail = self.game_version == "retail"
+        self.has_classic_progression = self.game_version == "classic"
 
         # Cache for dynamic raid discovery and Hall of Fame leaderboards
         self._cached_raids = None
@@ -204,6 +218,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         # guild path -> (fetch time, data); current weekly period
         self._slow_cache: Dict[str, Any] = {}
         self._guild_cache: Dict[str, Any] = {}
+        # Guild fetches in progress, shared by characters of the same guild
+        self._guild_fetches: Dict[str, Any] = {}
         self._period: Dict[str, Any] = {}
         # Current PvP season with title cutoffs, English spec slugs per spec ID
         self._pvp_season: Dict[str, Any] = {}
@@ -237,6 +253,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         # Last good account values and where they are kept across restarts
         self._account_last: Dict[str, Any] = {}
         self._account_store = None
+        # Item icons and slow character data across restarts and reloads
+        self._cache_store: Optional[Store] = None
         self.entry_id: Optional[str] = None
 
         super().__init__(
@@ -293,8 +311,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
             equipment = await self.client.get_character_equipment(realm, character_name, game_version=game_version)
             equipped_items_list = self._parse_equipment(equipment)
-            for item in equipped_items_list:
-                item["icon"] = await self._item_icon(item.get("media_id"), game_version)
+            icons = await asyncio.gather(*(self._item_icon(i.get("media_id"), game_version) for i in equipped_items_list))
+            for item, icon in zip(equipped_items_list, icons):
+                item["icon"] = icon
 
             character_class = profile.get("character_class") or {}
             result = {
@@ -451,7 +470,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 server_data[realm_key] = await self._fetch_server_data(
                     realm["realm"], game_version=game_version, ruleset_id=realm.get("ruleset_id")
                 )
-                await asyncio.sleep(0.1)
         return server_data
 
     async def _spec_bracket_slug(self, spec_id: Optional[int]) -> Optional[str]:
@@ -513,7 +531,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             wins_season = 0
             for sensor, bracket in brackets.items():
                 data = await self.client.get_character_pvp_bracket(realm, character_name, bracket, game_version)
-                await asyncio.sleep(0.1)
                 if not data and self.client.last_status == 404:
                     # No rated games in this bracket: rating 0 instead of unknown
                     result[sensor] = 0
@@ -725,7 +742,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 # Blizzard answers 404 when a character has none of these yet: that is 0, not unknown
                 data = {"_links": {}}
             _merge(result, parser(data))
-            await asyncio.sleep(0.1)
 
         # Retail lists all earned titles; the active one comes with the profile
         if game_version == "retail" and "active_title" in supported:
@@ -746,7 +762,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             data = await self.client.get_character_resource(realm, character_name, resource, game_version)
             if data:
                 result[sensor] = len(data.get(list_key) or [])
-            await asyncio.sleep(0.1)
         if "transmogs_collected" in supported:
             # Up to 5 MB for big collections, decoded off the event loop
             data = await self.client.get_character_resource(
@@ -770,20 +785,35 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             # Everything failed, keep the old values and retry next update
             return cached[2]
         self._slow_cache[char_key] = (last_login, now, data)
+        self._schedule_cache_save()
         return data
 
     async def _fetch_guild_data(self, guild_path: Optional[str], game_version: str) -> Dict[str, Any]:
-        """Fetch guild details, roster statistics and achievements, cached per guild."""
+        """Fetch guild details, roster statistics and achievements, cached per guild.
+
+        Characters are fetched in parallel; characters of the same guild share
+        one fetch, so the roster is compared only once (joins and leaves).
+        """
         if not self.features.get(CONF_ENABLE_GUILD, False) or not guild_path:
             return {}
         if not get_sensor_types_for_version(game_version)["guild"]:
             return {}
 
         cache_key = f"{game_version}:{guild_path}"
+        cached = self._guild_cache.get(cache_key)
+        if cached and datetime.now() - cached[0] < timedelta(seconds=GUILD_REFRESH_INTERVAL):
+            return cached[1]
+        running = self._guild_fetches.get(cache_key)
+        if running is None:
+            running = asyncio.ensure_future(self._fetch_guild_data_now(guild_path, game_version, cache_key))
+            self._guild_fetches[cache_key] = running
+            running.add_done_callback(lambda _: self._guild_fetches.pop(cache_key, None))
+        return await asyncio.shield(running)
+
+    async def _fetch_guild_data_now(self, guild_path: str, game_version: str, cache_key: str) -> Dict[str, Any]:
+        """Fetch one guild (see _fetch_guild_data)."""
         now = datetime.now()
         cached = self._guild_cache.get(cache_key)
-        if cached and now - cached[0] < timedelta(seconds=GUILD_REFRESH_INTERVAL):
-            return cached[1]
 
         guild = await self.client.get_guild(guild_path, game_version)
         if not guild:
@@ -913,7 +943,38 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 return None
             assets = {a.get("key"): a.get("value") for a in media.get("assets") or [] if isinstance(a, dict)}
             self._item_icons[key] = assets.get("icon")
+            self._schedule_cache_save()
         return self._item_icons[key]
+
+    def _schedule_cache_save(self) -> None:
+        """Store item icons and slow character data (written at most once a minute)."""
+        if self._cache_store is not None:
+            self._cache_store.async_delay_save(self._cache_data, CACHE_SAVE_DELAY)
+
+    def _cache_data(self) -> Dict[str, Any]:
+        return {
+            "item_icons": {f"{k[0]}:{k[1]}": v for k, v in self._item_icons.items()},
+            "slow": {
+                char_key: [last_login, fetched.isoformat(), data]
+                for char_key, (last_login, fetched, data) in self._slow_cache.items()
+            },
+        }
+
+    def load_cache(self, stored: Optional[Dict[str, Any]]) -> None:
+        """Restore the cache of a previous run; data older than the refresh interval is fetched again."""
+        if not stored:
+            return
+        for key, url in (stored.get("item_icons") or {}).items():
+            flavor, _, media_id = key.partition(":")
+            if media_id.isdigit():
+                self._item_icons[(flavor, int(media_id))] = url
+        known = {c["key"] for c in self.characters}
+        for char_key, (last_login, fetched, data) in (stored.get("slow") or {}).items():
+            if char_key in known:
+                try:
+                    self._slow_cache[char_key] = (last_login, datetime.fromisoformat(fetched), data)
+                except (TypeError, ValueError):
+                    continue
 
     async def _item_name(self, item_id: int, game_version: str) -> Optional[str]:
         """Localized item name, cached for the runtime."""
@@ -944,7 +1005,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         """Current PvP seasons of Classic Progression and Anniversary with their title cutoffs."""
         if not self.features.get(CONF_ENABLE_PVP, False):
             return
-        versions = {c[CONF_GAME_VERSION] for c in self.characters} & {"classic", "classicann"}
+        versions = {self.game_version} & {"classic", "classicann"}
         for game_version in sorted(versions):
             cached = self._classic_pvp_seasons.get(game_version) or {}
             fetched = cached.get("fetched")
@@ -1152,7 +1213,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                     if data:
                         parsed = parse_mythic_leaderboard(data, own)
                         dungeons[parsed["dungeon"] or board.get("name")] = parsed
-                    await asyncio.sleep(0.1)
                 done[connected_realm_id] = dungeons
             dungeons = done[connected_realm_id]
             if not dungeons:
@@ -1275,23 +1335,23 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
     async def _fetch_account_values(self, token: str, expires_at: int) -> Optional[Dict[str, Any]]:
         """Gold and collections of the logged-in account; None if the API gave no answer."""
         result: Dict[str, Any] = {"characters": {}, "account_login": expires_at * 1000, "login_valid": True}
-        versions = {c[CONF_GAME_VERSION] for c in self.characters} | {"retail"}
+        # Only Retail and Classic Era have gold in the account profile
+        versions = {self.game_version} & set(ACCOUNT_GOLD_VERSIONS)
         total_gold = 0
         account_characters = 0
         for game_version in sorted(versions):
-            if game_version == "forever":
-                continue
             profile = await self.client.get_account_profile(token, game_version)
-            if not profile and game_version == "retail":
+            if not profile:
                 return None
             characters = parse_account_characters(profile)
             if game_version == "retail":
                 account_characters = len(characters)
-            for char in characters:
-                if not (char.get("realm_id") and char.get("id")):
-                    continue
+            characters = [c for c in characters if c.get("realm_id") and c.get("id")]
+            answers = await asyncio.gather(*(
+                self.client.get_protected_character(token, c["realm_id"], c["id"], game_version) for c in characters
+            ))
+            for char, protected in zip(characters, answers):
                 key = f"{game_version}:{char['realm_slug']}/{(char['name'] or '').lower()}"
-                protected = await self.client.get_protected_character(token, char["realm_id"], char["id"], game_version)
                 money = protected.get("money")
                 if not isinstance(money, int):
                     # No answer for this character: keep its last value so the total does not drop
@@ -1315,9 +1375,11 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                         "hearthstone": ((protected.get("bind_position") or {}).get("zone") or {}).get("name"),
                     }},
                 }
-                await asyncio.sleep(0.05)
         result["account_gold_total"] = total_gold
         result["account_characters"] = account_characters
+        if self.game_version != "retail":
+            # Account collections and totals are Retail
+            return result
         for sensor, (kind, list_keys) in ACCOUNT_COLLECTIONS.items():
             count = count_collection(await self.client.get_account_collection(token, kind), list_keys)
             if count is not None:
@@ -1341,6 +1403,43 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             result["attrs"] = {"account_transmogs": (self._account_last.get("attrs") or {}).get("account_transmogs") or {}}
         return result
 
+    async def _fetch_character(self, character: Dict[str, Any]):
+        """All data of one character: (key, data)."""
+        realm = character[CONF_REALM]
+        name = character[CONF_CHARACTER_NAME]
+        game_version = character[CONF_GAME_VERSION]
+        char_key = character["key"]
+
+        basic_data = await self._fetch_basic_character_data(realm, name, game_version=game_version)
+        if not basic_data:
+            # Keep the last known values instead of dropping to 0,
+            # but report renamed, transferred or deleted characters
+            previous = dict(self._previous(char_key))
+            status = await self._fetch_character_status(realm, name, game_version)
+            if status:
+                previous["character_status"] = status
+            return char_key, previous
+
+        pvp_data, raid_data, mythicplus_data, slow_data, guild_data = await asyncio.gather(
+            self._fetch_pvp_data(realm, name, game_version=game_version, basic=basic_data),
+            self._fetch_raid_data(realm, name, game_version=game_version),
+            self._fetch_mythicplus_data(realm, name, game_version=game_version),
+            self._fetch_slow_character_data(char_key, realm, name, game_version, basic_data),
+            self._fetch_guild_data(basic_data.get("guild_path"), game_version),
+        )
+        guild_rank = self._guild_rank(guild_data.get("guild_key"), realm, name, game_version)
+        if guild_rank is not None:
+            guild_data = {**guild_data, "guild_rank": guild_rank}
+
+        # Per-sensor attributes are merged, not overwritten
+        char_data = {**basic_data}
+        _merge(char_data, pvp_data)
+        _merge(char_data, raid_data)
+        _merge(char_data, mythicplus_data)
+        _merge(char_data, slow_data)
+        _merge(char_data, guild_data)
+        return char_key, char_data
+
     async def _async_update_data(self):
         """Update data via library."""
         try:
@@ -1349,45 +1448,12 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             # Needed by the PvP brackets to spot ratings from older seasons
             await self._fetch_pvp_season()
 
-            # Fetch data for each character
-            for character in self.characters:
-                realm = character[CONF_REALM]
-                name = character[CONF_CHARACTER_NAME]
-                game_version = character[CONF_GAME_VERSION]
-                char_key = character["key"]
-
-                basic_data = await self._fetch_basic_character_data(realm, name, game_version=game_version)
-                if not basic_data:
-                    # Keep the last known values instead of dropping to 0,
-                    # but report renamed, transferred or deleted characters
-                    previous = dict(self._previous(char_key))
-                    status = await self._fetch_character_status(realm, name, game_version)
-                    if status:
-                        previous["character_status"] = status
-                    all_data[char_key] = previous
-                    continue
-
-                pvp_data = await self._fetch_pvp_data(realm, name, game_version=game_version, basic=basic_data)
-                raid_data = await self._fetch_raid_data(realm, name, game_version=game_version)
-                mythicplus_data = await self._fetch_mythicplus_data(realm, name, game_version=game_version)
-                slow_data = await self._fetch_slow_character_data(char_key, realm, name, game_version, basic_data)
-                guild_data = await self._fetch_guild_data(basic_data.get("guild_path"), game_version)
-                guild_rank = self._guild_rank(guild_data.get("guild_key"), realm, name, game_version)
-                if guild_rank is not None:
-                    guild_data = {**guild_data, "guild_rank": guild_rank}
-
-                # Combine all character data
-                # Per-sensor attributes are merged, not overwritten
-                char_data = {**basic_data}
-                _merge(char_data, pvp_data)
-                _merge(char_data, raid_data)
-                _merge(char_data, mythicplus_data)
-                _merge(char_data, slow_data)
-                _merge(char_data, guild_data)
+            # All characters at once; the client limits the requests in flight
+            for char_key, char_data in await asyncio.gather(
+                *(self._fetch_character(character) for character in self.characters)
+            ):
                 all_data[char_key] = char_data
 
-                # Small delay to avoid rate limiting
-                await asyncio.sleep(0.1)
 
             await self._apply_pvp_leaderboards(all_data)
 
@@ -1535,6 +1601,11 @@ def account_store_key(entry_id: str) -> str:
     return f"{DOMAIN}.{entry_id}.account"
 
 
+def cache_store_key(entry_id: str) -> str:
+    """Storage key for the item icons and slow character data of a config entry."""
+    return f"{DOMAIN}.{entry_id}.cache"
+
+
 def parse_item_ids(value: Any) -> List[int]:
     """Item IDs from a comma or space separated string, e.g. "210796, 224025"."""
     ids = []
@@ -1546,7 +1617,7 @@ def parse_item_ids(value: Any) -> List[int]:
 
 async def async_create_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> WoWDataUpdateCoordinator:
     """Create the shared coordinator for a config entry and fetch initial data."""
-    characters = entry.data.get(CONF_CHARACTERS, [])
+    characters = entry_characters(entry)
 
     # Feature flags from options with data as fallback
     features = {
@@ -1572,6 +1643,8 @@ async def async_create_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> W
         hass, client, characters, features,
         auction_items=auction_items,
         account_token=entry.data.get(CONF_ACCOUNT_TOKEN),
+        game_version=entry_game_version(entry),
+        realms=realm_keys(hass, entry, characters),
     )
     coordinator.entry_id = entry.entry_id
     account_store = Store(hass, 1, account_store_key(entry.entry_id))
@@ -1582,6 +1655,9 @@ async def async_create_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> W
     else:
         # Login removed: forget the stored account values
         await account_store.async_remove()
+    # Icons and slow character data of the last run spare most requests after a reload
+    coordinator._cache_store = Store(hass, 1, cache_store_key(entry.entry_id))
+    coordinator.load_cache(await coordinator._cache_store.async_load())
     await coordinator.async_config_entry_first_refresh()
     return coordinator
 
@@ -1592,9 +1668,13 @@ async def async_setup_entry(
     """Set up WoW Blizzard sensors based on a config entry."""
     coordinator: WoWDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     features = coordinator.features
+    base = unique_base(entry)
 
-    # Create sensors
+    # Realm and region sensors (realms subentry), account sensors (account
+    # subentry); character sensors are added below their character subentry
     entities = []
+    account_entities = []
+    by_subentry: Dict[Optional[str], list] = {}
 
     # Character sensors
     for character in coordinator.characters:
@@ -1635,10 +1715,10 @@ async def async_setup_entry(
             # Progression and Anniversary)
             sensor_types += list(ACCOUNT_CHARACTER_SENSOR_TYPES)
 
-        for sensor_type in sensor_types:
-            entities.append(
-                WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm, game_version)
-            )
+        by_subentry.setdefault(character.get("subentry_id"), []).extend(
+            WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm, game_version)
+            for sensor_type in sensor_types
+        )
 
     # Server sensors
     if features[CONF_ENABLE_SERVER_STATUS]:
@@ -1666,25 +1746,25 @@ async def async_setup_entry(
         if coordinator.has_classic_progression:
             region_sensors.append("wow_token_price_classic")
         for sensor_type in region_sensors:
-            entities.append(WoWRegionSensor(coordinator, sensor_type, entry.entry_id))
+            entities.append(WoWRegionSensor(coordinator, sensor_type, base))
 
     # Mythic+ season (Retail)
     if features[CONF_ENABLE_MYTHIC_PLUS] and coordinator.has_retail:
-        entities.append(WoWRegionSensor(coordinator, "mythicplus_season", entry.entry_id))
+        entities.append(WoWRegionSensor(coordinator, "mythicplus_season", base))
 
     # PvP seasons of Classic Progression and Anniversary
     if features[CONF_ENABLE_PVP]:
-        for game_version in sorted({c[CONF_GAME_VERSION] for c in coordinator.characters} & {"classic", "classicann"}):
-            entities.append(WoWRegionSensor(coordinator, f"pvp_season_{game_version}", entry.entry_id))
+        for game_version in sorted({coordinator.game_version} & {"classic", "classicann"}):
+            entities.append(WoWRegionSensor(coordinator, f"pvp_season_{game_version}", base))
 
     # PvP season and title cutoffs (Retail)
     if features[CONF_ENABLE_PVP] and coordinator.has_retail:
         for sensor_type in ("pvp_season", "pvp_cutoff_gladiator", "pvp_cutoff_hero"):
-            entities.append(WoWRegionSensor(coordinator, sensor_type, entry.entry_id))
+            entities.append(WoWRegionSensor(coordinator, sensor_type, base))
 
     # Mythic+ leaderboards per Retail realm and the weekly affixes (opt-in)
     if features[CONF_ENABLE_MYTHIC_LEADERBOARD] and coordinator.has_retail:
-        entities.append(WoWRegionSensor(coordinator, "mythicplus_affixes", entry.entry_id))
+        entities.append(WoWRegionSensor(coordinator, "mythicplus_affixes", base))
         for realm_key, realm in coordinator.realms.items():
             if realm["game_version"] == "retail":
                 entities.append(
@@ -1695,19 +1775,27 @@ async def async_setup_entry(
     for game_version, enabled in (("retail", coordinator.has_retail), ("classic", coordinator.has_classic_progression)):
         if enabled:
             for item_id in coordinator.auction_items:
-                entities.append(WoWAuctionSensor(coordinator, game_version, item_id, entry.entry_id))
+                entities.append(WoWAuctionSensor(coordinator, game_version, item_id, base))
 
     # Account-wide data from the Battle.net login
-    if coordinator.account_token:
+    if coordinator.account_token and coordinator.has_retail:
+        # The account device (totals, collections) belongs to the Retail entry
         account = (coordinator.data or {}).get("account") or {}
         collections = set(ACCOUNT_COLLECTIONS) | {"account_transmogs"}
         for sensor_type in ACCOUNT_SENSOR_TYPES:
             if account and sensor_type in collections and sensor_type not in account:
                 # The API does not answer for this collection (e.g. housing decor)
                 continue
-            entities.append(WoWAccountSensor(coordinator, sensor_type, entry.entry_id))
+            account_entities.append(WoWAccountSensor(coordinator, sensor_type, base))
 
-    async_add_entities(entities)
+    async_add_entities(entities, config_subentry_id=group_subentry_id(entry, SUBENTRY_REALMS))
+    if account_entities and (account_id := group_subentry_id(entry, SUBENTRY_ACCOUNT)):
+        async_add_entities(account_entities, config_subentry_id=account_id)
+    for subentry_id, character_entities in by_subentry.items():
+        if subentry_id is not None and subentry_id not in entry.subentries:
+            # Character deleted while the entry was loading; the reload follows
+            continue
+        async_add_entities(character_entities, config_subentry_id=subentry_id)
 
 
 def _game_version_label(game_version: str) -> str:
@@ -2104,7 +2192,11 @@ class WoWRegionSensor(CoordinatorEntity, SensorEntity):
         """Return device info."""
         return {
             "identifiers": {(DOMAIN, f"region_{self._region}")},
-            "name": f"WoW {self._region.upper()}",
+            # One region device per game version entry; Retail keeps the plain name
+            "name": f"WoW {self._region.upper()}" + (
+                "" if self.coordinator.game_version == "retail"
+                else f" ({_game_version_label(self.coordinator.game_version)})"
+            ),
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Region",
             "entry_type": DeviceEntryType.SERVICE,
@@ -2194,7 +2286,9 @@ class WoWAuctionSensor(CoordinatorEntity, SensorEntity):
         """Return device info."""
         return {
             "identifiers": {(DOMAIN, f"auctions_{self._region}")},
-            "name": f"WoW {self._region.upper()} Auction House",
+            "name": f"WoW {self._region.upper()} Auction House" + (
+                "" if self._game_version == "retail" else f" ({_game_version_label(self._game_version)})"
+            ),
             "manufacturer": "Blizzard Entertainment",
             "model": "World of Warcraft Auction House",
             "entry_type": DeviceEntryType.SERVICE,

@@ -2,6 +2,6 @@
   "name": "World of Warcraft",
   "content_in_root": false,
   "filename": "wow_blizzard.zip",
-  "homeassistant": "2024.11.0",
+  "homeassistant": "2025.3.0",
   "zip_release": true
 }

@@ -14,6 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, CONF_REALM, CONF_CHARACTER_NAME, CONF_GAME_VERSION, CONF_ENABLE_GUILD
 from .crest import compose_crest
+from .entries import add_character_entities
 from .sensor import WoWDataUpdateCoordinator, _game_version_label
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,14 +26,14 @@ async def async_setup_entry(
     """Set up WoW Blizzard image entities based on a config entry."""
     coordinator: WoWDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
 
-    entities: list[ImageEntity] = [
-        WoWCharacterRenderImage(
+    entities: list[tuple[dict, ImageEntity]] = [
+        (character, WoWCharacterRenderImage(
             coordinator,
             character["key"],
             character[CONF_CHARACTER_NAME],
             character[CONF_REALM],
             character[CONF_GAME_VERSION],
-        )
+        ))
         for character in coordinator.characters
     ]
 
@@ -46,17 +47,15 @@ async def async_setup_entry(
             if not guild_key or guild_key in seen or guild_key not in crests:
                 continue
             seen.add(guild_key)
-            entities.append(
-                WoWGuildCrestImage(
-                    coordinator,
-                    guild_key,
-                    character["key"],
-                    character[CONF_CHARACTER_NAME],
-                    character[CONF_REALM],
-                    character[CONF_GAME_VERSION],
-                )
-            )
-    async_add_entities(entities)
+            entities.append((character, WoWGuildCrestImage(
+                coordinator,
+                guild_key,
+                character["key"],
+                character[CONF_CHARACTER_NAME],
+                character[CONF_REALM],
+                character[CONF_GAME_VERSION],
+            )))
+    add_character_entities(entry, async_add_entities, entities)
 
 
 class WoWCharacterRenderImage(CoordinatorEntity, ImageEntity):

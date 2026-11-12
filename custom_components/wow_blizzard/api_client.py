@@ -4,6 +4,7 @@ import aiohttp
 import json
 import logging
 import base64
+from contextvars import ContextVar
 import re
 import unicodedata
 from datetime import datetime, timedelta
@@ -25,6 +26,51 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 MAX_RATE_LIMIT_RETRIES = 2
+# HTTP status of the last request of the running task: requests run in
+# parallel, so a shared attribute could hold another request's status
+_LAST_STATUS: ContextVar[Optional[int]] = ContextVar("wow_blizzard_last_status", default=None)
+# Requests in flight at once (Blizzard allows 100 per second)
+MAX_CONCURRENT_REQUESTS = 8
+# Requests started per second and API client (Blizzard allows 100)
+MAX_REQUESTS_PER_SECOND = 40
+
+
+class _Throttle:
+    """Request limit of one API client ID, shared by all its config entries.
+
+    Characters, entries and lists are fetched in parallel; this keeps the
+    number of requests in flight and per second below Blizzard's limits.
+    """
+
+    def __init__(self) -> None:
+        self.slots = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+        self._lock = asyncio.Lock()
+        self._next_start = 0.0
+
+    async def wait_turn(self) -> None:
+        """Wait until the next request may start."""
+        loop = asyncio.get_running_loop()
+        async with self._lock:
+            delay = self._next_start - loop.time()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._next_start = max(loop.time(), self._next_start) + 1 / MAX_REQUESTS_PER_SECOND
+
+    def pause(self, seconds: float) -> None:
+        """Hold back every request of this API client (after HTTP 429)."""
+        loop = asyncio.get_running_loop()
+        self._next_start = max(self._next_start, loop.time() + seconds)
+
+
+_THROTTLES: Dict[str, _Throttle] = {}
+# Access token per (client ID, secret, token URL), shared by all config entries of the client (memory only)
+_TOKENS: Dict[Any, Dict[str, Any]] = {}
+
+
+def _throttle_for(client_id: str) -> _Throttle:
+    if client_id not in _THROTTLES:
+        _THROTTLES[client_id] = _Throttle()
+    return _THROTTLES[client_id]
 
 
 class WoWBlizzardAPIClient:
@@ -93,13 +139,24 @@ class WoWBlizzardAPIClient:
         self._token_expires = None
         self._request_count = 0
         self._last_request_reset = datetime.now()
-        # HTTP status of the last API request (None on network errors), lets
-        # callers tell a 404 apart from other failures
-        self.last_status: Optional[int] = None
         # Resolved namespace suffix per game version (see GAME_VERSIONS)
         self._namespace_suffixes: Dict[str, str] = {}
         # Hall of Fame persisted query hashes, refreshed from the site bundle on demand
         self._hof_hashes: Dict[str, str] = dict(HOF_QUERY_HASHES)
+        # Shared by all clients (config entries) with this API client ID
+        self._throttle = _throttle_for(client_id)
+
+    @property
+    def last_status(self) -> Optional[int]:
+        """HTTP status of this task's last API request (None on network errors).
+
+        Lets callers tell a 404 apart from other failures.
+        """
+        return _LAST_STATUS.get()
+
+    @last_status.setter
+    def last_status(self, status: Optional[int]) -> None:
+        _LAST_STATUS.set(status)
 
     def set_namespace_suffix(self, game_version: str, suffix: str) -> None:
         """Pin the namespace suffix for a game version (e.g. after probing)."""
@@ -137,7 +194,23 @@ class WoWBlizzardAPIClient:
         return self._session
 
     async def _get_access_token(self) -> str:
-        """Get access token using OAuth 2.0 (August 2025 version)."""
+        """Access token of the API client, shared by all its config entries.
+
+        Entries start in parallel; one token request per client ID instead of
+        one per entry (Blizzard answered a burst of them with HTTP 502).
+        """
+        # The secret is part of the key: a mistyped secret must not reuse a valid token
+        shared = _TOKENS.setdefault((self.client_id, self.client_secret, self.token_url), {"lock": asyncio.Lock()})
+        async with shared["lock"]:
+            if shared.get("token") and shared.get("expires") and datetime.now() < shared["expires"]:
+                self._access_token, self._token_expires = shared["token"], shared["expires"]
+                return self._access_token
+            token = await self._request_access_token()
+            shared["token"], shared["expires"] = token, self._token_expires
+            return token
+
+    async def _request_access_token(self) -> str:
+        """Get access token using OAuth 2.0 client credentials."""
         if (
             self._access_token
             and self._token_expires
@@ -209,48 +282,55 @@ class WoWBlizzardAPIClient:
         if "locale" not in params:
             params["locale"] = self.locale
         
-        try:
-            async with session.get(url, headers=headers, params=params) as response:
-                self._request_count += 1
-                self.last_status = response.status
+        throttle = self._throttle
+        for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+            retry_after = None
+            async with throttle.slots:
+                await throttle.wait_turn()
+                try:
+                    async with session.get(url, headers=headers, params=params) as response:
+                        self._request_count += 1
+                        self.last_status = response.status
 
-                if response.status == 200:
-                    if parse_in_thread:
-                        data = await asyncio.to_thread(json.loads, await response.read())
-                    else:
-                        data = await response.json()
-                    _LOGGER.debug(f"API Success: {endpoint}")
-                    return data
-                elif response.status in (401, 403) and user_token:
-                    # The player's login expired (tokens last 24 hours)
-                    raise UserTokenExpired(endpoint)
-                elif response.status == 404:
-                    _LOGGER.debug(f"Resource not found: {endpoint}")
+                        if response.status == 200:
+                            if parse_in_thread:
+                                data = await asyncio.to_thread(json.loads, await response.read())
+                            else:
+                                data = await response.json()
+                            _LOGGER.debug(f"API Success: {endpoint}")
+                            return data
+                        elif response.status in (401, 403) and user_token:
+                            # The player's login expired (tokens last 24 hours)
+                            raise UserTokenExpired(endpoint)
+                        elif response.status == 404:
+                            _LOGGER.debug(f"Resource not found: {endpoint}")
+                            return {}
+                        elif response.status == 403:
+                            _LOGGER.warning(f"Access denied: {endpoint} - Check API permissions")
+                            return {}
+                        elif response.status == 429:
+                            try:
+                                retry_after = int(response.headers.get("Retry-After", 1))
+                            except ValueError:
+                                retry_after = 1
+                        else:
+                            error_text = await response.text()
+                            _LOGGER.error(f"API Error {response.status}: {error_text}")
+                            return {}
+                except UserTokenExpired:
+                    raise
+                except Exception as e:
+                    self.last_status = None
+                    _LOGGER.error(f"Request failed for {endpoint}: {e}")
                     return {}
-                elif response.status == 403:
-                    _LOGGER.warning(f"Access denied: {endpoint} - Check API permissions")
-                    return {}
-                elif response.status == 429:
-                    if _retries >= MAX_RATE_LIMIT_RETRIES:
-                        _LOGGER.warning(f"Rate limited on {endpoint}, giving up for this update")
-                        return {}
-                    try:
-                        retry_after = int(response.headers.get("Retry-After", 5))
-                    except ValueError:
-                        retry_after = 5
-                    _LOGGER.warning(f"Rate limited, retrying in {retry_after} seconds")
-                    await asyncio.sleep(min(retry_after, 30))
-                    return await self._make_request(endpoint, params, _retries + 1, parse_in_thread, user_token)
-                else:
-                    error_text = await response.text()
-                    _LOGGER.error(f"API Error {response.status}: {error_text}")
-                    return {}
-        except UserTokenExpired:
-            raise
-        except Exception as e:
-            self.last_status = None
-            _LOGGER.error(f"Request failed for {endpoint}: {e}")
-            return {}
+            # Rate limited: every request of this API client waits, then this one
+            # is retried (outside its slot, so waiting requests cannot block it)
+            if attempt == MAX_RATE_LIMIT_RETRIES:
+                _LOGGER.warning(f"Rate limited on {endpoint}, giving up for this update")
+                return {}
+            _LOGGER.debug(f"Rate limited, retrying {endpoint} in {retry_after} seconds")
+            throttle.pause(min(retry_after, 30))
+        return {}
 
     # === Character Profile Methods ===
     
