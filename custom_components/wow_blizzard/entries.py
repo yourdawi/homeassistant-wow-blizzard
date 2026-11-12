@@ -14,6 +14,7 @@ from .api_client import WoWBlizzardAPIClient
 from .const import (
     CONF_CHARACTER_KEY,
     CONF_CHARACTER_NAME,
+    CONF_ENTRY_TYPE,
     CONF_GAME_VERSION,
     CONF_REALM,
     CONF_REALM_KEYS,
@@ -21,6 +22,7 @@ from .const import (
     CONF_RULESET_ID,
     CONF_UNIQUE_BASE,
     DOMAIN,
+    ENTRY_TYPE_ACCOUNT,
     GAME_VERSIONS,
     SUBENTRY_ACCOUNT,
     SUBENTRY_CHARACTER,
@@ -90,7 +92,13 @@ def entry_characters(entry: ConfigEntry) -> List[Dict[str, Any]]:
 
 
 def _domain_entries(hass: HomeAssistant) -> List[ConfigEntry]:
+    """All entries of the integration, game versions and the Battle.net account."""
     return list(hass.config_entries.async_entries(DOMAIN))
+
+
+def is_account(entry: ConfigEntry) -> bool:
+    """Whether an entry is the Battle.net account entry."""
+    return entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_ACCOUNT
 
 
 def new_character_key(hass: HomeAssistant, realm: str, name: str, game_version: str) -> str:
@@ -120,6 +128,8 @@ def realm_keys(hass: HomeAssistant, entry: ConfigEntry, characters: List[Dict[st
     stored = entry.data.get(CONF_REALM_KEYS) or {}
     earlier = set()
     for other in _domain_entries(hass):
+        if is_account(other):
+            continue
         other_version = entry_game_version(other)
         if other.entry_id == entry.entry_id or VERSION_ORDER.index(other_version) >= VERSION_ORDER.index(game_version):
             continue
@@ -141,12 +151,25 @@ def realm_keys(hass: HomeAssistant, entry: ConfigEntry, characters: List[Dict[st
 
 
 def entries_for(hass: HomeAssistant, region: str) -> Dict[str, ConfigEntry]:
-    """Existing entries of a region by game version."""
+    """Existing game version entries of a region by game version (no account entry)."""
     return {
         entry_game_version(entry): entry
         for entry in _domain_entries(hass)
-        if (entry.data.get(CONF_REGION) or "").lower() == region.lower()
+        if (entry.data.get(CONF_REGION) or "").lower() == region.lower() and not is_account(entry)
     }
+
+
+def account_entry_for(hass: HomeAssistant, region: str) -> Optional[ConfigEntry]:
+    """The Battle.net account entry of a region, if any."""
+    return next(
+        (e for e in _domain_entries(hass) if is_account(e) and (e.data.get(CONF_REGION) or "").lower() == region.lower()),
+        None,
+    )
+
+
+def account_title(region: str) -> str:
+    """Title of the Battle.net account entry, e.g. "Battle.net Account (EU)"."""
+    return f"Battle.net Account ({region.upper()})"
 
 
 def character_title(name: str, realm_name: Optional[str]) -> str:
@@ -211,14 +234,14 @@ def group_subentry_id(entry: ConfigEntry, subentry_type: str) -> Optional[str]:
     return next((s.subentry_id for s in entry.subentries.values() if s.subentry_type == subentry_type), None)
 
 
-def ensure_group_subentries(hass: HomeAssistant, entry: ConfigEntry, with_account: bool) -> None:
-    """Create the realms subentry and the account subentry while a login is kept.
+def ensure_group_subentries(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Create the realms subentry (and drop the account subentry of older versions).
 
     Called before the entry's update listener is registered, so changing the
     subentries here does not reload the entry. A deleted realms subentry
-    comes back on the next start.
+    comes back on the next start. The account has its own entry.
     """
-    wanted = {SUBENTRY_REALMS: True, SUBENTRY_ACCOUNT: with_account}
+    wanted = {SUBENTRY_REALMS: True, SUBENTRY_ACCOUNT: False}
     for subentry_type, needed in wanted.items():
         existing = group_subentry_id(entry, subentry_type)
         if needed and existing is None:

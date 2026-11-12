@@ -107,6 +107,9 @@ CONF_NAMESPACE_SUFFIX = "namespace_suffix"
 CONF_RULESET_ID = "ruleset_id"
 # One config entry per game version; each character is a subentry
 SUBENTRY_CHARACTER = "character"
+# Kind of config entry: a game version (default) or the Battle.net account
+CONF_ENTRY_TYPE = "entry_type"
+ENTRY_TYPE_ACCOUNT = "account"
 # Subentries the integration creates itself (no "add" button): realms with the
 # region devices, and the Battle.net account of the Retail entry
 SUBENTRY_REALMS = "realms"
@@ -117,8 +120,10 @@ CONF_CHARACTER_KEY = "key"
 CONF_REALM_KEYS = "realm_keys"
 # Entry ID the entry-bound unique IDs are built from (the original entry for split entries)
 CONF_UNIQUE_BASE = "unique_base"
-# Game versions whose account profile has gold (Classic Progression and Anniversary answer 404)
-ACCOUNT_GOLD_VERSIONS = ("retail", "classic1x")
+# Game versions with gold per character. Only Retail: the Classic Era account
+# profile lists characters, but their protected data answers 404; Classic
+# Progression and Anniversary have no account profile at all (verified 2026-11).
+ACCOUNT_GOLD_VERSIONS = ("retail",)
 
 # Hall of Fame (public worldofwarcraft.blizzard.com GraphQL endpoint).
 # Known persisted query hashes; if Blizzard rotates them, the client re-reads

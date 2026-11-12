@@ -13,9 +13,9 @@
       },
       "game_version": {
         "title": "Game version",
-        "description": "Each game version gets its own entry in region {region}. Game versions that are already set up are not listed.",
+        "description": "Each game version gets its own entry in region {region}, and the Battle.net Account its own entry for the login (gold and account collections). Entries that are already set up are not listed.",
         "data": {
-          "game_version": "Game version"
+          "game_version": "Game version or account"
         }
       },
       "features": {
@@ -88,7 +88,7 @@
       },
       "account_options": {
         "title": "Account data",
-        "description": "{selected_count} character(s) selected.\n\nThe Battle.net login can also be kept to load gold per character, total gold and account collections. Blizzard limits logins to 24 hours; afterwards the values keep their last state, everything else keeps working, and you can log in again via Reconfigure whenever you like.",
+        "description": "{selected_count} character(s) selected. They are added to the entry of their game version, which is created if missing.\n\nKeep the Battle.net login to load gold per character, total gold and account collections; it is stored in the **Battle.net Account** entry. Blizzard limits logins to 24 hours; afterwards the values keep their last state, everything else keeps working, and you can log in again with **Reconfigure** on the Battle.net Account entry whenever you like.",
         "data": {
           "keep_login": "Load account data (gold, account collections) while the login is valid"
         }
@@ -108,19 +108,12 @@
       "already_configured": "This game version is already set up for this region",
       "all_versions_configured": "All game versions are already set up for this region",
       "reconfigure_successful": "Characters and Battle.net login updated",
-      "account_login_skipped": "Battle.net login not completed, the configuration is unchanged"
+      "account_login_skipped": "Battle.net login not completed, the configuration is unchanged",
+      "characters_imported": "Characters imported, the login was not kept"
     }
   },
   "options": {
     "step": {
-      "init": {
-        "title": "World of Warcraft options",
-        "description": "Configure the features or remove the Battle.net login.",
-        "menu_options": {
-          "features": "Configure features",
-          "remove_account": "Remove Battle.net login"
-        }
-      },
       "features": {
         "title": "Configure Integration Features",
         "description": "Toggle the features of {game_version}. The entry reloads automatically.",
@@ -141,7 +134,7 @@
       },
       "remove_account": {
         "title": "Remove Battle.net login",
-        "description": "The integration forgets the Battle.net login. Gold and account sensors are removed; characters and all other data stay. You can log in again any time with Reconfigure."
+        "description": "Removes the Battle.net Account entry and with it the login, the account sensors and the gold of the characters. Characters and all other data stay. You can add the account again any time with **Add entry**."
       }
     },
     "error": {
@@ -151,6 +144,9 @@
       "character_already_added": "This character has already been added",
       "unknown": "Unknown error occurred",
       "game_version_unavailable": "This game version is not available in the Blizzard API yet"
+    },
+    "abort": {
+      "account_removed": "The Battle.net login is being removed"
     }
   },
   "config_subentries": {
@@ -189,9 +185,6 @@
     },
     "realms": {
       "entry_type": "Realms"
-    },
-    "account": {
-      "entry_type": "Battle.net Account"
     }
   },
   "entity": {
@@ -493,14 +486,15 @@
         "classic": "Classic Progression (e.g. Mists of Pandaria)",
         "classic1x": "Classic Era (Vanilla)",
         "classicann": "Classic Anniversary (Burning Crusade)",
-        "forever": "WoW Forever"
+        "forever": "WoW Forever",
+        "account": "Battle.net Account (login for gold and account collections)"
       }
     }
   },
   "issues": {
     "account_login_expired": {
       "title": "Battle.net login expired",
-      "description": "The Battle.net login of the World of Warcraft integration has expired (Blizzard limits logins to 24 hours). Everything else keeps working; gold and account values keep their last state. To update them, open the integration and choose **Reconfigure**. If you do not need account data, choose **Configure > Remove Battle.net login**, or ignore this notice."
+      "description": "The Battle.net login of World of Warcraft has expired (Blizzard limits logins to 24 hours). Everything else keeps working; gold and account values keep their last state. To update them, open the **Battle.net Account** entry and choose **Reconfigure**. If you do not need account data, choose **Configure** there to remove the login, or ignore this notice."
     }
   }
 }

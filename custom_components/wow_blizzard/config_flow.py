@@ -35,7 +35,6 @@ from .const import (
     CONF_ENABLE_PVP_LEADERBOARD,
     CONF_AUCTION_ITEMS,
     CONF_ACCOUNT_TOKEN,
-    ACCOUNT_GOLD_VERSIONS,
     FEATURE_DEFAULTS,
     OAUTH_AUTHORIZE_URLS,
     OAUTH_AUTHORIZE_URL_DEFAULT,
@@ -49,10 +48,15 @@ from .const import (
     CONF_RULESET_ID,
     GAME_VERSIONS,
     SUBENTRY_CHARACTER,
+    CONF_ENTRY_TYPE,
+    ENTRY_TYPE_ACCOUNT,
 )
 from .api_client import WoWBlizzardAPIClient, InvalidCredentials, UserTokenExpired
 from .entries import (
+    account_entry_for,
+    account_title,
     character_title,
+    is_account,
     character_unique_id,
     entries_for,
     entry_characters,
@@ -118,6 +122,8 @@ GAME_VERSION_OPTIONS = [
     {"value": "classic1x", "label": "Classic Era (Vanilla)"},
     {"value": "classicann", "label": "Classic Anniversary (Burning Crusade)"},
     {"value": "forever", "label": "WoW Forever"},
+    # Not a game version: the entry that holds the Battle.net login
+    {"value": ENTRY_TYPE_ACCOUNT, "label": "Battle.net Account"},
 ]
 
 
@@ -417,7 +423,7 @@ class CharacterFormMixin:
 class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domain=DOMAIN):
     """One config entry per region and game version."""
 
-    VERSION = 3
+    VERSION = 4
 
     def __init__(self):
         """Initialize."""
@@ -431,7 +437,9 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        """The "Add character" button."""
+        """The "Add character" button (game version entries only)."""
+        if is_account(config_entry):
+            return {}
         return {SUBENTRY_CHARACTER: CharacterSubentryFlow}
 
     @staticmethod
@@ -443,6 +451,11 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
     @property
     def _game_version(self) -> str:
         return self.data.get(CONF_GAME_VERSION, "retail")
+
+    @property
+    def _is_account(self) -> bool:
+        """Whether this flow sets up (or reconfigures) the Battle.net account entry."""
+        return self.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_ACCOUNT
 
     # --- setup: credentials, game version, features ---------------------------------
 
@@ -473,13 +486,22 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
 
     async def async_step_game_version(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Pick the game version of this entry (one entry per game version and region)."""
-        configured = entries_for(self.hass, self.data[CONF_REGION])
+        region = self.data[CONF_REGION]
+        configured = set(entries_for(self.hass, region))
+        if account_entry_for(self.hass, region):
+            configured.add(ENTRY_TYPE_ACCOUNT)
         available = [o["value"] for o in GAME_VERSION_OPTIONS if o["value"] not in configured]
         if not available:
             return self.async_abort(reason="all_versions_configured")
         if user_input is not None:
+            if user_input[CONF_GAME_VERSION] == ENTRY_TYPE_ACCOUNT:
+                # The account entry starts with the Battle.net login
+                self.data[CONF_ENTRY_TYPE] = ENTRY_TYPE_ACCOUNT
+                await self.async_set_unique_id(entry_unique_id(region, ENTRY_TYPE_ACCOUNT))
+                self._abort_if_unique_id_configured()
+                return await self.async_step_account_login()
             self.data[CONF_GAME_VERSION] = user_input[CONF_GAME_VERSION]
-            await self.async_set_unique_id(entry_unique_id(self.data[CONF_REGION], self._game_version))
+            await self.async_set_unique_id(entry_unique_id(region, self._game_version))
             self._abort_if_unique_id_configured()
             return await self.async_step_features()
         return self.async_show_form(
@@ -547,6 +569,8 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
         characters are added to it instead.
         """
         data = dict(import_data)
+        if data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_ACCOUNT:
+            return self._import_account(data)
         subentries = data.pop("subentries", [])
         options = data.pop("options", {})
         region, game_version = data[CONF_REGION], data[CONF_GAME_VERSION]
@@ -563,6 +587,17 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
         return self.async_create_entry(
             title=entry_title(game_version, region), data=data, options=options, subentries=subentries,
         )
+
+    def _import_account(self, data: Dict[str, Any]) -> FlowResult:
+        """Create the account entry, or renew the login of the existing one."""
+        existing = account_entry_for(self.hass, data[CONF_REGION])
+        if existing:
+            self.hass.config_entries.async_update_entry(
+                existing, data={**existing.data, CONF_ACCOUNT_TOKEN: data[CONF_ACCOUNT_TOKEN]}
+            )
+            return self.async_abort(reason="already_configured")
+        self._async_abort_entries_match({CONF_ENTRY_TYPE: ENTRY_TYPE_ACCOUNT, CONF_REGION: data[CONF_REGION]})
+        return self.async_create_entry(title=account_title(data[CONF_REGION]), data=data)
 
     # --- Battle.net login: import characters of all game versions ------------------
 
@@ -605,7 +640,7 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
     async def async_step_account_failed(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Explain a failed login; nothing is lost."""
         if user_input is not None:
-            if self.source == config_entries.SOURCE_RECONFIGURE:
+            if self.source == config_entries.SOURCE_RECONFIGURE or self._is_account:
                 return self.async_abort(reason="account_login_skipped")
             return await self.async_step_add_method()
         return self.async_show_form(
@@ -697,10 +732,10 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
     async def async_step_account_options(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """After picking characters: keep the login for account data (optional)."""
         if user_input is None:
-            has_login = any(CONF_ACCOUNT_TOKEN in e.data for e in entries_for(self.hass, self.data[CONF_REGION]).values())
+            keep = self._is_account or account_entry_for(self.hass, self.data[CONF_REGION]) is not None
             return self.async_show_form(
                 step_id="account_options",
-                data_schema=vol.Schema({vol.Optional("keep_login", default=has_login or CONF_ACCOUNT_TOKEN in self.data): bool}),
+                data_schema=vol.Schema({vol.Optional("keep_login", default=keep): bool}),
                 description_placeholders={"selected_count": str(len(self._account_selected))},
             )
 
@@ -722,47 +757,72 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
                 character_subentry(self.hass, game_version, character, char.get("realm"), taken)
             )
 
-        own = by_version.pop(self._game_version, [])
-        self._distribute(by_version, keep_login)
-        if keep_login and self._game_version in ACCOUNT_GOLD_VERSIONS:
-            self.data[CONF_ACCOUNT_TOKEN] = self._account_token
-        else:
-            self.data.pop(CONF_ACCOUNT_TOKEN, None)
+        reconfigure = self.source == config_entries.SOURCE_RECONFIGURE
+        own = [] if self._is_account else by_version.pop(self._game_version, [])
+        self._distribute(by_version)
 
-        if self.source == config_entries.SOURCE_RECONFIGURE:
+        if self._is_account:
+            if reconfigure:
+                entry = self._get_reconfigure_entry()
+                if not keep_login:
+                    return self.async_abort(reason="characters_imported")
+                return self.async_update_reload_and_abort(entry, data={**entry.data, CONF_ACCOUNT_TOKEN: self._account_token})
+            if not keep_login:
+                return self.async_abort(reason="characters_imported")
+            return self.async_create_entry(
+                title=account_title(self.data[CONF_REGION]),
+                data={
+                    **{k: self.data[k] for k in (CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_REGION, CONF_LOCALE)},
+                    CONF_ENTRY_TYPE: ENTRY_TYPE_ACCOUNT,
+                    CONF_ACCOUNT_TOKEN: self._account_token,
+                },
+            )
+
+        if keep_login:
+            self._store_login()
+        if reconfigure:
             entry = self._get_reconfigure_entry()
             add_subentries(self.hass, entry, own)
-            return self.async_update_reload_and_abort(entry, data=self.data)
+            return self.async_abort(reason="reconfigure_successful")
         return self._create_entry(own)
 
-    def _distribute(self, by_version: Dict[str, List[Dict[str, Any]]], keep_login: bool) -> None:
-        """Characters of other game versions go to their entries, created if missing.
+    def _store_login(self) -> None:
+        """Keep the login in the account entry of the region (created if missing)."""
+        existing = account_entry_for(self.hass, self.data[CONF_REGION])
+        if existing:
+            # The update reloads the account entry
+            self.hass.config_entries.async_update_entry(
+                existing, data={**existing.data, CONF_ACCOUNT_TOKEN: self._account_token}
+            )
+            return
+        self.hass.async_create_task(
+            self.hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data={
+                    **{k: self.data[k] for k in (CONF_CLIENT_ID, CONF_CLIENT_SECRET, CONF_REGION, CONF_LOCALE)},
+                    CONF_ENTRY_TYPE: ENTRY_TYPE_ACCOUNT,
+                    CONF_ACCOUNT_TOKEN: self._account_token,
+                },
+            )
+        )
 
-        A kept login is stored in every entry with account gold; other
-        entries keep their login when this one is not kept.
-        """
+    def _distribute(self, by_version: Dict[str, List[Dict[str, Any]]]) -> None:
+        """Characters of other game versions go to their entries, created if missing."""
         region = self.data[CONF_REGION]
         entries = entries_for(self.hass, region)
         shared = {k: self.data[k] for k in SHARED_KEYS if k in self.data}
         for game_version, subentries in by_version.items():
             if game_version in entries:
                 continue
-            import_data = {**shared, CONF_GAME_VERSION: game_version, "subentries": subentries}
-            if keep_login and game_version in ACCOUNT_GOLD_VERSIONS:
-                import_data[CONF_ACCOUNT_TOKEN] = self._account_token
             self.hass.async_create_task(
                 self.hass.config_entries.flow.async_init(
-                    DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data=import_data
+                    DOMAIN, context={"source": config_entries.SOURCE_IMPORT},
+                    data={**shared, CONF_GAME_VERSION: game_version, "subentries": subentries},
                 )
             )
         for game_version, entry in entries.items():
             if entry.entry_id == self.context.get("entry_id"):
                 continue
             add_subentries(self.hass, entry, by_version.get(game_version, []))
-            if keep_login and game_version in ACCOUNT_GOLD_VERSIONS:
-                self.hass.config_entries.async_update_entry(
-                    entry, data={**entry.data, CONF_ACCOUNT_TOKEN: self._account_token}
-                )
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Log in with Battle.net again: import characters and refresh the account login."""
@@ -799,10 +859,10 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
     """Features of an entry and the Battle.net login."""
 
     async def async_step_init(self, user_input=None):
-        """Features, or a menu when a Battle.net login can be removed."""
-        if CONF_ACCOUNT_TOKEN not in self.config_entry.data:
-            return await self.async_step_features()
-        return self.async_show_menu(step_id="init", menu_options=["features", "remove_account"])
+        """Features of a game version; the account entry offers removing the login."""
+        if is_account(self.config_entry):
+            return await self.async_step_remove_account()
+        return await self.async_step_features()
 
     async def async_step_features(self, user_input=None):
         """Feature toggles and auction items."""
@@ -820,12 +880,10 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def async_step_remove_account(self, user_input=None):
-        """Forget the Battle.net login; characters and all other data stay."""
+        """Forget the Battle.net login: the account entry is removed, characters stay."""
         if user_input is not None:
-            new_data = {k: v for k, v in self.config_entry.data.items() if k != CONF_ACCOUNT_TOKEN}
-            self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-            # Creating the options entry reloads the integration
-            return self.async_create_entry(title="", data=dict(self.config_entry.options))
+            self.hass.async_create_task(self.hass.config_entries.async_remove(self.config_entry.entry_id))
+            return self.async_abort(reason="account_removed")
         return self.async_show_form(step_id="remove_account", data_schema=vol.Schema({}))
 
 

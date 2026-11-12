@@ -11,7 +11,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -38,7 +39,6 @@ from .const import (
     CONF_ENABLE_MYTHIC_LEADERBOARD,
     CONF_ENABLE_PVP_LEADERBOARD,
     CONF_AUCTION_ITEMS,
-    CONF_ACCOUNT_TOKEN,
     FEATURE_DEFAULTS,
     CONF_GAME_VERSION,
     CONF_LOCALE,
@@ -53,10 +53,7 @@ from .const import (
     COLLECTION_SENSOR_TYPES,
     GUILD_SENSOR_TYPES,
     REGION_SENSOR_TYPES,
-    ACCOUNT_CHARACTER_SENSOR_TYPES,
     ACCOUNT_SENSOR_TYPES,
-    ACCOUNT_GOLD_VERSIONS,
-    SUBENTRY_ACCOUNT,
     SUBENTRY_REALMS,
     REALM_LEADERBOARD_SENSOR_TYPES,
     AUCTION_SENSOR_TYPES,
@@ -67,7 +64,6 @@ from .const import (
     AUCTION_REFRESH_INTERVAL,
     LEADERBOARD_REFRESH_INTERVAL,
     PVP_SEASON_REFRESH_INTERVAL,
-    ACCOUNT_REFRESH_INTERVAL,
     CLASS_COLORS,
     ITEM_QUALITY_COLORS,
     GAME_VERSIONS,
@@ -75,22 +71,28 @@ from .const import (
     NO_VALUE_TEXT,
     no_value_text,
 )
-from .api_client import WoWBlizzardAPIClient, UserTokenExpired
+from .api_client import WoWBlizzardAPIClient
 from .entries import entry_characters, entry_game_version, group_subentry_id, realm_keys, unique_base
+from .account import (
+    AccountCoordinator,
+    account_coordinator,
+    account_signal,
+    async_gold_characters,
+    gold_key,
+    is_account_entry,
+)
 from .parsers import (
     COLLECTION_ENDPOINTS,
     HUNTER_CLASS_ID,
     _guild_path,
     _merge,
     bracket_slug,
-    parse_account_characters,
     parse_guild_achievements,
     parse_guild_activity,
     parse_guild_roster,
     roster_changes,
     parse_mythic_leaderboard,
     ACCOUNT_COLLECTIONS,
-    count_collection,
     parse_active_quests,
     parse_character_achievements,
     parse_mythic_best_runs,
@@ -189,7 +191,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         characters: List[Dict[str, Any]],
         features: Dict[str, bool],
         auction_items: Optional[List[int]] = None,
-        account_token: Optional[Dict[str, Any]] = None,
         game_version: Optional[str] = None,
         realms: Optional[Dict[str, Dict[str, Any]]] = None,
     ):
@@ -200,8 +201,10 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         """
         self.client = client
         self.auction_items = list(auction_items or [])
-        # Player's Battle.net login ({"access_token", "expires_at"}), optional
-        self.account_token = account_token or {}
+        # Whether the region had a Battle.net account entry at setup, and the
+        # characters with gold then (see async_gold_characters)
+        self.account_linked = False
+        self.gold_characters: Optional[set] = None
         self.characters = characters if all("key" in c for c in characters) else assign_character_keys(characters)
         self.features = features
         self.realms = realms if realms is not None else assign_realm_keys(self.characters)
@@ -231,15 +234,12 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         # Hourly data: (fetch time, data)
         self._leaderboard_cache: Optional[Any] = None
         self._auction_cache: Optional[Any] = None
-        self._account_cache: Optional[Any] = None
         self._guild_activity: Dict[str, List[Dict[str, Any]]] = {}
         # Guild members per guild (to spot joins and leaves), the joins and
         # leaves of the last roster check, class names per game version
         self._guild_rosters: Dict[str, Dict[str, Any]] = {}
         self._guild_roster_events: Dict[str, List[Dict[str, Any]]] = {}
         self._class_names: Dict[str, Dict[int, str]] = {}
-        # Account transmogs: (fetch time, parsed collection)
-        self._account_transmogs: Optional[Any] = None
         # Classic PvP seasons per game version: {"fetched", "season", "titles"}
         self._classic_pvp_seasons: Dict[str, Dict[str, Any]] = {}
         # Guild crests per guild key, crest colors per game version
@@ -249,10 +249,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._mythic_season: Dict[str, Any] = {}
         # PvP leaderboards per "season:bracket": (fetch time, ranks by character ID)
         self._pvp_leaderboard_cache: Dict[str, Any] = {}
-        self.account_expired = False
-        # Last good account values and where they are kept across restarts
-        self._account_last: Dict[str, Any] = {}
-        self._account_store = None
         # Item icons and slow character data across restarts and reloads
         self._cache_store: Optional[Store] = None
         self.entry_id: Optional[str] = None
@@ -1290,119 +1286,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._auction_cache = (datetime.now(), result)
         return result
 
-    async def _fetch_account_data(self) -> Dict[str, Any]:
-        """Account data from the player's Battle.net login while it is valid (optional).
-
-        Blizzard does not hand out refresh tokens, so the login expires after
-        24 hours. The last values are kept afterwards and the user can log in
-        again by reconfiguring the integration.
-        """
-        token = (self.account_token or {}).get("access_token")
-        if not token:
-            return {}
-        if self._is_fresh(self._account_cache, ACCOUNT_REFRESH_INTERVAL):
-            return self._account_cache[1]
-        expires_at = self.account_token.get("expires_at") or 0
-
-        def keep_last(login_valid: bool) -> Dict[str, Any]:
-            # Last good values (also restored after a restart), never zeros
-            return {**self._account_last, "account_login": expires_at * 1000, "login_valid": login_valid}
-
-        if datetime.now(timezone.utc).timestamp() >= expires_at:
-            self.account_expired = True
-            return keep_last(False)
-
-        try:
-            result = await self._fetch_account_values(token, expires_at)
-        except UserTokenExpired:
-            # Rejected before the expiry time, e.g. after a password change
-            self.account_expired = True
-            return keep_last(False)
-        except Exception as err:  # noqa: BLE001 - account data must never break the update
-            _LOGGER.warning("Could not fetch Battle.net account data: %s", err)
-            return keep_last(True)
-        if result is None:
-            # Temporary API problem: keep the last values, try again next update
-            return keep_last(True)
-
-        self.account_expired = False
-        self._account_last = {k: v for k, v in result.items() if k not in ("account_login", "login_valid")}
-        if self._account_store is not None:
-            await self._account_store.async_save(self._account_last)
-        self._account_cache = (datetime.now(), result)
-        return result
-
-    async def _fetch_account_values(self, token: str, expires_at: int) -> Optional[Dict[str, Any]]:
-        """Gold and collections of the logged-in account; None if the API gave no answer."""
-        result: Dict[str, Any] = {"characters": {}, "account_login": expires_at * 1000, "login_valid": True}
-        # Only Retail and Classic Era have gold in the account profile
-        versions = {self.game_version} & set(ACCOUNT_GOLD_VERSIONS)
-        total_gold = 0
-        account_characters = 0
-        for game_version in sorted(versions):
-            profile = await self.client.get_account_profile(token, game_version)
-            if not profile:
-                return None
-            characters = parse_account_characters(profile)
-            if game_version == "retail":
-                account_characters = len(characters)
-            characters = [c for c in characters if c.get("realm_id") and c.get("id")]
-            answers = await asyncio.gather(*(
-                self.client.get_protected_character(token, c["realm_id"], c["id"], game_version) for c in characters
-            ))
-            for char, protected in zip(characters, answers):
-                key = f"{game_version}:{char['realm_slug']}/{(char['name'] or '').lower()}"
-                money = protected.get("money")
-                if not isinstance(money, int):
-                    # No answer for this character: keep its last value so the total does not drop
-                    last = (self._account_last.get("characters") or {}).get(key)
-                    if last:
-                        result["characters"][key] = last
-                        if game_version == "retail":
-                            total_gold += last.get("character_gold") or 0
-                    continue
-                gold = money // 10000
-                if game_version == "retail":
-                    total_gold += gold
-                stats = protected.get("protected_stats") or {}
-                result["characters"][key] = {
-                    "character_gold": gold,
-                    "attrs": {"character_gold": {
-                        "total_gold_gained": (stats.get("total_gold_gained") or 0) // 10000,
-                        "total_gold_lost": (stats.get("total_gold_lost") or 0) // 10000,
-                        "total_deaths": stats.get("total_number_deaths"),
-                        "location": ((protected.get("position") or {}).get("zone") or {}).get("name"),
-                        "hearthstone": ((protected.get("bind_position") or {}).get("zone") or {}).get("name"),
-                    }},
-                }
-        result["account_gold_total"] = total_gold
-        result["account_characters"] = account_characters
-        if self.game_version != "retail":
-            # Account collections and totals are Retail
-            return result
-        for sensor, (kind, list_keys) in ACCOUNT_COLLECTIONS.items():
-            count = count_collection(await self.client.get_account_collection(token, kind), list_keys)
-            if count is not None:
-                result[sensor] = count
-            elif sensor in self._account_last:
-                result[sensor] = self._account_last[sensor]
-
-        # Transmogs: up to 5 MB, so at most every few hours and off the event loop
-        last_transmogs = self._account_transmogs
-        if last_transmogs and datetime.now() - last_transmogs[0] < timedelta(seconds=SLOW_REFRESH_INTERVAL):
-            transmogs = last_transmogs[1]
-        else:
-            transmogs = parse_transmogs(await self.client.get_account_collection(token, "transmogs", parse_in_thread=True))
-            if transmogs:
-                self._account_transmogs = (datetime.now(), transmogs)
-        if transmogs:
-            result["account_transmogs"] = transmogs["transmogs_collected"]
-            result["attrs"] = {"account_transmogs": transmogs["attrs"]["transmogs_collected"]}
-        elif "account_transmogs" in self._account_last:
-            result["account_transmogs"] = self._account_last["account_transmogs"]
-            result["attrs"] = {"account_transmogs": (self._account_last.get("attrs") or {}).get("account_transmogs") or {}}
-        return result
-
     async def _fetch_character(self, character: Dict[str, Any]):
         """All data of one character: (key, data)."""
         realm = character[CONF_REALM]
@@ -1495,26 +1378,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             all_data["guild_roster_events"] = dict(self._guild_roster_events)
             all_data["guild_crests"] = dict(self._guild_crests)
 
-            account = await self._fetch_account_data()
-            if self.hass is not None:
-                # Optional login: point to "Reconfigure" instead of failing the integration
-                if self.account_token and self.account_expired:
-                    ir.async_create_issue(
-                        self.hass, DOMAIN, account_issue_id(self.entry_id),
-                        is_fixable=False, severity=ir.IssueSeverity.WARNING,
-                        translation_key="account_login_expired",
-                    )
-                else:
-                    ir.async_delete_issue(self.hass, DOMAIN, account_issue_id(self.entry_id))
-            if account:
-                all_data["account"] = account
-                for character in self.characters:
-                    key = f"{character[CONF_GAME_VERSION]}:{self.client.realm_to_slug(character[CONF_REALM])}/{character[CONF_CHARACTER_NAME].lower()}"
-                    if key in (account.get("characters") or {}) and character["key"] in all_data:
-                        char_data = dict(all_data[character["key"]])
-                        _merge(char_data, account["characters"][key])
-                        all_data[character["key"]] = char_data
-
             # Combine character and server data
             all_data["servers"] = server_data
             all_data["last_update"] = self.last_update_success
@@ -1591,16 +1454,6 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             return None
 
 
-def account_issue_id(entry_id: Optional[str]) -> str:
-    """Repair issue shown while the Battle.net login of a config entry is expired."""
-    return f"account_login_expired_{entry_id}"
-
-
-def account_store_key(entry_id: str) -> str:
-    """Storage key for the last account values of a config entry."""
-    return f"{DOMAIN}.{entry_id}.account"
-
-
 def cache_store_key(entry_id: str) -> str:
     """Storage key for the item icons and slow character data of a config entry."""
     return f"{DOMAIN}.{entry_id}.cache"
@@ -1642,19 +1495,13 @@ async def async_create_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> W
     coordinator = WoWDataUpdateCoordinator(
         hass, client, characters, features,
         auction_items=auction_items,
-        account_token=entry.data.get(CONF_ACCOUNT_TOKEN),
         game_version=entry_game_version(entry),
         realms=realm_keys(hass, entry, characters),
     )
     coordinator.entry_id = entry.entry_id
-    account_store = Store(hass, 1, account_store_key(entry.entry_id))
-    if coordinator.account_token:
-        # Gold etc. keep their last value across restarts while the login is expired
-        coordinator._account_store = account_store
-        coordinator._account_last = await account_store.async_load() or {}
-    else:
-        # Login removed: forget the stored account values
-        await account_store.async_remove()
+    # Gold sensors exist only while the region has a Battle.net account entry
+    coordinator.gold_characters = await async_gold_characters(hass, entry.data[CONF_REGION])
+    coordinator.account_linked = coordinator.gold_characters is not None
     # Icons and slow character data of the last run spare most requests after a reload
     coordinator._cache_store = Store(hass, 1, cache_store_key(entry.entry_id))
     coordinator.load_cache(await coordinator._cache_store.async_load())
@@ -1666,14 +1513,18 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up WoW Blizzard sensors based on a config entry."""
+    if is_account_entry(entry):
+        _setup_account_sensors(hass, entry, async_add_entities)
+        return
     coordinator: WoWDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    gold_characters = coordinator.gold_characters or set()
+    entity_registry = er.async_get(hass)
     features = coordinator.features
     base = unique_base(entry)
 
-    # Realm and region sensors (realms subentry), account sensors (account
-    # subentry); character sensors are added below their character subentry
+    # Realm and region sensors (realms subentry); character sensors are
+    # added below their character subentry
     entities = []
-    account_entities = []
     by_subentry: Dict[Optional[str], list] = {}
 
     # Character sensors
@@ -1709,16 +1560,23 @@ async def async_setup_entry(
                 key for key in version_sensors["guild"]
                 if key == "guild_members" or key in char_data
             ]
-        if coordinator.account_token and "character_gold" in char_data:
-            # Gold needs the player's Battle.net login and only exists for the
-            # characters of that account (Blizzard has no gold for Classic
-            # Progression and Anniversary)
-            sensor_types += list(ACCOUNT_CHARACTER_SENSOR_TYPES)
-
         by_subentry.setdefault(character.get("subentry_id"), []).extend(
             WoWCharacterSensor(coordinator, sensor_type, char_key, name, realm, game_version)
             for sensor_type in sensor_types
         )
+        # Gold comes from the Battle.net account entry, only for characters of
+        # that account (Blizzard has no gold for Classic Progression and Anniversary)
+        key = gold_key(game_version, coordinator.client.realm_to_slug(realm), name)
+        if key in gold_characters:
+            by_subentry[character.get("subentry_id")].append(
+                WoWCharacterGoldSensor(coordinator, key, char_key, name, realm, game_version)
+            )
+        else:
+            # Login removed (or character not on the account): drop the old gold sensor
+            id_base = char_key.replace(f"{realm}-{name}", f"{realm}_{name}", 1)
+            stale = entity_registry.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{id_base}_character_gold")
+            if stale:
+                entity_registry.async_remove(stale)
 
     # Server sensors
     if features[CONF_ENABLE_SERVER_STATUS]:
@@ -1777,25 +1635,25 @@ async def async_setup_entry(
             for item_id in coordinator.auction_items:
                 entities.append(WoWAuctionSensor(coordinator, game_version, item_id, base))
 
-    # Account-wide data from the Battle.net login
-    if coordinator.account_token and coordinator.has_retail:
-        # The account device (totals, collections) belongs to the Retail entry
-        account = (coordinator.data or {}).get("account") or {}
-        collections = set(ACCOUNT_COLLECTIONS) | {"account_transmogs"}
-        for sensor_type in ACCOUNT_SENSOR_TYPES:
-            if account and sensor_type in collections and sensor_type not in account:
-                # The API does not answer for this collection (e.g. housing decor)
-                continue
-            account_entities.append(WoWAccountSensor(coordinator, sensor_type, base))
-
     async_add_entities(entities, config_subentry_id=group_subentry_id(entry, SUBENTRY_REALMS))
-    if account_entities and (account_id := group_subentry_id(entry, SUBENTRY_ACCOUNT)):
-        async_add_entities(account_entities, config_subentry_id=account_id)
     for subentry_id, character_entities in by_subentry.items():
         if subentry_id is not None and subentry_id not in entry.subentries:
             # Character deleted while the entry was loading; the reload follows
             continue
         async_add_entities(character_entities, config_subentry_id=subentry_id)
+
+
+def _setup_account_sensors(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
+    """Sensors of the Battle.net account entry (totals, collections, login)."""
+    account: AccountCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    data = account.data or {}
+    collections = set(ACCOUNT_COLLECTIONS) | {"account_transmogs"}
+    async_add_entities(
+        WoWAccountSensor(account, sensor_type, unique_base(entry))
+        for sensor_type in ACCOUNT_SENSOR_TYPES
+        # Collections the API does not answer for (e.g. housing decor) are left out
+        if not (data and sensor_type in collections and sensor_type not in data)
+    )
 
 
 def _game_version_label(game_version: str) -> str:
@@ -1939,6 +1797,45 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
             "model": "World of Warcraft Character",
             "sw_version": _game_version_label(self._game_version),
         }
+
+
+class WoWCharacterGoldSensor(WoWCharacterSensor):
+    """Gold of a character, from the Battle.net account entry."""
+
+    def __init__(self, coordinator, key: str, char_key: str, name: str, realm: str, game_version: str):
+        """Initialize the sensor."""
+        super().__init__(coordinator, "character_gold", char_key, name, realm, game_version)
+        self._region = coordinator.client.region
+        self._gold_key = key
+
+    @property
+    def _account_data(self) -> Dict[str, Any]:
+        account = account_coordinator(self.hass, self._region)
+        return (account.data if account is not None else None) or {}
+
+    @property
+    def _gold(self) -> Dict[str, Any]:
+        return (self._account_data.get("characters") or {}).get(self._gold_key) or {}
+
+    async def async_added_to_hass(self) -> None:
+        """Also update when the account entry has new values (it may load later)."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, account_signal(self._region), self.async_write_ha_state)
+        )
+
+    @property
+    def native_value(self):
+        """Gold of the character."""
+        return self._gold.get("character_gold")
+
+    @property
+    def extra_state_attributes(self):
+        """Gold gained/lost, deaths and location, plus whether the login is valid."""
+        attributes = dict(super().extra_state_attributes or {})
+        attributes.update((self._gold.get("attrs") or {}).get("character_gold") or {})
+        attributes["login_valid"] = self._account_data.get("login_valid", False)
+        return attributes
 
 
 class WoWServerSensor(CoordinatorEntity, SensorEntity):
@@ -2298,7 +2195,7 @@ class WoWAuctionSensor(CoordinatorEntity, SensorEntity):
 class WoWAccountSensor(CoordinatorEntity, SensorEntity):
     """Account-wide sensor from the player's Battle.net login."""
 
-    def __init__(self, coordinator: WoWDataUpdateCoordinator, sensor_type: str, entry_id: str):
+    def __init__(self, coordinator: "AccountCoordinator", sensor_type: str, entry_id: str):
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._sensor_type = sensor_type
@@ -2315,9 +2212,7 @@ class WoWAccountSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def _account(self) -> Dict[str, Any]:
-        if not self.coordinator.data:
-            return {}
-        return self.coordinator.data.get("account") or {}
+        return self.coordinator.data or {}
 
     @property
     def native_value(self):

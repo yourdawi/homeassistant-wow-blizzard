@@ -26,6 +26,9 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 MAX_RATE_LIMIT_RETRIES = 2
+# Token requests on server errors (HTTP 5xx) and the pause between them
+TOKEN_ATTEMPTS = 2
+TOKEN_RETRY_DELAY = 2
 # HTTP status of the last request of the running task: requests run in
 # parallel, so a shared attribute could hold another request's status
 _LAST_STATUS: ContextVar[Optional[int]] = ContextVar("wow_blizzard_last_status", default=None)
@@ -233,7 +236,7 @@ class WoWBlizzardAPIClient:
             "scope": "wow.profile",  # Required scope for character data
         }
 
-        try:
+        for attempt in range(TOKEN_ATTEMPTS):
             async with session.post(self.token_url, data=data, headers=headers) as response:
                 if response.status in (400, 401):
                     error_text = await response.text()
@@ -246,13 +249,15 @@ class WoWBlizzardAPIClient:
                     self._token_expires = datetime.now() + timedelta(seconds=expires_in - 60)
                     _LOGGER.info("Successfully obtained access token")
                     return self._access_token
-                else:
-                    error_text = await response.text()
-                    _LOGGER.error(f"Token request failed: {response.status} - {error_text}")
-                    raise Exception(f"Failed to get access token: {response.status}")
-        except Exception as e:
-            _LOGGER.error(f"Error getting access token: {e}")
-            raise
+                if response.status >= 500 and attempt + 1 < TOKEN_ATTEMPTS:
+                    # Blizzard's token server answers 502 now and then; one retry usually works
+                    _LOGGER.debug("Token request answered %s, retrying", response.status)
+                    await asyncio.sleep(TOKEN_RETRY_DELAY)
+                    continue
+                error_text = await response.text()
+                _LOGGER.error(f"Token request failed: {response.status} - {error_text[:200]}")
+                raise Exception(f"Failed to get access token: {response.status}")
+        raise Exception("Failed to get access token")
  
     async def _make_request(
         self,

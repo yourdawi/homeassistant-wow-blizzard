@@ -44,7 +44,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 | Mythic+ leaderboards (opt-in) | Best key of the week per realm, with the best runs of your characters. |
 | PvP leaderboards (opt-in) | Rank of your characters on the regional 2v2, 3v3, RBG, Solo Shuffle and Blitz leaderboards. |
 | Auction house | Lowest price for item IDs you choose (Retail commodities and realm auctions, Classic Progression realm auctions). |
-| Battle.net account (optional) | Import characters by logging in with Battle.net. While the login is valid (24 hours): gold per character, total gold, account mounts, pets, toys, heirlooms, housing decor and transmog appearances. |
+| Battle.net account (optional) | Its own entry: import characters by logging in with Battle.net. While the login is valid (24 hours): gold per Retail character, total gold, account mounts, pets, toys, heirlooms and transmog appearances. |
 
 Numeric sensors have the `measurement` state class, so Home Assistant keeps long-term statistics and you can graph them (for example a leveling race).
 
@@ -153,22 +153,29 @@ Finish the setup with **Enter realm and name**, **Log in with Battle.net** or **
 
 **Log in with Battle.net** (optional) opens the Battle.net login. Afterwards all characters of your account (Retail, all Classic versions and WoW Forever) are listed and you tick the ones to add. Characters of other game versions go to the entry of their game version, which is created if it does not exist yet. Characters below level 10 are not listed, the Battle.net API has no data for them.
 
-With **Also load account data** the login is kept and the integration adds gold and account collections (Retail; Classic Era has gold per character, Classic Progression and Anniversary have no account data in the API). Blizzard logins last 24 hours and cannot be renewed automatically. An expired login never breaks the integration: everything that does not need the login keeps updating, gold and account values keep their last state (also across restarts), and a notice under **Settings > Repairs** reminds you that you can log in again with **Reconfigure**. Logging in again is optional; you can ignore the notice or remove the login. If the login fails or is cancelled during setup, nothing is lost and you can add characters by hand. The login needs My Home Assistant (part of `default_config`) and the redirect URL from step 1.
+### 4. Battle.net account (optional)
+
+The Battle.net login has its own entry, **Battle.net Account (EU)** (one per region). Add it with **Add entry** and choose **Battle.net Account** instead of a game version, or keep the login when you import characters with **Log in with Battle.net**.
+
+After the login you pick characters of all game versions; they go to the entry of their game version. While the login is valid the account entry loads gold per character (shown on the character), total gold and the account collections. Only Retail has gold: the Classic Era account lists characters but has no gold for them, and Classic Progression and Anniversary have no account data in the API.
+
+Blizzard logins last 24 hours and cannot be renewed automatically. An expired login never breaks the integration: everything that does not need the login keeps updating, gold and account values keep their last state (also across restarts), and a notice under **Settings > Repairs** reminds you that you can log in again with **Reconfigure** on the account entry. Logging in again is optional; you can ignore the notice or remove the login. If the login fails or is cancelled, nothing is lost. The login needs My Home Assistant (part of `default_config`) and the redirect URL from step 1.
 
 ### Changing the configuration later
 
-Open **Settings > Devices & Services > World of Warcraft**. Each game version is an entry with its characters listed below it. Every entry also has a **Realms** subentry with the realm servers, the region device (WoW Token, seasons), the auction house and the Hall of Fame, and the Retail entry has a **Battle.net Account** subentry while a login is kept. The integration creates these two itself.
+Open **Settings > Devices & Services > World of Warcraft**. Each game version is an entry with its characters listed below it, plus a **Realms** subentry (created by the integration) with the realm servers, the region device (WoW Token, seasons), the auction house and the Hall of Fame. The Battle.net login is the separate **Battle.net Account** entry.
 
-- **Add character** (next to the entry) adds a character of that game version.
+- **Add character** (next to a game version entry) adds a character of that game version.
 - To remove a character, open the menu of the character below its entry and delete it. Its devices and entities are removed.
-- **Configure** on an entry turns feature groups on or off and sets the auction item IDs. With a kept login it also offers **Remove Battle.net login**, which removes the gold and account sensors; characters and everything else stay.
-- **Reconfigure** (in the entry's menu) logs in with Battle.net to import more characters or renew the account login.
+- **Configure** on a game version entry turns feature groups on or off and sets the auction item IDs.
+- **Configure** on the Battle.net Account entry removes the login (deleting the entry does the same); the account sensors and the gold of the characters go, characters and everything else stay.
+- **Reconfigure** (in an entry's menu) logs in with Battle.net to import more characters or renew the login.
 
 The entry reloads on its own after every change.
 
 ### Upgrading from an older version
 
-Older versions kept all characters in one entry. On the first start the entry is split into one entry per game version, with every character as a subentry. Entity IDs, history and statistics stay the same.
+Older versions kept all characters and the Battle.net login in one entry. On the first start the entry is split into one entry per game version, with every character as a subentry, and a kept login moves to a new Battle.net Account entry. Entity IDs, history and statistics stay the same.
 
 ## Entities
 
@@ -220,7 +227,7 @@ With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail
 | Mounts / Pets / Toys / Heirlooms / Housing Decor | `sensor.thrall_stormrage_mounts` | Collections, Retail |
 | Transmog Appearances | `sensor.thrall_stormrage_transmog_appearances` | Collections, Retail and WoW Forever; `appearance_sets` and `appearances_per_slot` in attributes. The response can be several MB, it is only fetched after a new login and at most every 6 hours |
 | Solo Shuffle Rating / Blitz Rating | `sensor.thrall_stormrage_solo_shuffle_rating` | PvP, Retail, for the active specialization; `legend_cutoff` attribute |
-| Gold | `sensor.thrall_stormrage_gold` | Battle.net login only; gold gained/lost, deaths, location and hearthstone in attributes |
+| Gold | `sensor.thrall_stormrage_gold` | Retail, with the Battle.net Account entry; gold gained/lost, deaths, location and hearthstone in attributes |
 | Guild Members | `sensor.thrall_stormrage_guild_members` | Guild, only for characters in a guild; achievement points, realm, faction, creation date, guild master and members per rank and class in attributes |
 | Guild Members at Max Level | `sensor.thrall_stormrage_guild_members_at_max_level` | Guild; members at the highest level in the guild (`max_level`), per class in `members_by_class` |
 | Guild Rank | `sensor.thrall_stormrage_guild_rank` | Guild; the character's rank number, 0 is the guild master (the API has no rank names) |
@@ -312,7 +319,7 @@ Each guild with a crest gets an image entity on the device of the first characte
 
 ### Battle.net account (optional)
 
-With a kept Battle.net login, the device `Battle.net Account` has `Total Gold` (Retail), `Characters`, `Account Mounts`, `Account Pets`, `Account Toys`, `Account Heirlooms`, `Account Housing Decor`, `Account Transmog Appearances` (with `appearance_sets` and `appearances_per_slot`) and `Battle.net Login Expires`. The account transmog collection can be several MB, so it is fetched at most every 6 hours. The attribute `login_valid` turns `false` when the 24 hour login has expired or Blizzard rejects it (for example after a password change); the values then keep their last state. Temporary API errors also keep the last values instead of dropping to 0.
+The Battle.net Account entry has the device `Battle.net Account` with `Total Gold` (Retail), `Characters`, `Account Mounts`, `Account Pets`, `Account Toys`, `Account Heirlooms`, `Account Transmog Appearances` (with `appearance_sets` and `appearances_per_slot`) and `Battle.net Login Expires`. Housing decor is left out while Blizzard answers its account endpoint with 404. The account transmog collection can be several MB, so it is fetched at most every 6 hours. The attribute `login_valid` turns `false` when the 24 hour login has expired or Blizzard rejects it (for example after a password change); the values then keep their last state. Temporary API errors also keep the last values instead of dropping to 0.
 
 ### Hall of Fame sensors
 
