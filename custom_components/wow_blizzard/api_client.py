@@ -294,6 +294,16 @@ class WoWBlizzardAPIClient:
         params = {"namespace": self.get_namespace("dynamic", game_version)}
         return await self._make_request(endpoint, params)
 
+    async def search_connected_realms(self, realm_slugs: List[str], game_version: str = "retail") -> Dict[str, Any]:
+        """Get the connected realms (status, population, queue) of several realms with one request."""
+        params = {
+            "namespace": self.get_namespace("dynamic", game_version),
+            # "||" is the search API's OR operator
+            "realms.slug": "||".join(sorted(realm_slugs)),
+            "_pageSize": 1000,
+        }
+        return await self._make_request("/data/wow/search/connected-realm", params)
+
     async def get_ruleset(self, ruleset_id: int, game_version: str = "forever") -> Dict[str, Any]:
         """Get a WoW Forever ruleset (Normal, PvP, Role-play ...) with its status."""
         params = {"namespace": self.get_namespace("dynamic", game_version)}

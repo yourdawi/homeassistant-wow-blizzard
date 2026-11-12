@@ -228,7 +228,7 @@ The Equipment Details sensor lists the gear in `equipped_items` (keyed by slot, 
 
 ### Character image
 
-Every character also gets an image entity with the full-body render from the character media API, for example `image.thrall_stormrage_full_body_render`. It falls back to the avatar when no render is available. Show it on a dashboard with a picture entity card:
+Every character also gets an image entity with the full-body render from the character media API, for example `image.thrall_stormrage_full_body_render`. It falls back to the avatar when no render is available. Blizzard only makes renders when a character logs out, so for new characters both URLs carry the CDN fallback (`?alt=/shadow/avatar/{race}-{gender}.jpg`) and show a silhouette instead of a broken image. Show it on a dashboard with a picture entity card:
 
 ```yaml
 type: picture-entity
@@ -431,7 +431,7 @@ automation:
 
 ## Update behavior
 
-- All data is refreshed every 5 minutes in one update cycle.
+- All data is refreshed every 5 minutes in one update cycle. The status of all realms of a game version comes from a single connected realm search request.
 - Data from the Battle.net API reflects what Blizzard has processed, which usually lags the game by a few minutes and may be refreshed only after logout.
 - Character details and collections are only fetched again when the character's last login changes, and at least every 6 hours. Guild data, roster, guild achievements and guild activity are cached for 1 hour, the weekly period until the reset, the Mythic+ and PvP seasons for 6 hours.
 - Auction prices, Mythic+ and PvP leaderboards are refreshed hourly, account data (gold) every 15 minutes while the Battle.net login is valid. Large responses are decoded outside the event loop.

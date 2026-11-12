@@ -51,6 +51,57 @@ def parse_transmogs(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# Gender IDs of the render CDN's fallback images
+RENDER_GENDER_IDS = {"MALE": 0, "FEMALE": 1}
+
+
+def with_render_fallback(url: Optional[str], race_id: Optional[int], gender_type: Optional[str]) -> Optional[str]:
+    """Add the CDN fallback to a render URL.
+
+    Renders are only made on logout and can be missing; the CDN then answers
+    403. With ?alt= it serves a silhouette of the race and gender instead.
+    """
+    gender_id = RENDER_GENDER_IDS.get((gender_type or "").upper())
+    if not url or not isinstance(race_id, int) or gender_id is None or "alt=" in url:
+        return url
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}alt=/shadow/avatar/{race_id}-{gender_id}.jpg"
+
+
+def localized(value: Any, locale: Optional[str]) -> Any:
+    """Pick the locale from a search result name ({"en_US": ..., "de_DE": ...})."""
+    if not isinstance(value, dict):
+        return value
+    return value.get(locale or "") or value.get("en_US") or next(iter(value.values()), None)
+
+
+def parse_connected_realm_search(data: Dict[str, Any], locale: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    """Realm sensor values per realm slug from a connected realm search.
+
+    Search results carry every language at once, so names are picked by locale.
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+    for entry in (data or {}).get("results") or []:
+        connected = entry.get("data") or {}
+        status = connected.get("status") or {}
+        population = connected.get("population") or {}
+        for realm in connected.get("realms") or []:
+            if not realm.get("slug"):
+                continue
+            result[realm["slug"]] = {
+                "connected_realm_id": connected.get("id"),
+                "realm_status": localized(status.get("name"), locale) or "Unknown",
+                "realm_status_type": status.get("type"),
+                "realm_population": localized(population.get("name"), locale) or "Unknown",
+                "realm_population_type": population.get("type"),
+                # The API only exposes whether a queue exists, not its length
+                "realm_queue": bool(connected.get("has_queue", False)),
+                "realm_timezone": realm.get("timezone", "Unknown"),
+                "realm_locale": realm.get("locale", "Unknown"),
+            }
+    return result
+
+
 def _guild_path(guild: Dict[str, Any]) -> Optional[str]:
     """Extract "{realmSlug}/{nameSlug}" from the guild link of a profile."""
     href = ((guild or {}).get("key") or {}).get("href") or ""

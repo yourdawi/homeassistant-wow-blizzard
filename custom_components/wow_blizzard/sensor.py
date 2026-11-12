@@ -87,6 +87,8 @@ from .parsers import (
     roster_changes,
     parse_mythic_leaderboard,
     parse_active_quests,
+    parse_connected_realm_search,
+    with_render_fallback,
     parse_pvp_leaderboard,
     parse_transmogs,
     parse_pvp_rewards,
@@ -263,8 +265,13 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                     for asset in (media or {}).get("assets") or []
                     if isinstance(asset, dict)
                 }
-                avatar_url = assets.get("avatar")
-                full_body_url = assets.get("main-raw") or assets.get("main") or assets.get("inset") or avatar_url
+                # Missing renders (new characters, no logout since) fall back to a silhouette
+                race_id = (profile.get("race") or {}).get("id")
+                gender_type = (profile.get("gender") or {}).get("type")
+                avatar_url = with_render_fallback(assets.get("avatar"), race_id, gender_type)
+                full_body_url = with_render_fallback(
+                    assets.get("main-raw") or assets.get("main") or assets.get("inset"), race_id, gender_type
+                ) or avatar_url
             except Exception as media_err:
                 _LOGGER.debug(f"Could not fetch media for {character_name}-{realm}: {media_err}")
 
@@ -389,6 +396,45 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.error(f"Error fetching server data for {realm}: {err}")
             return {}
+
+    async def _fetch_all_server_data(self) -> Dict[str, Any]:
+        """Realm status of all configured realms.
+
+        One connected realm search per game version instead of two requests
+        per realm; realms the search does not answer for are fetched one by one.
+        """
+        if not self.features.get(CONF_ENABLE_SERVER_STATUS, False):
+            return {}
+        found: Dict[str, Dict[str, Any]] = {}
+        versions = {r["game_version"] for r in self.realms.values() if r.get("ruleset_id") is None}
+        for game_version in sorted(versions):
+            slugs = {
+                self.client.realm_to_slug(r["realm"])
+                for r in self.realms.values()
+                if r["game_version"] == game_version and r.get("ruleset_id") is None
+            } - {""}
+            if not slugs:
+                continue
+            search = await self.client.search_connected_realms(sorted(slugs), game_version)
+            for slug, data in parse_connected_realm_search(search, self.client.locale).items():
+                found[f"{game_version}:{slug}"] = data
+
+        server_data = {}
+        for realm_key, realm in self.realms.items():
+            game_version = realm["game_version"]
+            data = found.get(f"{game_version}:{self.client.realm_to_slug(realm['realm'])}")
+            if data:
+                # Also spares the realm lookup for auctions and Mythic+ leaderboards
+                if isinstance(data.get("connected_realm_id"), int):
+                    self._connected_realms[(realm["realm"], game_version)] = data["connected_realm_id"]
+                server_data[realm_key] = {k: v for k, v in data.items() if k != "connected_realm_id"}
+            else:
+                # WoW Forever rulesets, and realms the search missed
+                server_data[realm_key] = await self._fetch_server_data(
+                    realm["realm"], game_version=game_version, ruleset_id=realm.get("ruleset_id")
+                )
+                await asyncio.sleep(0.1)
+        return server_data
 
     async def _spec_bracket_slug(self, spec_id: Optional[int]) -> Optional[str]:
         """English "class-spec" slug for Solo Shuffle and Blitz brackets, cached per spec."""
@@ -1217,14 +1263,11 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             await self._apply_pvp_leaderboards(all_data)
 
             # Fetch server data for each unique realm and game version
-            server_data = {}
             previous_servers = self._previous("servers")
-            for realm_key, realm in self.realms.items():
-                realm_data = await self._fetch_server_data(
-                    realm["realm"], game_version=realm["game_version"], ruleset_id=realm.get("ruleset_id")
-                )
-                server_data[realm_key] = realm_data or previous_servers.get(realm_key, {})
-                await asyncio.sleep(0.1)
+            server_data = {
+                realm_key: realm_data or previous_servers.get(realm_key, {})
+                for realm_key, realm_data in (await self._fetch_all_server_data()).items()
+            }
 
             # Hall of Fame leaderboards are Retail-only
             if self.features.get(CONF_ENABLE_HALL_OF_FAME, True) and self.has_retail:
