@@ -25,6 +25,7 @@
           "enable_guild": "Enable guild data",
           "enable_region_data": "Enable WoW Token price and weekly reset",
           "enable_mythic_leaderboard": "Mythic+ realm leaderboards and weekly affixes (about 8 MB per realm and hour)",
+          "enable_pvp_leaderboard": "PvP leaderboard ranks of your characters (about 2 MB per bracket and hour)",
           "auction_items": "Item IDs for auction prices (comma separated, empty = off)"
         }
       },
@@ -146,6 +147,7 @@
           "enable_guild": "Guild members & achievement points",
           "enable_region_data": "WoW Token price & weekly reset",
           "enable_mythic_leaderboard": "Mythic+ realm leaderboards & affixes (about 8 MB per realm and hour)",
+          "enable_pvp_leaderboard": "PvP leaderboard ranks (about 2 MB per bracket and hour)",
           "auction_items": "Item IDs for auction prices (comma separated, empty = off)"
         }
       },

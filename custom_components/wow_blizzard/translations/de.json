@@ -25,6 +25,7 @@
           "enable_guild": "Gildendaten aktivieren",
           "enable_region_data": "WoW-Marken-Preis und Wochen-Reset aktivieren",
           "enable_mythic_leaderboard": "Mythic+-Bestenlisten der Realms und Wochen-Affixe aktivieren (ca. 8 MB pro Realm und Stunde)",
+          "enable_pvp_leaderboard": "PvP-Ranglistenplätze deiner Charaktere aktivieren (ca. 2 MB pro Bracket und Stunde)",
           "auction_items": "Item-IDs für Auktionspreise (kommagetrennt, leer = aus)"
         }
       },
@@ -146,6 +147,7 @@
           "enable_guild": "Gildenmitglieder & Erfolgspunkte",
           "enable_region_data": "WoW-Marken-Preis & Wochen-Reset",
           "enable_mythic_leaderboard": "Mythic+-Bestenlisten der Realms & Affixe (ca. 8 MB pro Realm und Stunde)",
+          "enable_pvp_leaderboard": "PvP-Ranglistenplätze (ca. 2 MB pro Bracket und Stunde)",
           "auction_items": "Item-IDs für Auktionspreise (kommagetrennt, leer = aus)"
         }
       },

@@ -42,6 +42,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 | Mythic+ | Season score, highest key, best runs, timed runs, weekly best key. |
 | Hall of Fame | One sensor per raid of the current expansion with the world first guild and the ranks of your own guilds. |
 | Mythic+ leaderboards (opt-in) | Best key of the week per realm, with the best runs of your characters. |
+| PvP leaderboards (opt-in) | Rank of your characters on the regional 2v2, 3v3, RBG, Solo Shuffle and Blitz leaderboards. |
 | Auction house | Lowest price for item IDs you choose (Retail commodities and realm auctions, Classic Progression realm auctions). |
 | Battle.net account (optional) | Import characters by logging in with Battle.net. While the login is valid (24 hours): gold per character, total gold, account mounts and pets. |
 
@@ -137,7 +138,7 @@ config/
 
 1. Click the button above, or go to **Settings > Devices & Services > Add Integration** and search for **World of Warcraft**.
 2. Enter the client ID and secret, select your **region** (US, EU, KR, TW, CN) and the **API locale**. The locale sets the language of names returned by the API, such as classes, realm status and raid names.
-3. Choose which feature groups to enable: realm status, PvP, raids, Mythic+, Hall of Fame, character details, collections, guild, region data (WoW Token, weekly reset) and the Mythic+ realm leaderboards (off by default, they download about 8 MB per realm and hour).
+3. Choose which feature groups to enable: realm status, PvP, raids, Mythic+, Hall of Fame, character details, collections, guild, region data (WoW Token, weekly reset) the Mythic+ realm leaderboards (off by default, they download about 8 MB per realm and hour) and the PvP leaderboard ranks (off by default, about 2 MB per bracket and hour).
 4. Optionally enter item IDs to track auction prices, for example `210796, 224025`. You find the ID in the item's Wowhead URL. Leave the field empty to skip the auction house.
 
 ### 3. Add characters
@@ -186,6 +187,8 @@ Each character becomes a device named `<Character> (<realm>)`, each realm become
 | PvP Wins (Season) | `sensor.thrall_stormrage_pvp_wins_season` | Sum over the tracked brackets |
 
 The rated PvP sensors only count the current season. Blizzard returns the last season a character played; ratings from an older season show as 0, with the old rating in `last_season_rating`. Every bracket sensor has `season_played`, `season_won`, `season_lost`, `weekly_played` and `weekly_won`, and 3v3 / RBG show the `gladiator_cutoff` / `hero_cutoff`.
+
+With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail character played this season also get `leaderboard_rank` (place on the regional leaderboard, `null` if not on it), `leaderboard_entries` and `leaderboard_min_rating` (the rating needed to be listed). Blizzard only lists the best players of the region, about 5000 per bracket. Each leaderboard needed by one of your characters is downloaded once per hour (about 2 MB).
 
 | LFR / Normal / Heroic / Mythic Progress | `sensor.thrall_stormrage_mythic_progress` | Bosses defeated in the current expansion's raids |
 | Total Boss Kills | `sensor.thrall_stormrage_total_boss_kills` | Bosses defeated across all raids, lifetime |
@@ -428,7 +431,7 @@ automation:
 - All data is refreshed every 5 minutes in one update cycle.
 - Data from the Battle.net API reflects what Blizzard has processed, which usually lags the game by a few minutes and may be refreshed only after logout.
 - Character details and collections are only fetched again when the character's last login changes, and at least every 6 hours. Guild data, roster, guild achievements and guild activity are cached for 1 hour, the weekly period until the reset, the PvP season for 6 hours.
-- Auction prices and Mythic+ leaderboards are refreshed hourly, account data (gold) every 15 minutes while the Battle.net login is valid. Large responses are decoded outside the event loop.
+- Auction prices, Mythic+ and PvP leaderboards are refreshed hourly, account data (gold) every 15 minutes while the Battle.net login is valid. Large responses are decoded outside the event loop.
 - If a character profile cannot be fetched (API error, maintenance), the last known values are kept, so graphs do not drop to 0. The profile status sensor then shows whether the character still exists.
 - On HTTP 429 (rate limit) the request is retried up to two times, waiting at most 30 seconds. The Battle.net API allows 36,000 requests per hour, and each character uses roughly 4 to 10 requests per update depending on the enabled features, plus up to 13 after a new login.
 

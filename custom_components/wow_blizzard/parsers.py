@@ -482,6 +482,20 @@ def parse_guild_achievements(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def parse_pvp_leaderboard(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Rank per character ID of a PvP leaderboard, and the rating needed to be on it."""
+    entries = (data or {}).get("entries") or []
+    if not entries:
+        return {}
+    ranks = {
+        (entry.get("character") or {}).get("id"): entry.get("rank")
+        for entry in entries
+        if isinstance((entry.get("character") or {}).get("id"), int)
+    }
+    ratings = [entry["rating"] for entry in entries if isinstance(entry.get("rating"), int)]
+    return {"ranks": ranks, "entries": len(entries), "min_rating": min(ratings) if ratings else None}
+
+
 def summarize_auctions(data: Dict[str, Any], item_ids: set) -> Dict[int, Dict[str, Any]]:
     """Lowest unit price (copper) and quantity per tracked item.
 

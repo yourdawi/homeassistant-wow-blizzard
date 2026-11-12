@@ -450,6 +450,12 @@ class WoWBlizzardAPIClient:
         params = {"namespace": self.get_namespace("dynamic", "retail")}
         return await self._make_request(f"/data/wow/pvp-season/{season_id}/pvp-reward/index", params)
 
+    async def get_pvp_leaderboard(self, season_id: int, bracket: str) -> Dict[str, Any]:
+        """Get the top of a PvP leaderboard (up to about 5000 entries, about 2 MB)."""
+        params = {"namespace": self.get_namespace("dynamic", "retail")}
+        endpoint = f"/data/wow/pvp-season/{season_id}/pvp-leaderboard/{bracket}"
+        return await self._make_request(endpoint, params, parse_in_thread=True)
+
     async def get_specialization_en(self, spec_id: int) -> Dict[str, Any]:
         """Get a specialization in English, needed to build PvP bracket slugs."""
         params = {"namespace": self.get_namespace("static", "retail"), "locale": "en_US"}

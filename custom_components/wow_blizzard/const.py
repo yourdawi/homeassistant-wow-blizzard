@@ -19,13 +19,15 @@ CONF_ENABLE_COLLECTIONS = "enable_collections"
 CONF_ENABLE_GUILD = "enable_guild"
 CONF_ENABLE_REGION_DATA = "enable_region_data"
 CONF_ENABLE_MYTHIC_LEADERBOARD = "enable_mythic_leaderboard"
+CONF_ENABLE_PVP_LEADERBOARD = "enable_pvp_leaderboard"
 # Comma separated item IDs whose auction prices are tracked (empty = off)
 CONF_AUCTION_ITEMS = "auction_items"
 # Battle.net login of the player (OAuth token, expires after 24 hours)
 CONF_ACCOUNT_TOKEN = "account_token"
 
 # Feature toggles and their defaults. The Mythic+ leaderboards download about
-# 8 MB per realm and hour, so they are off unless enabled.
+# 8 MB per realm and hour, the PvP leaderboards about 2 MB per bracket and
+# hour, so they are off unless enabled.
 FEATURE_DEFAULTS = {
     "enable_server_status": True,
     "enable_pvp": True,
@@ -37,6 +39,7 @@ FEATURE_DEFAULTS = {
     "enable_guild": True,
     "enable_region_data": True,
     "enable_mythic_leaderboard": False,
+    "enable_pvp_leaderboard": False,
 }
 CONF_GAME_VERSION = "game_version"
 CONF_LOCALE = "locale"

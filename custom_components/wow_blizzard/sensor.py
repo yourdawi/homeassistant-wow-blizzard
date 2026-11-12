@@ -37,6 +37,7 @@ from .const import (
     CONF_ENABLE_GUILD,
     CONF_ENABLE_REGION_DATA,
     CONF_ENABLE_MYTHIC_LEADERBOARD,
+    CONF_ENABLE_PVP_LEADERBOARD,
     CONF_AUCTION_ITEMS,
     CONF_ACCOUNT_TOKEN,
     FEATURE_DEFAULTS,
@@ -85,6 +86,7 @@ from .parsers import (
     parse_guild_roster,
     roster_changes,
     parse_mythic_leaderboard,
+    parse_pvp_leaderboard,
     parse_pvp_rewards,
     summarize_auctions,
     parse_achievement_statistics,
@@ -207,6 +209,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._guild_rosters: Dict[str, Dict[str, Any]] = {}
         self._guild_roster_events: Dict[str, List[Dict[str, Any]]] = {}
         self._class_names: Dict[str, Dict[int, str]] = {}
+        # PvP leaderboards per "season:bracket": (fetch time, ranks by character ID)
+        self._pvp_leaderboard_cache: Dict[str, Any] = {}
         self.account_expired = False
         # Last good account values and where they are kept across restarts
         self._account_last: Dict[str, Any] = {}
@@ -279,6 +283,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 "last_login_timestamp": profile.get("last_login_timestamp"),
                 "character_class": character_class.get("name"),
                 "character_class_id": character_class.get("id"),
+                "character_id": profile.get("id"),
                 "character_race": (profile.get("race") or {}).get("name"),
                 "realm": (profile.get("realm") or {}).get("name"),
                 "faction": (profile.get("faction") or {}).get("name"),
@@ -451,6 +456,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 weekly_stats = {} if stale else (data.get("weekly_match_statistics") or {})
                 result[sensor] = 0 if stale else data["rating"]
                 wins_season += season_stats.get("won", 0)
+                if not stale and current_season is not None and season_stats.get("played"):
+                    # Played this season: look the character up on the leaderboard
+                    result.setdefault("pvp_leaderboard_brackets", {})[sensor] = bracket
 
                 attrs = {
                     "rating_season_id": season_id,
@@ -878,6 +886,46 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             },
         }
 
+    async def _apply_pvp_leaderboards(self, all_data: Dict[str, Any]) -> None:
+        """Add the leaderboard rank to the rating sensors of the brackets a character played (opt-in, hourly).
+
+        Each leaderboard holds the best ~5000 of the region and is downloaded
+        once per hour, however many characters need it.
+        """
+        season_id = (self._pvp_season.get("season") or {}).get("id")
+        if not self.features.get(CONF_ENABLE_PVP_LEADERBOARD, False) or not isinstance(season_id, int):
+            return
+        characters = [
+            data for data in all_data.values()
+            if isinstance(data, dict) and data.get("pvp_leaderboard_brackets")
+        ]
+        boards: Dict[str, Any] = {}
+        for bracket in sorted({b for data in characters for b in data["pvp_leaderboard_brackets"].values()}):
+            cache_key = f"{season_id}:{bracket}"
+            cached = self._pvp_leaderboard_cache.get(cache_key)
+            if not self._is_fresh(cached, LEADERBOARD_REFRESH_INTERVAL):
+                board = parse_pvp_leaderboard(await self.client.get_pvp_leaderboard(season_id, bracket))
+                # On errors keep the last board and wait an hour as well,
+                # instead of downloading 2 MB on every update
+                cached = (datetime.now(), board or (cached[1] if cached else {}))
+                self._pvp_leaderboard_cache[cache_key] = cached
+            if cached[1]:
+                boards[bracket] = cached[1]
+
+        for data in characters:
+            # Copy, the attributes may still belong to the previous update
+            data["attrs"] = dict(data.get("attrs") or {})
+            for sensor, bracket in data["pvp_leaderboard_brackets"].items():
+                board = boards.get(bracket)
+                if not board:
+                    continue
+                _merge(data, {"attrs": {sensor: {
+                    # None: not among the best of the region
+                    "leaderboard_rank": board["ranks"].get(data.get("character_id")),
+                    "leaderboard_entries": board["entries"],
+                    "leaderboard_min_rating": board["min_rating"],
+                }}})
+
     async def _fetch_mythic_leaderboards(self) -> Dict[str, Any]:
         """Weekly Mythic+ leaderboards of the configured Retail realms (opt-in, hourly)."""
         if not self.features.get(CONF_ENABLE_MYTHIC_LEADERBOARD, False) or not self.has_retail:
@@ -1132,6 +1180,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
                 # Small delay to avoid rate limiting
                 await asyncio.sleep(0.1)
+
+            await self._apply_pvp_leaderboards(all_data)
 
             # Fetch server data for each unique realm and game version
             server_data = {}
