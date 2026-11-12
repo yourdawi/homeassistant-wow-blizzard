@@ -184,7 +184,16 @@
       }
     },
     "realms": {
-      "entry_type": "Realms"
+      "entry_type": "Realms",
+      "initiate_flow": {
+        "user": "Realms"
+      },
+      "step": {
+        "user": {
+          "title": "Realms",
+          "description": "Realms und Regionsdaten legt die Integration selbst an."
+        }
+      }
     }
   },
   "entity": {
