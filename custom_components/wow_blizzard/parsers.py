@@ -1,5 +1,6 @@
 """Parse Battle.net API documents into sensor values and attributes."""
 import re
+from urllib.parse import unquote
 from typing import Any, Dict, Optional
 
 from .api_client import WoWBlizzardAPIClient
@@ -18,6 +19,163 @@ COLLECTION_ENDPOINTS = {
     "heirlooms_collected": ("collections/heirlooms", "heirlooms"),
     "decor_collected": ("collections/decor", "decor_collected"),
 }
+
+
+def parse_character_achievements(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Completed achievements of a character and the most recent ones (newest first)."""
+    if not data or "total_quantity" not in data:
+        return {}
+    recent = sorted(
+        (
+            {
+                "achievement": (event.get("achievement") or {}).get("name"),
+                "achievement_id": (event.get("achievement") or {}).get("id"),
+                "timestamp": event.get("timestamp"),
+            }
+            for event in data.get("recent_events") or []
+        ),
+        key=lambda e: e.get("timestamp") or 0,
+        reverse=True,
+    )
+    return {
+        "achievements_completed": data.get("total_quantity"),
+        "attrs": {"achievements_completed": {
+            "total_points": data.get("total_points"),
+            "recent_achievements": recent,
+        }},
+    }
+
+
+def parse_title_cutoffs(data: Dict[str, Any]) -> Dict[str, list]:
+    """Title rating cutoffs per bracket type, highest first (Classic has several titles per bracket)."""
+    result: Dict[str, list] = {}
+    for reward in (data or {}).get("rewards") or []:
+        bracket = (reward.get("bracket") or {}).get("type")
+        if not bracket or not isinstance(reward.get("rating_cutoff"), int):
+            continue
+        result.setdefault(bracket, []).append({
+            "title": (reward.get("achievement") or {}).get("name"),
+            "rating": reward["rating_cutoff"],
+        })
+    return {bracket: sorted(tiers, key=lambda t: -t["rating"]) for bracket, tiers in result.items()}
+
+
+def parse_mythic_best_runs(best_runs: list) -> Dict[str, Dict[str, Any]]:
+    """Best run per dungeon of a Mythic+ season, by dungeon name."""
+    result: Dict[str, Dict[str, Any]] = {}
+    for run in best_runs or []:
+        name = (run.get("dungeon") or {}).get("name")
+        level = run.get("keystone_level") or 0
+        if not name or (name in result and result[name]["keystone_level"] >= level):
+            continue
+        duration = run.get("duration")
+        result[name] = {
+            "keystone_level": level,
+            "timed": bool(run.get("is_completed_within_time")),
+            "duration_minutes": round(duration / 60000, 1) if isinstance(duration, (int, float)) else None,
+        }
+    return dict(sorted(result.items(), key=lambda i: -i[1]["keystone_level"]))
+
+
+def parse_active_quests(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Quests in the quest log of a character."""
+    if not data or ("in_progress" not in data and "completed" not in data):
+        return {}
+    quests = [q.get("name") for q in data.get("in_progress") or [] if q.get("name")]
+    return {"active_quests": len(quests), "attrs": {"active_quests": {"quests": quests}}}
+
+
+# Account collections: sensor -> (endpoint kind, possible list keys). The
+# account decor list is not documented; the character endpoint calls it
+# "decor_collected".
+ACCOUNT_COLLECTIONS = {
+    "account_mounts": ("mounts", ("mounts",)),
+    "account_pets": ("pets", ("pets",)),
+    "account_toys": ("toys", ("toys",)),
+    "account_heirlooms": ("heirlooms", ("heirlooms",)),
+    "account_decor": ("decor", ("decor_collected", "decor", "decors")),
+}
+
+
+def count_collection(data: Dict[str, Any], list_keys: tuple) -> Optional[int]:
+    """Number of entries of the first list key the response has (None if none)."""
+    for key in list_keys:
+        if isinstance((data or {}).get(key), list):
+            return len(data[key])
+    return None
+
+
+def parse_transmogs(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Collected transmog appearances (per slot) and appearance sets."""
+    if not data or "slots" not in data:
+        return {}
+    # Keyed by the language independent slot type: several slots share a
+    # localized name (e.g. weapon slots), which would overwrite each other
+    per_slot: Dict[str, int] = {}
+    total = 0
+    for slot in data.get("slots") or []:
+        count = len(slot.get("appearances") or [])
+        total += count
+        slot_type = ((slot.get("slot") or {}).get("type") or "unknown").lower()
+        per_slot[slot_type] = per_slot.get(slot_type, 0) + count
+    return {
+        "transmogs_collected": total,
+        "attrs": {"transmogs_collected": {
+            "appearance_sets": len(data.get("appearance_sets") or []),
+            "appearances_per_slot": per_slot,
+        }},
+    }
+
+
+# Gender IDs of the render CDN's fallback images
+RENDER_GENDER_IDS = {"MALE": 0, "FEMALE": 1}
+
+
+def with_render_fallback(url: Optional[str], race_id: Optional[int], gender_type: Optional[str]) -> Optional[str]:
+    """Add the CDN fallback to a render URL.
+
+    Renders are only made on logout and can be missing; the CDN then answers
+    403. With ?alt= it serves a silhouette of the race and gender instead.
+    """
+    gender_id = RENDER_GENDER_IDS.get((gender_type or "").upper())
+    if not url or not isinstance(race_id, int) or gender_id is None or "alt=" in url:
+        return url
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}alt=/shadow/avatar/{race_id}-{gender_id}.jpg"
+
+
+def localized(value: Any, locale: Optional[str]) -> Any:
+    """Pick the locale from a search result name ({"en_US": ..., "de_DE": ...})."""
+    if not isinstance(value, dict):
+        return value
+    return value.get(locale or "") or value.get("en_US") or next(iter(value.values()), None)
+
+
+def parse_connected_realm_search(data: Dict[str, Any], locale: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    """Realm sensor values per realm slug from a connected realm search.
+
+    Search results carry every language at once, so names are picked by locale.
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+    for entry in (data or {}).get("results") or []:
+        connected = entry.get("data") or {}
+        status = connected.get("status") or {}
+        population = connected.get("population") or {}
+        for realm in connected.get("realms") or []:
+            if not realm.get("slug"):
+                continue
+            result[realm["slug"]] = {
+                "connected_realm_id": connected.get("id"),
+                "realm_status": localized(status.get("name"), locale) or "Unknown",
+                "realm_status_type": status.get("type"),
+                "realm_population": localized(population.get("name"), locale) or "Unknown",
+                "realm_population_type": population.get("type"),
+                # The API only exposes whether a queue exists, not its length
+                "realm_queue": bool(connected.get("has_queue", False)),
+                "realm_timezone": realm.get("timezone", "Unknown"),
+                "realm_locale": realm.get("locale", "Unknown"),
+            }
+    return result
 
 
 def _guild_path(guild: Dict[str, Any]) -> Optional[str]:
@@ -258,7 +416,9 @@ def _merge(result: Dict[str, Any], part: Dict[str, Any]) -> None:
     """Merge parsed values into result, combining the per-sensor attributes."""
     for key, value in part.items():
         if key == "attrs":
-            result.setdefault("attrs", {}).update(value)
+            attrs = result.setdefault("attrs", {})
+            for sensor, sensor_attrs in value.items():
+                attrs[sensor] = {**(attrs.get(sensor) or {}), **sensor_attrs}
         else:
             result[key] = value
 
@@ -357,6 +517,140 @@ def parse_guild_activity(data: Dict[str, Any]) -> list:
         elif activity_type:
             events.append({"type": activity_type, "timestamp": timestamp})
     return sorted(events, key=lambda e: e.get("timestamp") or 0, reverse=True)
+
+
+def roster_member_key(character: Dict[str, Any]) -> str:
+    """Stable key of a roster member, the end of its profile path.
+
+    "{realmSlug}/{name}", or "{first-last}" for WoW Forever, whose roster has
+    no realm and only the first name in "name". Matches character_path().
+    """
+    href = (character.get("key") or {}).get("href") or ""
+    match = re.search(r"/profile/wow/character/([^?]+)", href)
+    if match:
+        return unquote(match.group(1)).lower()
+    realm = (character.get("realm") or {}).get("slug") or ""
+    return f"{realm}/{(character.get('name') or '').lower()}"
+
+
+def parse_guild_roster(data: Dict[str, Any], class_names: Dict[int, str]) -> Dict[str, Any]:
+    """Members of a guild roster and member statistics for the guild sensors.
+
+    Returns {"members": {key: member}, "sensors": {...}}. The roster has no
+    rank names, only numbers (0 is the guild master).
+    """
+    members: Dict[str, Dict[str, Any]] = {}
+    for entry in (data or {}).get("members") or []:
+        character = entry.get("character") or {}
+        if not character.get("name"):
+            continue
+        key = roster_member_key(character)
+        members[key] = {
+            # WoW Forever: full "First Last" from the profile path
+            "name": character.get("name") if "/" in key else key.replace("-", " ").title(),
+            "realm": (character.get("realm") or {}).get("slug"),
+            "level": character.get("level"),
+            "class_id": (character.get("playable_class") or {}).get("id"),
+            "rank": entry.get("rank"),
+        }
+    if not members:
+        return {}
+
+    levels = [m["level"] for m in members.values() if isinstance(m["level"], int)]
+    max_level = max(levels) if levels else None
+    by_rank: Dict[int, int] = {}
+    by_class: Dict[str, int] = {}
+    by_class_max: Dict[str, int] = {}
+    for member in members.values():
+        if isinstance(member["rank"], int):
+            by_rank[member["rank"]] = by_rank.get(member["rank"], 0) + 1
+        class_name = class_names.get(member["class_id"]) or str(member["class_id"])
+        by_class[class_name] = by_class.get(class_name, 0) + 1
+        if max_level is not None and member["level"] == max_level:
+            by_class_max[class_name] = by_class_max.get(class_name, 0) + 1
+
+    guild_master = next((m for m in members.values() if m["rank"] == 0), None)
+    return {"members": members, "sensors": {
+        "guild_max_level_members": sum(by_class_max.values()) if max_level is not None else None,
+        "attrs": {
+            "guild_members": {
+                "members_by_rank": dict(sorted(by_rank.items())),
+                "members_by_class": dict(sorted(by_class.items(), key=lambda i: -i[1])),
+                "guild_master": guild_master["name"] if guild_master else None,
+            },
+            "guild_max_level_members": {
+                "max_level": max_level,
+                "members_by_class": dict(sorted(by_class_max.items(), key=lambda i: -i[1])),
+            },
+        },
+    }}
+
+
+def roster_changes(old: Dict[str, Any], new: Dict[str, Any], timestamp: int) -> list:
+    """Members who joined or left between two roster snapshots, as plain events."""
+    events = []
+    for key in sorted(new.keys() - old.keys()):
+        member = new[key]
+        events.append({"type": "member_joined", "timestamp": timestamp, "character": member["name"],
+                       "character_realm": member["realm"], "level": member["level"]})
+    for key in sorted(old.keys() - new.keys()):
+        member = old[key]
+        events.append({"type": "member_left", "timestamp": timestamp, "character": member["name"],
+                       "character_realm": member["realm"], "level": member["level"]})
+    return events
+
+
+def parse_guild_achievements(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Completed guild achievements, progress per category and recent completions."""
+    if not data or ("achievements" not in data and "total_quantity" not in data):
+        return {}
+    achievements = data.get("achievements") or []
+    completed = data.get("total_quantity")
+    if not isinstance(completed, int):
+        completed = sum(1 for a in achievements if a.get("completed_timestamp"))
+
+    categories = {
+        (entry.get("category") or {}).get("name"): {
+            "quantity": entry.get("quantity"),
+            "points": entry.get("points"),
+        }
+        for entry in data.get("category_progress") or []
+        if (entry.get("category") or {}).get("name")
+    }
+    recent = sorted(
+        (
+            {
+                "achievement": (event.get("achievement") or {}).get("name"),
+                "achievement_id": (event.get("achievement") or {}).get("id"),
+                "timestamp": event.get("timestamp"),
+            }
+            for event in data.get("recent_events") or []
+        ),
+        key=lambda e: e.get("timestamp") or 0,
+        reverse=True,
+    )
+    return {
+        "guild_achievements": completed,
+        "attrs": {"guild_achievements": {
+            "total_points": data.get("total_points"),
+            "categories": categories,
+            "recent_achievements": recent[:10],
+        }},
+    }
+
+
+def parse_pvp_leaderboard(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Rank per character ID of a PvP leaderboard, and the rating needed to be on it."""
+    entries = (data or {}).get("entries") or []
+    if not entries:
+        return {}
+    ranks = {
+        (entry.get("character") or {}).get("id"): entry.get("rank")
+        for entry in entries
+        if isinstance((entry.get("character") or {}).get("id"), int)
+    }
+    ratings = [entry["rating"] for entry in entries if isinstance(entry.get("rating"), int)]
+    return {"ranks": ranks, "entries": len(entries), "min_rating": min(ratings) if ratings else None}
 
 
 def summarize_auctions(data: Dict[str, Any], item_ids: set) -> Dict[int, Dict[str, Any]]:

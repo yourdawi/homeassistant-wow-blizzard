@@ -23,3 +23,6 @@ config/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Local Battle.net API documentation
+documentation/

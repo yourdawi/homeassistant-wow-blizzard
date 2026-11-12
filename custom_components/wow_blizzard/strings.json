@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "WoW Blizzard API Setup",
-        "description": "Enter your Battle.net API credentials. You can create them at {setup_url}",
+        "description": "Enter your Battle.net API credentials. You can create them at {setup_url}. If you already set up a game version, its credentials are filled in.",
         "data": {
           "client_id": "Client ID",
           "client_secret": "Client Secret",
@@ -11,9 +11,16 @@
           "locale": "API Locale / Language"
         }
       },
+      "game_version": {
+        "title": "Game version",
+        "description": "Each game version gets its own entry in region {region}, and the Battle.net Account its own entry for the login (gold and account collections). Entries that are already set up are not listed.",
+        "data": {
+          "game_version": "Game version or account"
+        }
+      },
       "features": {
         "title": "Feature Selection",
-        "description": "Choose which features to enable for region {region}. You can change these later in integration options.",
+        "description": "Choose which features to enable for {game_version} in region {region}. You can change these later with Configure.",
         "data": {
           "enable_server_status": "Enable Server Status",
           "enable_pvp": "Enable PvP Statistics",
@@ -25,44 +32,32 @@
           "enable_guild": "Enable guild data",
           "enable_region_data": "Enable WoW Token price and weekly reset",
           "enable_mythic_leaderboard": "Mythic+ realm leaderboards and weekly affixes (about 8 MB per realm and hour)",
+          "enable_pvp_leaderboard": "PvP leaderboard ranks of your characters (about 2 MB per bracket and hour)",
           "auction_items": "Item IDs for auction prices (comma separated, empty = off)"
         }
       },
-      "character": {
-        "title": "Add Character - Game Version",
-        "description": "Select the World of Warcraft game version for the character you want to add. Current characters: {character_count}",
-        "data": {
-          "game_version": "Game Version"
-        }
-      },
-      "character_details": {
-        "title": "Add Character - Details",
-        "description": "Select the realm and enter the character name for your {game_version} character.",
-        "data": {
-          "realm": "Realm",
-          "character_name": "Character Name"
-        }
-      },
-      "character_menu": {
-        "title": "WoW Characters Manager",
-        "description": "Currently added characters ({character_count}):\n\n{character_list}\n\nChoose your next action.",
-        "data": {
-          "action": "Next Action"
-        }
-      },
-      "remove_character": {
-        "title": "Remove Character(s)",
-        "description": "Select which character(s) you would like to remove from monitoring. You currently have {character_count} character(s) configured.",
-        "data": {
-          "characters_to_remove": "Select Characters to Remove"
-        }
-      },
       "add_method": {
-        "title": "Add characters",
-        "description": "Add a character by hand, or log in with Battle.net to pick characters from your account. The login needs `{redirect_url}` as redirect URL of your Battle.net API client.",
+        "title": "Characters",
+        "description": "Add the first {game_version} character by hand, or log in with Battle.net to pick characters of all game versions from your account (characters of other game versions get their own entries). You can also finish now and add characters later with **Add character**. The login needs `{redirect_url}` as redirect URL of your Battle.net API client.",
         "menu_options": {
           "character": "Enter realm and name",
-          "account_login": "Log in with Battle.net"
+          "account_login": "Log in with Battle.net",
+          "finish": "Finish without characters"
+        }
+      },
+      "character": {
+        "title": "Add character",
+        "description": "Select the realm and enter the name of your {game_version} character.",
+        "data": {
+          "realm": "Realm",
+          "character_name": "Character name"
+        }
+      },
+      "character_forever": {
+        "title": "Add WoW Forever character",
+        "description": "WoW Forever has no realms. Enter the character's first and last name, for example `Arthas Menethil`. The game mode (Normal, PvP, Role-play ...) is taken from the character.",
+        "data": {
+          "character_name": "First and last name"
         }
       },
       "account_login": {
@@ -71,7 +66,7 @@
       },
       "account_select": {
         "title": "Characters of your account",
-        "description": "Open a game version and a realm, then tick the characters to add ({character_count} available, already configured ones are hidden).",
+        "description": "Open a game version and a realm, then tick the characters to add ({character_count} available, already configured ones are hidden). {hidden_count} characters below level 10 are not listed, the Battle.net API has no data for them.",
         "sections": {
           "retail": {
             "name": "Retail"
@@ -89,20 +84,13 @@
       },
       "account_failed": {
         "title": "Battle.net login not completed",
-        "description": "Nothing is lost. Continue to add characters by hand or try the login again. If this keeps failing, check that `{redirect_url}` is a redirect URL of your Battle.net API client."
+        "description": "Nothing is lost. Go back to add characters by hand or try the login again. If this keeps failing, check that `{redirect_url}` is a redirect URL of your Battle.net API client."
       },
       "account_options": {
         "title": "Account data",
-        "description": "{selected_count} character(s) selected.\n\nThe Battle.net login can also be kept to load gold per character, total gold and account collections. Blizzard limits logins to 24 hours; afterwards the values keep their last state, everything else keeps working, and you can log in again via Reconfigure whenever you like.",
+        "description": "{selected_count} character(s) selected. They are added to the entry of their game version, which is created if missing.\n\nKeep the Battle.net login to load gold per character, total gold and account collections; it is stored in the **Battle.net Account** entry. Blizzard limits logins to 24 hours; afterwards the values keep their last state, everything else keeps working, and you can log in again with **Reconfigure** on the Battle.net Account entry whenever you like.",
         "data": {
           "keep_login": "Load account data (gold, account collections) while the login is valid"
-        }
-      },
-      "character_details_forever": {
-        "title": "Add WoW Forever character",
-        "description": "WoW Forever has no realms. Enter the character's first and last name, for example `Arthas Menethil`. The game mode (Normal, PvP, Role-play ...) is taken from the character.",
-        "data": {
-          "character_name": "First and last name"
         }
       }
     },
@@ -117,24 +105,18 @@
       "oauth_redirect_unavailable": "Home Assistant could not build the login redirect. Enable My Home Assistant (part of default_config)."
     },
     "abort": {
-      "already_configured": "This character configuration is already set up",
-      "no_characters": "At least one character must be kept",
+      "already_configured": "This game version is already set up for this region",
+      "all_versions_configured": "All game versions are already set up for this region",
       "reconfigure_successful": "Characters and Battle.net login updated",
-      "account_login_skipped": "Battle.net login not completed, the configuration is unchanged"
+      "account_login_skipped": "Battle.net login not completed, the configuration is unchanged",
+      "characters_imported": "Characters imported, the login was not kept"
     }
   },
   "options": {
     "step": {
-      "init": {
-        "title": "World of Warcraft Integration Options",
-        "description": "Select the action you want to perform. You currently have {character_count} character(s) configured.",
-        "data": {
-          "action": "Select Action"
-        }
-      },
       "features": {
         "title": "Configure Integration Features",
-        "description": "Toggle which features are enabled. These changes will reload the integration automatically.",
+        "description": "Toggle the features of {game_version}. The entry reloads automatically.",
         "data": {
           "enable_server_status": "Server Status & Maintenance",
           "enable_pvp": "PvP Statistics & Ratings",
@@ -146,41 +128,13 @@
           "enable_guild": "Guild members & achievement points",
           "enable_region_data": "WoW Token price & weekly reset",
           "enable_mythic_leaderboard": "Mythic+ realm leaderboards & affixes (about 8 MB per realm and hour)",
+          "enable_pvp_leaderboard": "PvP leaderboard ranks (about 2 MB per bracket and hour)",
           "auction_items": "Item IDs for auction prices (comma separated, empty = off)"
-        }
-      },
-      "add_character": {
-        "title": "Add Character - Game Version",
-        "description": "Select the game version of the character you want to add.",
-        "data": {
-          "game_version": "Game Version"
-        }
-      },
-      "add_character_details": {
-        "title": "Add Character - Details",
-        "description": "Select the realm and name for your {game_version} character.",
-        "data": {
-          "realm": "Realm",
-          "character_name": "Character Name"
-        }
-      },
-      "remove_character": {
-        "title": "Remove Character(s)",
-        "description": "Select the character(s) you want to remove. You must keep at least 1 character configured.",
-        "data": {
-          "characters_to_remove": "Select Characters to Remove"
         }
       },
       "remove_account": {
         "title": "Remove Battle.net login",
-        "description": "The integration forgets the Battle.net login. Gold and account sensors are removed; characters and all other data stay. You can log in again any time with Reconfigure."
-      },
-      "add_character_details_forever": {
-        "title": "Add WoW Forever character",
-        "description": "WoW Forever has no realms. Enter the character's first and last name, for example `Arthas Menethil`. The game mode (Normal, PvP, Role-play ...) is taken from the character.",
-        "data": {
-          "character_name": "First and last name"
-        }
+        "description": "Removes the Battle.net Account entry and with it the login, the account sensors and the gold of the characters. Characters and all other data stay. You can add the account again any time with **Add entry**."
       }
     },
     "error": {
@@ -190,12 +144,65 @@
       "character_already_added": "This character has already been added",
       "unknown": "Unknown error occurred",
       "game_version_unavailable": "This game version is not available in the Blizzard API yet"
+    },
+    "abort": {
+      "account_removed": "The Battle.net login is being removed"
+    }
+  },
+  "config_subentries": {
+    "character": {
+      "initiate_flow": {
+        "user": "Add character"
+      },
+      "entry_type": "Character",
+      "step": {
+        "user": {
+          "title": "Add character",
+          "description": "Select the realm and enter the name of your {game_version} character.",
+          "data": {
+            "realm": "Realm",
+            "character_name": "Character name"
+          }
+        },
+        "user_forever": {
+          "title": "Add WoW Forever character",
+          "description": "WoW Forever has no realms. Enter the character's first and last name, for example `Arthas Menethil`. The game mode (Normal, PvP, Role-play ...) is taken from the character.",
+          "data": {
+            "character_name": "First and last name"
+          }
+        }
+      },
+      "error": {
+        "cannot_connect": "Failed to connect to Battle.net API",
+        "character_not_found": "Character not found or not accessible",
+        "character_already_added": "This character has already been added",
+        "unknown": "Unknown error occurred",
+        "game_version_unavailable": "This game version is not available in the Blizzard API yet"
+      },
+      "abort": {
+        "already_configured": "This character has already been added"
+      }
+    },
+    "realms": {
+      "entry_type": "Realms",
+      "initiate_flow": {
+        "user": "Realms"
+      },
+      "step": {
+        "user": {
+          "title": "Realms",
+          "description": "Realms and region data are added by the integration."
+        }
+      }
     }
   },
   "entity": {
     "image": {
       "character_full_body_render": {
         "name": "Full Body Render"
+      },
+      "guild_crest": {
+        "name": "Guild Crest"
       }
     },
     "sensor": {
@@ -339,6 +346,33 @@
       "guild_members": {
         "name": "Guild Members"
       },
+      "guild_max_level_members": {
+        "name": "Guild Members at Max Level"
+      },
+      "guild_rank": {
+        "name": "Guild Rank"
+      },
+      "guild_achievements": {
+        "name": "Guild Achievements"
+      },
+      "achievements_completed": {
+        "name": "Achievements"
+      },
+      "pvp_season_classic": {
+        "name": "PvP Season (Classic)"
+      },
+      "pvp_season_classicann": {
+        "name": "PvP Season (Anniversary)"
+      },
+      "active_quests": {
+        "name": "Active Quests"
+      },
+      "transmogs_collected": {
+        "name": "Transmog Appearances"
+      },
+      "mythicplus_season": {
+        "name": "M+ Season"
+      },
       "wow_token_price": {
         "name": "WoW Token Price"
       },
@@ -372,6 +406,18 @@
       "account_pets": {
         "name": "Account Pets"
       },
+      "account_toys": {
+        "name": "Account Toys"
+      },
+      "account_heirlooms": {
+        "name": "Account Heirlooms"
+      },
+      "account_decor": {
+        "name": "Account Housing Decor"
+      },
+      "account_transmogs": {
+        "name": "Account Transmog Appearances"
+      },
       "account_login": {
         "name": "Battle.net Login Expires"
       },
@@ -398,7 +444,19 @@
           "event_type": {
             "state": {
               "achievement": "Achievement",
-              "encounter": "Boss kill"
+              "encounter": "Boss kill",
+              "member_joined": "Member joined",
+              "member_left": "Member left"
+            }
+          }
+        }
+      },
+      "character_achievements": {
+        "name": "Achievements",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "achievement": "New achievement"
             }
           }
         }
@@ -437,29 +495,15 @@
         "classic": "Classic Progression (e.g. Mists of Pandaria)",
         "classic1x": "Classic Era (Vanilla)",
         "classicann": "Classic Anniversary (Burning Crusade)",
-        "forever": "WoW Forever"
-      }
-    },
-    "character_menu_actions": {
-      "options": {
-        "add": "Add another character",
-        "finish": "Finish and save configuration",
-        "remove": "Remove a character"
-      }
-    },
-    "options_menu_actions": {
-      "options": {
-        "add_character": "Add a Character",
-        "features": "Configure Features",
-        "remove_character": "Remove Character(s)",
-        "remove_account": "Remove Battle.net login"
+        "forever": "WoW Forever",
+        "account": "Battle.net Account (login for gold and account collections)"
       }
     }
   },
   "issues": {
     "account_login_expired": {
       "title": "Battle.net login expired",
-      "description": "The Battle.net login of the World of Warcraft integration has expired (Blizzard limits logins to 24 hours). Everything else keeps working; gold and account values keep their last state. To update them, open the integration and choose **Reconfigure**. If you do not need account data, choose **Configure > Remove Battle.net login**, or ignore this notice."
+      "description": "The Battle.net login of World of Warcraft has expired (Blizzard limits logins to 24 hours). Everything else keeps working; gold and account values keep their last state. To update them, open the **Battle.net Account** entry and choose **Reconfigure**. If you do not need account data, choose **Configure** there to remove the login, or ignore this notice."
     }
   }
 }

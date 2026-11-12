@@ -19,13 +19,15 @@ CONF_ENABLE_COLLECTIONS = "enable_collections"
 CONF_ENABLE_GUILD = "enable_guild"
 CONF_ENABLE_REGION_DATA = "enable_region_data"
 CONF_ENABLE_MYTHIC_LEADERBOARD = "enable_mythic_leaderboard"
+CONF_ENABLE_PVP_LEADERBOARD = "enable_pvp_leaderboard"
 # Comma separated item IDs whose auction prices are tracked (empty = off)
 CONF_AUCTION_ITEMS = "auction_items"
 # Battle.net login of the player (OAuth token, expires after 24 hours)
 CONF_ACCOUNT_TOKEN = "account_token"
 
 # Feature toggles and their defaults. The Mythic+ leaderboards download about
-# 8 MB per realm and hour, so they are off unless enabled.
+# 8 MB per realm and hour, the PvP leaderboards about 2 MB per bracket and
+# hour, so they are off unless enabled.
 FEATURE_DEFAULTS = {
     "enable_server_status": True,
     "enable_pvp": True,
@@ -37,6 +39,20 @@ FEATURE_DEFAULTS = {
     "enable_guild": True,
     "enable_region_data": True,
     "enable_mythic_leaderboard": False,
+    "enable_pvp_leaderboard": False,
+}
+
+# Game versions a feature has an effect in (missing = all). The feature
+# dialog of an entry only shows the features of its game version.
+FEATURE_VERSIONS = {
+    "enable_raids": ("retail", "forever"),
+    "enable_collections": ("retail", "forever"),
+    "enable_region_data": ("retail", "classic"),
+    "auction_items": ("retail", "classic"),
+    "enable_mythic_plus": ("retail",),
+    "enable_hall_of_fame": ("retail",),
+    "enable_mythic_leaderboard": ("retail",),
+    "enable_pvp_leaderboard": ("retail",),
 }
 CONF_GAME_VERSION = "game_version"
 CONF_LOCALE = "locale"
@@ -102,6 +118,25 @@ GAME_VERSIONS = {
 CONF_NAMESPACE_SUFFIX = "namespace_suffix"
 # WoW Forever: ruleset (game mode) of a character, used for the server status
 CONF_RULESET_ID = "ruleset_id"
+# One config entry per game version; each character is a subentry
+SUBENTRY_CHARACTER = "character"
+# Kind of config entry: a game version (default) or the Battle.net account
+CONF_ENTRY_TYPE = "entry_type"
+ENTRY_TYPE_ACCOUNT = "account"
+# Subentries the integration creates itself (no "add" button): realms with the
+# region devices, and the Battle.net account of the Retail entry
+SUBENTRY_REALMS = "realms"
+SUBENTRY_ACCOUNT = "account"
+# Entity key of a character (kept when entries were split, so entity IDs stay)
+CONF_CHARACTER_KEY = "key"
+# Stored realm keys of split entries (server unique IDs stay)
+CONF_REALM_KEYS = "realm_keys"
+# Entry ID the entry-bound unique IDs are built from (the original entry for split entries)
+CONF_UNIQUE_BASE = "unique_base"
+# Game versions with gold per character. Only Retail: the Classic Era account
+# profile lists characters, but their protected data answers 404; Classic
+# Progression and Anniversary have no account profile at all (verified 2026-11).
+ACCOUNT_GOLD_VERSIONS = ("retail",)
 
 # Hall of Fame (public worldofwarcraft.blizzard.com GraphQL endpoint).
 # Known persisted query hashes; if Blizzard rotates them, the client re-reads
@@ -397,6 +432,13 @@ DETAIL_SENSOR_TYPES = {
         "device_class": None,
         "state_class": "measurement",
     },
+    "achievements_completed": {
+        "name": "Achievements",
+        "icon": "mdi:trophy-award",
+        "unit": "achievements",
+        "device_class": None,
+        "state_class": "measurement",
+    },
     "deaths": {
         "name": "Deaths",
         "icon": "mdi:grave-stone",
@@ -410,6 +452,13 @@ DETAIL_SENSOR_TYPES = {
         "unit": "quests",
         "device_class": None,
         "state_class": "total_increasing",
+    },
+    "active_quests": {
+        "name": "Active Quests",
+        "icon": "mdi:book-open-page-variant-outline",
+        "unit": "quests",
+        "device_class": None,
+        "state_class": "measurement",
     },
     "hunter_pet": {
         "name": "Hunter Pet",
@@ -446,6 +495,13 @@ COLLECTION_SENSOR_TYPES = {
         "name": "Heirlooms",
         "icon": "mdi:treasure-chest",
         "unit": "heirlooms",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "transmogs_collected": {
+        "name": "Transmog Appearances",
+        "icon": "mdi:tshirt-crew-outline",
+        "unit": "appearances",
         "device_class": None,
         "state_class": "measurement",
     },
@@ -499,6 +555,34 @@ ACCOUNT_SENSOR_TYPES = {
         "device_class": None,
         "state_class": "measurement",
     },
+    "account_toys": {
+        "name": "Account Toys",
+        "icon": "mdi:toy-brick-outline",
+        "unit": "toys",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_heirlooms": {
+        "name": "Account Heirlooms",
+        "icon": "mdi:treasure-chest",
+        "unit": "heirlooms",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_decor": {
+        "name": "Account Housing Decor",
+        "icon": "mdi:sofa-outline",
+        "unit": "decor",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_transmogs": {
+        "name": "Account Transmog Appearances",
+        "icon": "mdi:tshirt-crew-outline",
+        "unit": "appearances",
+        "device_class": None,
+        "state_class": "measurement",
+    },
     "account_login": {
         "name": "Battle.net Login",
         "icon": "mdi:login",
@@ -538,6 +622,27 @@ GUILD_SENSOR_TYPES = {
         "device_class": None,
         "state_class": "measurement",
     },
+    "guild_max_level_members": {
+        "name": "Guild Members at Max Level",
+        "icon": "mdi:account-star-outline",
+        "unit": "members",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "guild_rank": {
+        "name": "Guild Rank",
+        "icon": "mdi:chevron-triple-up",
+        "unit": None,
+        "device_class": None,
+        "state_class": None,
+    },
+    "guild_achievements": {
+        "name": "Guild Achievements",
+        "icon": "mdi:trophy-variant-outline",
+        "unit": "achievements",
+        "device_class": None,
+        "state_class": "measurement",
+    },
 }
 
 # Region-wide sensors (WoW Token, weekly reset)
@@ -562,6 +667,12 @@ REGION_SENSOR_TYPES = {
         "unit": None,
         "device_class": "timestamp",
     },
+    "mythicplus_season": {
+        "name": "M+ Season",
+        "icon": "mdi:key-chain-variant",
+        "unit": None,
+        "device_class": None,
+    },
     "pvp_season": {
         "name": "PvP Season",
         "icon": "mdi:sword-cross",
@@ -574,6 +685,18 @@ REGION_SENSOR_TYPES = {
         "unit": "rating",
         "device_class": None,
         "state_class": "measurement",
+    },
+    "pvp_season_classic": {
+        "name": "PvP Season (Classic)",
+        "icon": "mdi:sword-cross",
+        "unit": None,
+        "device_class": None,
+    },
+    "pvp_season_classicann": {
+        "name": "PvP Season (Anniversary)",
+        "icon": "mdi:sword-cross",
+        "unit": None,
+        "device_class": None,
     },
     "pvp_cutoff_hero": {
         "name": "Hero Cutoff",
@@ -648,7 +771,8 @@ VERSION_SENSOR_SUPPORT = {
         "basic": None,
         "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season", "pvp_honorable_kills"},
         "details": {"stat_health", "stat_crit", "stat_haste", "stat_mastery", "active_title",
-                    "reputations", "talents", "deaths", "quests_completed", "hunter_pet"},
+                    "reputations", "talents", "deaths", "quests_completed", "hunter_pet",
+                    "achievements_completed"},
         "guild": None,
     },
     # Classic Anniversary (Burning Crusade): no achievements
@@ -658,7 +782,7 @@ VERSION_SENSOR_SUPPORT = {
         "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season", "pvp_honorable_kills"},
         "details": {"stat_health", "stat_crit", "stat_haste", "active_title", "reputations",
                     "talents", "hunter_pet"},
-        "guild": None,
+        "guild": {"guild_members", "guild_max_level_members", "guild_rank"},
     },
     # Classic Era (Vanilla): no achievements, no arenas, but the old PvP rank
     "classic1x": {
@@ -667,7 +791,7 @@ VERSION_SENSOR_SUPPORT = {
         "pvp": {"pvp_honorable_kills", "pvp_rank"},
         "details": {"stat_health", "stat_crit", "active_title", "reputations", "talents",
                     "hunter_pet"},
-        "guild": None,
+        "guild": {"guild_members", "guild_max_level_members", "guild_rank"},
     },
     # WoW Forever (Vanilla based, 1.60): verified against the live API (EU,
     # 2026-11). No arenas, Mythic+, token, weekly period or housing decor.
@@ -676,9 +800,12 @@ VERSION_SENSOR_SUPPORT = {
         "pvp": {"pvp_honorable_kills", "pvp_rank"},
         "raid": {"raid_progress_normal", "raid_kills_total"},
         "details": {"professions", "stat_health", "stat_crit", "active_title", "reputations",
-                    "talents", "dungeons_completed", "deaths", "quests_completed", "hunter_pet"},
-        "collections": {"mounts_collected", "pets_collected", "toys_collected", "heirlooms_collected"},
-        "guild": None,
+                    "talents", "dungeons_completed", "deaths", "quests_completed", "active_quests",
+                    "hunter_pet", "achievements_completed"},
+        "collections": {"mounts_collected", "pets_collected", "toys_collected", "heirlooms_collected",
+                        "transmogs_collected"},
+        # Guild achievements answer without data (EU, 2026-11)
+        "guild": {"guild_members", "guild_max_level_members", "guild_rank"},
     },
 }
 

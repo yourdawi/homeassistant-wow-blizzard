@@ -4,6 +4,7 @@ import aiohttp
 import json
 import logging
 import base64
+from contextvars import ContextVar
 import re
 import unicodedata
 from datetime import datetime, timedelta
@@ -25,6 +26,54 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 MAX_RATE_LIMIT_RETRIES = 2
+# Token requests on server errors (HTTP 5xx) and the pause between them
+TOKEN_ATTEMPTS = 2
+TOKEN_RETRY_DELAY = 2
+# HTTP status of the last request of the running task: requests run in
+# parallel, so a shared attribute could hold another request's status
+_LAST_STATUS: ContextVar[Optional[int]] = ContextVar("wow_blizzard_last_status", default=None)
+# Requests in flight at once (Blizzard allows 100 per second)
+MAX_CONCURRENT_REQUESTS = 8
+# Requests started per second and API client (Blizzard allows 100)
+MAX_REQUESTS_PER_SECOND = 40
+
+
+class _Throttle:
+    """Request limit of one API client ID, shared by all its config entries.
+
+    Characters, entries and lists are fetched in parallel; this keeps the
+    number of requests in flight and per second below Blizzard's limits.
+    """
+
+    def __init__(self) -> None:
+        self.slots = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+        self._lock = asyncio.Lock()
+        self._next_start = 0.0
+
+    async def wait_turn(self) -> None:
+        """Wait until the next request may start."""
+        loop = asyncio.get_running_loop()
+        async with self._lock:
+            delay = self._next_start - loop.time()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._next_start = max(loop.time(), self._next_start) + 1 / MAX_REQUESTS_PER_SECOND
+
+    def pause(self, seconds: float) -> None:
+        """Hold back every request of this API client (after HTTP 429)."""
+        loop = asyncio.get_running_loop()
+        self._next_start = max(self._next_start, loop.time() + seconds)
+
+
+_THROTTLES: Dict[str, _Throttle] = {}
+# Access token per (client ID, secret, token URL), shared by all config entries of the client (memory only)
+_TOKENS: Dict[Any, Dict[str, Any]] = {}
+
+
+def _throttle_for(client_id: str) -> _Throttle:
+    if client_id not in _THROTTLES:
+        _THROTTLES[client_id] = _Throttle()
+    return _THROTTLES[client_id]
 
 
 class WoWBlizzardAPIClient:
@@ -93,13 +142,24 @@ class WoWBlizzardAPIClient:
         self._token_expires = None
         self._request_count = 0
         self._last_request_reset = datetime.now()
-        # HTTP status of the last API request (None on network errors), lets
-        # callers tell a 404 apart from other failures
-        self.last_status: Optional[int] = None
         # Resolved namespace suffix per game version (see GAME_VERSIONS)
         self._namespace_suffixes: Dict[str, str] = {}
         # Hall of Fame persisted query hashes, refreshed from the site bundle on demand
         self._hof_hashes: Dict[str, str] = dict(HOF_QUERY_HASHES)
+        # Shared by all clients (config entries) with this API client ID
+        self._throttle = _throttle_for(client_id)
+
+    @property
+    def last_status(self) -> Optional[int]:
+        """HTTP status of this task's last API request (None on network errors).
+
+        Lets callers tell a 404 apart from other failures.
+        """
+        return _LAST_STATUS.get()
+
+    @last_status.setter
+    def last_status(self, status: Optional[int]) -> None:
+        _LAST_STATUS.set(status)
 
     def set_namespace_suffix(self, game_version: str, suffix: str) -> None:
         """Pin the namespace suffix for a game version (e.g. after probing)."""
@@ -137,7 +197,23 @@ class WoWBlizzardAPIClient:
         return self._session
 
     async def _get_access_token(self) -> str:
-        """Get access token using OAuth 2.0 (August 2025 version)."""
+        """Access token of the API client, shared by all its config entries.
+
+        Entries start in parallel; one token request per client ID instead of
+        one per entry (Blizzard answered a burst of them with HTTP 502).
+        """
+        # The secret is part of the key: a mistyped secret must not reuse a valid token
+        shared = _TOKENS.setdefault((self.client_id, self.client_secret, self.token_url), {"lock": asyncio.Lock()})
+        async with shared["lock"]:
+            if shared.get("token") and shared.get("expires") and datetime.now() < shared["expires"]:
+                self._access_token, self._token_expires = shared["token"], shared["expires"]
+                return self._access_token
+            token = await self._request_access_token()
+            shared["token"], shared["expires"] = token, self._token_expires
+            return token
+
+    async def _request_access_token(self) -> str:
+        """Get access token using OAuth 2.0 client credentials."""
         if (
             self._access_token
             and self._token_expires
@@ -160,7 +236,7 @@ class WoWBlizzardAPIClient:
             "scope": "wow.profile",  # Required scope for character data
         }
 
-        try:
+        for attempt in range(TOKEN_ATTEMPTS):
             async with session.post(self.token_url, data=data, headers=headers) as response:
                 if response.status in (400, 401):
                     error_text = await response.text()
@@ -173,13 +249,15 @@ class WoWBlizzardAPIClient:
                     self._token_expires = datetime.now() + timedelta(seconds=expires_in - 60)
                     _LOGGER.info("Successfully obtained access token")
                     return self._access_token
-                else:
-                    error_text = await response.text()
-                    _LOGGER.error(f"Token request failed: {response.status} - {error_text}")
-                    raise Exception(f"Failed to get access token: {response.status}")
-        except Exception as e:
-            _LOGGER.error(f"Error getting access token: {e}")
-            raise
+                if response.status >= 500 and attempt + 1 < TOKEN_ATTEMPTS:
+                    # Blizzard's token server answers 502 now and then; one retry usually works
+                    _LOGGER.debug("Token request answered %s, retrying", response.status)
+                    await asyncio.sleep(TOKEN_RETRY_DELAY)
+                    continue
+                error_text = await response.text()
+                _LOGGER.error(f"Token request failed: {response.status} - {error_text[:200]}")
+                raise Exception(f"Failed to get access token: {response.status}")
+        raise Exception("Failed to get access token")
  
     async def _make_request(
         self,
@@ -209,48 +287,55 @@ class WoWBlizzardAPIClient:
         if "locale" not in params:
             params["locale"] = self.locale
         
-        try:
-            async with session.get(url, headers=headers, params=params) as response:
-                self._request_count += 1
-                self.last_status = response.status
+        throttle = self._throttle
+        for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+            retry_after = None
+            async with throttle.slots:
+                await throttle.wait_turn()
+                try:
+                    async with session.get(url, headers=headers, params=params) as response:
+                        self._request_count += 1
+                        self.last_status = response.status
 
-                if response.status == 200:
-                    if parse_in_thread:
-                        data = await asyncio.to_thread(json.loads, await response.read())
-                    else:
-                        data = await response.json()
-                    _LOGGER.debug(f"API Success: {endpoint}")
-                    return data
-                elif response.status in (401, 403) and user_token:
-                    # The player's login expired (tokens last 24 hours)
-                    raise UserTokenExpired(endpoint)
-                elif response.status == 404:
-                    _LOGGER.debug(f"Resource not found: {endpoint}")
+                        if response.status == 200:
+                            if parse_in_thread:
+                                data = await asyncio.to_thread(json.loads, await response.read())
+                            else:
+                                data = await response.json()
+                            _LOGGER.debug(f"API Success: {endpoint}")
+                            return data
+                        elif response.status in (401, 403) and user_token:
+                            # The player's login expired (tokens last 24 hours)
+                            raise UserTokenExpired(endpoint)
+                        elif response.status == 404:
+                            _LOGGER.debug(f"Resource not found: {endpoint}")
+                            return {}
+                        elif response.status == 403:
+                            _LOGGER.warning(f"Access denied: {endpoint} - Check API permissions")
+                            return {}
+                        elif response.status == 429:
+                            try:
+                                retry_after = int(response.headers.get("Retry-After", 1))
+                            except ValueError:
+                                retry_after = 1
+                        else:
+                            error_text = await response.text()
+                            _LOGGER.error(f"API Error {response.status}: {error_text}")
+                            return {}
+                except UserTokenExpired:
+                    raise
+                except Exception as e:
+                    self.last_status = None
+                    _LOGGER.error(f"Request failed for {endpoint}: {e}")
                     return {}
-                elif response.status == 403:
-                    _LOGGER.warning(f"Access denied: {endpoint} - Check API permissions")
-                    return {}
-                elif response.status == 429:
-                    if _retries >= MAX_RATE_LIMIT_RETRIES:
-                        _LOGGER.warning(f"Rate limited on {endpoint}, giving up for this update")
-                        return {}
-                    try:
-                        retry_after = int(response.headers.get("Retry-After", 5))
-                    except ValueError:
-                        retry_after = 5
-                    _LOGGER.warning(f"Rate limited, retrying in {retry_after} seconds")
-                    await asyncio.sleep(min(retry_after, 30))
-                    return await self._make_request(endpoint, params, _retries + 1, parse_in_thread, user_token)
-                else:
-                    error_text = await response.text()
-                    _LOGGER.error(f"API Error {response.status}: {error_text}")
-                    return {}
-        except UserTokenExpired:
-            raise
-        except Exception as e:
-            self.last_status = None
-            _LOGGER.error(f"Request failed for {endpoint}: {e}")
-            return {}
+            # Rate limited: every request of this API client waits, then this one
+            # is retried (outside its slot, so waiting requests cannot block it)
+            if attempt == MAX_RATE_LIMIT_RETRIES:
+                _LOGGER.warning(f"Rate limited on {endpoint}, giving up for this update")
+                return {}
+            _LOGGER.debug(f"Rate limited, retrying {endpoint} in {retry_after} seconds")
+            throttle.pause(min(retry_after, 30))
+        return {}
 
     # === Character Profile Methods ===
     
@@ -279,11 +364,11 @@ class WoWBlizzardAPIClient:
         params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(endpoint, params)
 
-    async def get_character_resource(self, realm: str, character_name: str, resource: str, game_version: str = "retail") -> Dict[str, Any]:
+    async def get_character_resource(self, realm: str, character_name: str, resource: str, game_version: str = "retail", parse_in_thread: bool = False) -> Dict[str, Any]:
         """Get a character sub-resource such as "status", "professions" or "collections/mounts"."""
         endpoint = self.character_path(realm, character_name, game_version) + f"/{resource}"
         params = {"namespace": self.get_namespace("profile", game_version)}
-        return await self._make_request(endpoint, params)
+        return await self._make_request(endpoint, params, parse_in_thread=parse_in_thread)
 
     # === Realm/Server Methods ===
     
@@ -293,6 +378,16 @@ class WoWBlizzardAPIClient:
         endpoint = f"/data/wow/realm/{realm_slug}"
         params = {"namespace": self.get_namespace("dynamic", game_version)}
         return await self._make_request(endpoint, params)
+
+    async def search_connected_realms(self, realm_slugs: List[str], game_version: str = "retail") -> Dict[str, Any]:
+        """Get the connected realms (status, population, queue) of several realms with one request."""
+        params = {
+            "namespace": self.get_namespace("dynamic", game_version),
+            # "||" is the search API's OR operator
+            "realms.slug": "||".join(sorted(realm_slugs)),
+            "_pageSize": 1000,
+        }
+        return await self._make_request("/data/wow/search/connected-realm", params)
 
     async def get_ruleset(self, ruleset_id: int, game_version: str = "forever") -> Dict[str, Any]:
         """Get a WoW Forever ruleset (Normal, PvP, Role-play ...) with its status."""
@@ -424,10 +519,12 @@ class WoWBlizzardAPIClient:
         endpoint = f"/profile/user/wow/protected-character/{realm_id}-{character_id}"
         return await self._make_request(endpoint, params, user_token=user_token)
 
-    async def get_account_collection(self, user_token: str, kind: str) -> Dict[str, Any]:
-        """Get an account-wide collection, e.g. "mounts" or "pets" (Retail)."""
+    async def get_account_collection(self, user_token: str, kind: str, parse_in_thread: bool = False) -> Dict[str, Any]:
+        """Get an account-wide collection, e.g. "mounts", "pets" or "transmogs" (Retail)."""
         params = {"namespace": self.get_namespace("profile", "retail")}
-        return await self._make_request(f"/profile/user/wow/collections/{kind}", params, user_token=user_token)
+        return await self._make_request(
+            f"/profile/user/wow/collections/{kind}", params, user_token=user_token, parse_in_thread=parse_in_thread
+        )
 
     # === Region-wide data ===
 
@@ -436,19 +533,44 @@ class WoWBlizzardAPIClient:
         params = {"namespace": self.get_namespace("dynamic", game_version)}
         return await self._make_request("/data/wow/token/index", params)
 
-    async def get_current_pvp_season(self) -> Dict[str, Any]:
-        """Get the current Retail PvP season (id, name, start)."""
-        params = {"namespace": self.get_namespace("dynamic", "retail")}
+    async def get_current_pvp_season(self, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the current PvP season (id, name, start) of Retail or a Classic version."""
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
         index = await self._make_request("/data/wow/pvp-season/index", params)
         season_id = (index.get("current_season") or {}).get("id")
         if not isinstance(season_id, int):
             return {}
         return await self._make_request(f"/data/wow/pvp-season/{season_id}", params)
 
-    async def get_pvp_rewards(self, season_id: int) -> Dict[str, Any]:
-        """Get the rating cutoffs for the titles of a PvP season."""
+    async def get_current_mythic_season(self) -> Dict[str, Any]:
+        """Get the current Mythic+ season (id, name, start, weekly periods)."""
         params = {"namespace": self.get_namespace("dynamic", "retail")}
+        index = await self._make_request("/data/wow/mythic-keystone/season/index", params)
+        season_id = (index.get("current_season") or {}).get("id")
+        if not isinstance(season_id, int):
+            return {}
+        return await self._make_request(f"/data/wow/mythic-keystone/season/{season_id}", params)
+
+    async def get_pvp_rewards(self, season_id: int, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the rating cutoffs for the titles of a PvP season."""
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
         return await self._make_request(f"/data/wow/pvp-season/{season_id}/pvp-reward/index", params)
+
+    async def get_guild_crest_index(self, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the guild crest colors (by ID) of a game version."""
+        params = {"namespace": self.get_namespace("static", game_version)}
+        return await self._make_request("/data/wow/guild-crest/index", params)
+
+    async def get_guild_crest_media(self, kind: str, media_id: int, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the image of a guild crest "emblem" or "border"."""
+        params = {"namespace": self.get_namespace("static", game_version)}
+        return await self._make_request(f"/data/wow/media/guild-crest/{kind}/{media_id}", params)
+
+    async def get_pvp_leaderboard(self, season_id: int, bracket: str) -> Dict[str, Any]:
+        """Get the top of a PvP leaderboard (up to about 5000 entries, about 2 MB)."""
+        params = {"namespace": self.get_namespace("dynamic", "retail")}
+        endpoint = f"/data/wow/pvp-season/{season_id}/pvp-leaderboard/{bracket}"
+        return await self._make_request(endpoint, params, parse_in_thread=True)
 
     async def get_specialization_en(self, spec_id: int) -> Dict[str, Any]:
         """Get a specialization in English, needed to build PvP bracket slugs."""
@@ -469,6 +591,21 @@ class WoWBlizzardAPIClient:
         """Get the recent activity (achievements, boss kills) of a guild."""
         params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(f"/data/wow/guild/{guild_path}/activity", params)
+
+    async def get_guild_roster(self, guild_path: str, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the members of a guild with level, class and rank (up to 1000 members)."""
+        params = {"namespace": self.get_namespace("profile", game_version)}
+        return await self._make_request(f"/data/wow/guild/{guild_path}/roster", params, parse_in_thread=True)
+
+    async def get_guild_achievements(self, guild_path: str, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the achievements of a guild with progress per category and recent completions."""
+        params = {"namespace": self.get_namespace("profile", game_version)}
+        return await self._make_request(f"/data/wow/guild/{guild_path}/achievements", params, parse_in_thread=True)
+
+    async def get_playable_classes(self, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the playable classes (ID and localized name)."""
+        params = {"namespace": self.get_namespace("static", game_version)}
+        return await self._make_request("/data/wow/playable-class/index", params)
 
     async def get_mythic_leaderboard_index(self, connected_realm_id: int) -> Dict[str, Any]:
         """Get the current Mythic+ leaderboards (one per dungeon) of a connected realm."""

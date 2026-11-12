@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "WoW Blizzard API Einrichtung",
-        "description": "Gib deine Battle.net API Anmeldedaten ein. Du kannst diese unter {setup_url} erstellen.",
+        "description": "Gib deine Battle.net-API-Zugangsdaten ein. Du kannst sie unter {setup_url} erstellen. Ist bereits eine Spielversion eingerichtet, sind ihre Zugangsdaten vorausgefüllt.",
         "data": {
           "client_id": "Client-ID",
           "client_secret": "Client-Secret",
@@ -11,9 +11,16 @@
           "locale": "API Locale / Sprache"
         }
       },
+      "game_version": {
+        "title": "Spielversion",
+        "description": "Jede Spielversion bekommt einen eigenen Eintrag in der Region {region}, und der Battle.net-Account einen eigenen Eintrag für den Login (Gold und Account-Sammlungen). Bereits eingerichtete Einträge werden nicht angezeigt.",
+        "data": {
+          "game_version": "Spielversion oder Account"
+        }
+      },
       "features": {
         "title": "Feature-Auswahl",
-        "description": "Wähle aus, welche Features für die Region {region} aktiviert werden sollen. Du kannst diese später in den Integrationsoptionen ändern.",
+        "description": "Wähle aus, welche Features für {game_version} in der Region {region} aktiviert werden. Du kannst sie später über Konfigurieren ändern.",
         "data": {
           "enable_server_status": "Serverstatus aktivieren",
           "enable_pvp": "PvP-Statistiken aktivieren",
@@ -25,44 +32,32 @@
           "enable_guild": "Gildendaten aktivieren",
           "enable_region_data": "WoW-Marken-Preis und Wochen-Reset aktivieren",
           "enable_mythic_leaderboard": "Mythic+-Bestenlisten der Realms und Wochen-Affixe aktivieren (ca. 8 MB pro Realm und Stunde)",
+          "enable_pvp_leaderboard": "PvP-Ranglistenplätze deiner Charaktere aktivieren (ca. 2 MB pro Bracket und Stunde)",
           "auction_items": "Item-IDs für Auktionspreise (kommagetrennt, leer = aus)"
         }
       },
-      "character": {
-        "title": "Charakter hinzufügen - Spielversion",
-        "description": "Wähle die World of Warcraft Spielversion des Charakters aus, den du hinzufügen möchtest. Aktuelle Charaktere: {character_count}",
-        "data": {
-          "game_version": "Spielversion"
+      "add_method": {
+        "title": "Charaktere",
+        "description": "Füge den ersten {game_version}-Charakter von Hand hinzu oder melde dich mit Battle.net an, um Charaktere aller Spielversionen aus deinem Account auszuwählen (Charaktere anderer Spielversionen bekommen eigene Einträge). Du kannst auch jetzt abschließen und Charaktere später über **Charakter hinzufügen** ergänzen. Für den Login muss `{redirect_url}` als Redirect-URL in deinem Battle.net-API-Client eingetragen sein.",
+        "menu_options": {
+          "character": "Realm und Namen eingeben",
+          "account_login": "Mit Battle.net anmelden",
+          "finish": "Ohne Charakter abschließen"
         }
       },
-      "character_details": {
-        "title": "Charakter hinzufügen - Details",
-        "description": "Wähle den Realm aus und gib den Charakternamen für deinen {game_version} Charakter ein.",
+      "character": {
+        "title": "Charakter hinzufügen",
+        "description": "Wähle den Realm und gib den Namen deines {game_version}-Charakters ein.",
         "data": {
           "realm": "Realm",
           "character_name": "Charaktername"
         }
       },
-      "character_menu": {
-        "title": "WoW Charakter-Manager",
-        "description": "Aktuell hinzugefügte Charaktere ({character_count}):\n\n{character_list}\n\nWähle deine nächste Aktion.",
+      "character_forever": {
+        "title": "WoW-Forever-Charakter hinzufügen",
+        "description": "WoW Forever hat keine Realms. Gib Vor- und Nachname des Charakters ein, zum Beispiel `Arthas Menethil`. Den Spielmodus (Normal, PvP, Rollenspiel ...) übernimmt die Integration vom Charakter.",
         "data": {
-          "action": "Nächste Aktion"
-        }
-      },
-      "remove_character": {
-        "title": "Charakter(e) entfernen",
-        "description": "Wähle aus, welche(n) Charakter(e) du aus der Überwachung entfernen möchtest. Du hast aktuell {character_count} Charakter(e) konfiguriert.",
-        "data": {
-          "characters_to_remove": "Zu entfernende Charaktere auswählen"
-        }
-      },
-      "add_method": {
-        "title": "Charaktere hinzufügen",
-        "description": "Füge einen Charakter von Hand hinzu oder melde dich mit Battle.net an, um Charaktere aus deinem Account auszuwählen. Für den Login muss `{redirect_url}` als Redirect-URL in deinem Battle.net-API-Client eingetragen sein.",
-        "menu_options": {
-          "character": "Realm und Namen eingeben",
-          "account_login": "Mit Battle.net anmelden"
+          "character_name": "Vor- und Nachname"
         }
       },
       "account_login": {
@@ -71,7 +66,7 @@
       },
       "account_select": {
         "title": "Charaktere deines Accounts",
-        "description": "Öffne eine Spielversion und einen Realm und hake die gewünschten Charaktere an ({character_count} verfügbar, bereits eingerichtete sind ausgeblendet).",
+        "description": "Öffne eine Spielversion und einen Realm und hake die gewünschten Charaktere an ({character_count} verfügbar, bereits eingerichtete sind ausgeblendet). {hidden_count} Charaktere unter Stufe 10 werden nicht angezeigt, die Battle.net-API hat für sie keine Daten.",
         "sections": {
           "retail": {
             "name": "Retail"
@@ -89,20 +84,13 @@
       },
       "account_failed": {
         "title": "Battle.net-Anmeldung nicht abgeschlossen",
-        "description": "Es geht nichts verloren. Weiter, um Charaktere von Hand hinzuzufügen oder die Anmeldung erneut zu versuchen. Klappt es dauerhaft nicht, prüfe, ob `{redirect_url}` als Redirect-URL im Battle.net-API-Client eingetragen ist."
+        "description": "Es geht nichts verloren. Geh zurück, um Charaktere von Hand hinzuzufügen oder die Anmeldung erneut zu versuchen. Klappt es dauerhaft nicht, prüfe, ob `{redirect_url}` als Redirect-URL im Battle.net-API-Client eingetragen ist."
       },
       "account_options": {
         "title": "Account-Daten",
-        "description": "{selected_count} Charakter(e) ausgewählt.\n\nDer Battle.net-Login kann zusätzlich behalten werden, um Gold pro Charakter, Gold gesamt und Account-Sammlungen zu laden. Blizzard begrenzt Logins auf 24 Stunden; danach behalten die Werte ihren letzten Stand, alles andere läuft weiter, und du kannst dich jederzeit über Neu konfigurieren wieder anmelden.",
+        "description": "{selected_count} Charakter(e) ausgewählt. Sie kommen in den Eintrag ihrer Spielversion, der bei Bedarf angelegt wird.\n\nBehalte den Battle.net-Login, um Gold pro Charakter, Gold gesamt und Account-Sammlungen zu laden; er wird im Eintrag **Battle.net Account** gespeichert. Blizzard begrenzt Logins auf 24 Stunden; danach behalten die Werte ihren letzten Stand, alles andere läuft weiter, und du kannst dich jederzeit über **Neu konfigurieren** am Battle.net-Account-Eintrag wieder anmelden.",
         "data": {
           "keep_login": "Account-Daten laden (Gold, Account-Sammlungen), solange der Login gilt"
-        }
-      },
-      "character_details_forever": {
-        "title": "WoW-Forever-Charakter hinzufügen",
-        "description": "WoW Forever hat keine Realms. Gib Vor- und Nachname des Charakters ein, zum Beispiel `Arthas Menethil`. Den Spielmodus (Normal, PvP, Rollenspiel ...) übernimmt die Integration vom Charakter.",
-        "data": {
-          "character_name": "Vor- und Nachname"
         }
       }
     },
@@ -117,24 +105,18 @@
       "oauth_redirect_unavailable": "Home Assistant konnte die Weiterleitung für die Anmeldung nicht bilden. Aktiviere My Home Assistant (Teil von default_config)."
     },
     "abort": {
-      "already_configured": "Diese Charakterkonfiguration existiert bereits",
-      "no_characters": "Mindestens ein Charakter muss konfiguriert bleiben",
+      "already_configured": "Diese Spielversion ist für diese Region bereits eingerichtet",
+      "all_versions_configured": "Alle Spielversionen sind für diese Region bereits eingerichtet",
       "reconfigure_successful": "Charaktere und Battle.net-Login aktualisiert",
-      "account_login_skipped": "Battle.net-Anmeldung nicht abgeschlossen, die Konfiguration bleibt unverändert"
+      "account_login_skipped": "Battle.net-Anmeldung nicht abgeschlossen, die Konfiguration bleibt unverändert",
+      "characters_imported": "Charaktere importiert, der Login wurde nicht behalten"
     }
   },
   "options": {
     "step": {
-      "init": {
-        "title": "World of Warcraft Integrationsoptionen",
-        "description": "Wähle die Aktion aus, die du ausführen möchtest. Du hast aktuell {character_count} Charakter(e) konfiguriert.",
-        "data": {
-          "action": "Aktion auswählen"
-        }
-      },
       "features": {
         "title": "Integrationsfeatures konfigurieren",
-        "description": "Schalte die gewünschten Features ein oder aus. Diese Änderungen laden die Integration automatisch neu.",
+        "description": "Schalte die Features für {game_version} ein oder aus. Der Eintrag lädt danach automatisch neu.",
         "data": {
           "enable_server_status": "Serverstatus & Wartung",
           "enable_pvp": "PvP-Statistiken & Wertungen",
@@ -146,41 +128,13 @@
           "enable_guild": "Gildenmitglieder & Erfolgspunkte",
           "enable_region_data": "WoW-Marken-Preis & Wochen-Reset",
           "enable_mythic_leaderboard": "Mythic+-Bestenlisten der Realms & Affixe (ca. 8 MB pro Realm und Stunde)",
+          "enable_pvp_leaderboard": "PvP-Ranglistenplätze (ca. 2 MB pro Bracket und Stunde)",
           "auction_items": "Item-IDs für Auktionspreise (kommagetrennt, leer = aus)"
-        }
-      },
-      "add_character": {
-        "title": "Charakter hinzufügen - Spielversion",
-        "description": "Wähle die Spielversion des Charakters aus, den du hinzufügen möchtest.",
-        "data": {
-          "game_version": "Spielversion"
-        }
-      },
-      "add_character_details": {
-        "title": "Charakter hinzufügen - Details",
-        "description": "Wähle den Realm und den Namen für deinen {game_version} Charakter aus.",
-        "data": {
-          "realm": "Realm",
-          "character_name": "Charaktername"
-        }
-      },
-      "remove_character": {
-        "title": "Charakter(e) entfernen",
-        "description": "Wähle die Charaktere aus, die du entfernen möchtest. Mindestens 1 Charakter muss konfiguriert bleiben.",
-        "data": {
-          "characters_to_remove": "Zu entfernende Charaktere auswählen"
         }
       },
       "remove_account": {
         "title": "Battle.net-Login entfernen",
-        "description": "Die Integration vergisst den Battle.net-Login. Gold- und Account-Sensoren werden entfernt; Charaktere und alle anderen Daten bleiben. Du kannst dich jederzeit über Neu konfigurieren wieder anmelden."
-      },
-      "add_character_details_forever": {
-        "title": "WoW-Forever-Charakter hinzufügen",
-        "description": "WoW Forever hat keine Realms. Gib Vor- und Nachname des Charakters ein, zum Beispiel `Arthas Menethil`. Den Spielmodus (Normal, PvP, Rollenspiel ...) übernimmt die Integration vom Charakter.",
-        "data": {
-          "character_name": "Vor- und Nachname"
-        }
+        "description": "Entfernt den Eintrag Battle.net Account und damit den Login, die Account-Sensoren und das Gold der Charaktere. Charaktere und alle anderen Daten bleiben. Du kannst den Account jederzeit über **Eintrag hinzufügen** wieder einrichten."
       }
     },
     "error": {
@@ -190,12 +144,65 @@
       "character_already_added": "Dieser Charakter wurde bereits hinzugefügt",
       "unknown": "Ein unerwarteter Fehler ist aufgetreten",
       "game_version_unavailable": "Diese Spielversion ist in der Blizzard-API noch nicht verfügbar"
+    },
+    "abort": {
+      "account_removed": "Der Battle.net-Login wird entfernt"
+    }
+  },
+  "config_subentries": {
+    "character": {
+      "initiate_flow": {
+        "user": "Charakter hinzufügen"
+      },
+      "entry_type": "Charakter",
+      "step": {
+        "user": {
+          "title": "Charakter hinzufügen",
+          "description": "Wähle den Realm und gib den Namen deines {game_version}-Charakters ein.",
+          "data": {
+            "realm": "Realm",
+            "character_name": "Charaktername"
+          }
+        },
+        "user_forever": {
+          "title": "WoW-Forever-Charakter hinzufügen",
+          "description": "WoW Forever hat keine Realms. Gib Vor- und Nachname des Charakters ein, zum Beispiel `Arthas Menethil`. Den Spielmodus (Normal, PvP, Rollenspiel ...) übernimmt die Integration vom Charakter.",
+          "data": {
+            "character_name": "Vor- und Nachname"
+          }
+        }
+      },
+      "error": {
+        "cannot_connect": "Verbindung mit der Battle.net-API fehlgeschlagen",
+        "character_not_found": "Charakter nicht gefunden oder nicht zugänglich",
+        "character_already_added": "Dieser Charakter wurde bereits hinzugefügt",
+        "unknown": "Ein unerwarteter Fehler ist aufgetreten",
+        "game_version_unavailable": "Diese Spielversion ist in der Blizzard-API noch nicht verfügbar"
+      },
+      "abort": {
+        "already_configured": "Dieser Charakter wurde bereits hinzugefügt"
+      }
+    },
+    "realms": {
+      "entry_type": "Realms",
+      "initiate_flow": {
+        "user": "Realms"
+      },
+      "step": {
+        "user": {
+          "title": "Realms",
+          "description": "Realms und Regionsdaten legt die Integration selbst an."
+        }
+      }
     }
   },
   "entity": {
     "image": {
       "character_full_body_render": {
         "name": "Ganzkörper-Render"
+      },
+      "guild_crest": {
+        "name": "Gildenwappen"
       }
     },
     "sensor": {
@@ -339,6 +346,33 @@
       "guild_members": {
         "name": "Gildenmitglieder"
       },
+      "guild_max_level_members": {
+        "name": "Gildenmitglieder auf Höchststufe"
+      },
+      "guild_rank": {
+        "name": "Gildenrang"
+      },
+      "guild_achievements": {
+        "name": "Gildenerfolge"
+      },
+      "achievements_completed": {
+        "name": "Erfolge"
+      },
+      "pvp_season_classic": {
+        "name": "PvP-Saison (Classic)"
+      },
+      "pvp_season_classicann": {
+        "name": "PvP-Saison (Anniversary)"
+      },
+      "active_quests": {
+        "name": "Aktive Quests"
+      },
+      "transmogs_collected": {
+        "name": "Transmog-Vorlagen"
+      },
+      "mythicplus_season": {
+        "name": "M+ Saison"
+      },
       "wow_token_price": {
         "name": "WoW-Marken-Preis"
       },
@@ -372,6 +406,18 @@
       "account_pets": {
         "name": "Account-Haustiere"
       },
+      "account_toys": {
+        "name": "Account-Spielzeuge"
+      },
+      "account_heirlooms": {
+        "name": "Account-Erbstücke"
+      },
+      "account_decor": {
+        "name": "Account-Housing-Dekor"
+      },
+      "account_transmogs": {
+        "name": "Account-Transmog-Vorlagen"
+      },
       "account_login": {
         "name": "Battle.net-Login läuft ab"
       },
@@ -398,7 +444,19 @@
           "event_type": {
             "state": {
               "achievement": "Erfolg",
-              "encounter": "Boss-Kill"
+              "encounter": "Boss-Kill",
+              "member_joined": "Mitglied beigetreten",
+              "member_left": "Mitglied ausgetreten"
+            }
+          }
+        }
+      },
+      "character_achievements": {
+        "name": "Erfolge",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "achievement": "Neuer Erfolg"
             }
           }
         }
@@ -437,29 +495,15 @@
         "classic": "Classic Progression (z. B. Mists of Pandaria)",
         "classic1x": "Classic Era (Vanilla)",
         "classicann": "Classic Anniversary (Burning Crusade)",
-        "forever": "WoW Forever"
-      }
-    },
-    "character_menu_actions": {
-      "options": {
-        "add": "Weiteren Charakter hinzufügen",
-        "finish": "Einrichtung abschließen und speichern",
-        "remove": "Einen Charakter entfernen"
-      }
-    },
-    "options_menu_actions": {
-      "options": {
-        "add_character": "Charakter hinzufügen",
-        "features": "Features konfigurieren",
-        "remove_character": "Charakter(e) entfernen",
-        "remove_account": "Battle.net-Login entfernen"
+        "forever": "WoW Forever",
+        "account": "Battle.net-Account (Login für Gold und Account-Sammlungen)"
       }
     }
   },
   "issues": {
     "account_login_expired": {
       "title": "Battle.net-Login abgelaufen",
-      "description": "Der Battle.net-Login der World-of-Warcraft-Integration ist abgelaufen (Blizzard begrenzt Logins auf 24 Stunden). Alles andere läuft normal weiter; Gold und Account-Werte behalten ihren letzten Stand. Zum Aktualisieren die Integration öffnen und **Neu konfigurieren** wählen. Wenn du keine Account-Daten brauchst, wähle **Konfigurieren > Battle.net-Login entfernen** oder ignoriere diesen Hinweis."
+      "description": "Der Battle.net-Login von World of Warcraft ist abgelaufen (Blizzard begrenzt Logins auf 24 Stunden). Alles andere läuft normal weiter; Gold und Account-Werte behalten ihren letzten Stand. Zum Aktualisieren den Eintrag **Battle.net Account** öffnen und **Neu konfigurieren** wählen. Wenn du keine Account-Daten brauchst, entferne dort über **Konfigurieren** den Login oder ignoriere diesen Hinweis."
     }
   }
 }
