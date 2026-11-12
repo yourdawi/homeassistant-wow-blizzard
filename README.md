@@ -3,6 +3,7 @@
 <!-- ha-marketplace:exclude-start -->
 [![Validate](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/validate.yaml/badge.svg)](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/validate.yaml)
 [![Validate with hassfest](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/hassfest.yaml)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/yourdawi/homeassistant-wow-blizzard/total)
 
 [![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=yourdawi&repository=homeassistant-wow-blizzard&category=integration)
 <!-- ha-marketplace:exclude-end -->
@@ -167,7 +168,7 @@ Open **Settings > Devices & Services > World of Warcraft**. Each game version is
 
 - **Add character** (next to a game version entry) adds a character of that game version.
 - To remove a character, open the menu of the character below its entry and delete it. Its devices and entities are removed.
-- **Configure** on a game version entry turns feature groups on or off and sets the auction item IDs.
+- **Configure** on a game version entry turns feature groups on or off and sets the auction item IDs, for that game version only. It only shows the features with an effect in that game version (for example Mythic+ and the Hall of Fame only for Retail).
 - **Configure** on the Battle.net Account entry removes the login (deleting the entry does the same); the account sensors and the gold of the characters go, characters and everything else stay.
 - **Reconfigure** (in an entry's menu) logs in with Battle.net to import more characters or renew the login.
 

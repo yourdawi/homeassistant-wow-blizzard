@@ -41,6 +41,19 @@ FEATURE_DEFAULTS = {
     "enable_mythic_leaderboard": False,
     "enable_pvp_leaderboard": False,
 }
+
+# Game versions a feature has an effect in (missing = all). The feature
+# dialog of an entry only shows the features of its game version.
+FEATURE_VERSIONS = {
+    "enable_raids": ("retail", "forever"),
+    "enable_collections": ("retail", "forever"),
+    "enable_region_data": ("retail", "classic"),
+    "auction_items": ("retail", "classic"),
+    "enable_mythic_plus": ("retail",),
+    "enable_hall_of_fame": ("retail",),
+    "enable_mythic_leaderboard": ("retail",),
+    "enable_pvp_leaderboard": ("retail",),
+}
 CONF_GAME_VERSION = "game_version"
 CONF_LOCALE = "locale"
 

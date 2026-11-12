@@ -36,6 +36,7 @@ from .const import (
     CONF_AUCTION_ITEMS,
     CONF_ACCOUNT_TOKEN,
     FEATURE_DEFAULTS,
+    FEATURE_VERSIONS,
     OAUTH_AUTHORIZE_URLS,
     OAUTH_AUTHORIZE_URL_DEFAULT,
     OAUTH_TOKEN_URLS,
@@ -157,13 +158,21 @@ def game_version_schema(available: List[str]) -> vol.Schema:
     })
 
 
-def features_schema(current: Dict[str, Any]) -> vol.Schema:
-    """Feature toggles plus the item IDs whose auction prices are tracked."""
+def has_effect(feature: str, game_version: str) -> bool:
+    """Whether a feature does anything in a game version (see FEATURE_VERSIONS)."""
+    versions = FEATURE_VERSIONS.get(feature)
+    return versions is None or game_version in versions
+
+
+def features_schema(current: Dict[str, Any], game_version: str) -> vol.Schema:
+    """Feature toggles plus the auction item IDs, only those with an effect in the game version."""
     schema = {
         vol.Optional(key, default=current.get(key, FEATURE_DEFAULTS[key])): bool
         for key in FEATURE_KEYS
+        if has_effect(key, game_version)
     }
-    schema[vol.Optional(CONF_AUCTION_ITEMS, default=current.get(CONF_AUCTION_ITEMS, ""))] = str
+    if has_effect(CONF_AUCTION_ITEMS, game_version):
+        schema[vol.Optional(CONF_AUCTION_ITEMS, default=current.get(CONF_AUCTION_ITEMS, ""))] = str
     return vol.Schema(schema)
 
 
@@ -519,7 +528,7 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
         current = {**others[0].data, **others[0].options} if others else {}
         return self.async_show_form(
             step_id="features",
-            data_schema=features_schema(current),
+            data_schema=features_schema(current, self._game_version),
             description_placeholders={
                 "region": self.data[CONF_REGION].upper(),
                 "game_version": game_version_label(self._game_version),
@@ -865,9 +874,10 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
         return await self.async_step_features()
 
     async def async_step_features(self, user_input=None):
-        """Feature toggles and auction items."""
+        """Feature toggles and auction items (those with an effect in the entry's game version)."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            # Hidden features keep their value
+            return self.async_create_entry(title="", data={**self.config_entry.options, **user_input})
         options = self.config_entry.options
         data = self.config_entry.data
         return self.async_show_form(
@@ -875,7 +885,7 @@ class WoWBlizzardOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=features_schema({
                 key: options.get(key, data.get(key, FEATURE_DEFAULTS.get(key, "")))
                 for key in FEATURE_KEYS + [CONF_AUCTION_ITEMS]
-            }),
+            }, entry_game_version(self.config_entry)),
             description_placeholders={"game_version": game_version_label(entry_game_version(self.config_entry))},
         )
 
