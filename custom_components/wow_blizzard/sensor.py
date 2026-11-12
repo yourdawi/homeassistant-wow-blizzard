@@ -86,6 +86,8 @@ from .parsers import (
     parse_guild_roster,
     roster_changes,
     parse_mythic_leaderboard,
+    ACCOUNT_COLLECTIONS,
+    count_collection,
     parse_active_quests,
     parse_connected_realm_search,
     with_render_fallback,
@@ -213,6 +215,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._guild_rosters: Dict[str, Dict[str, Any]] = {}
         self._guild_roster_events: Dict[str, List[Dict[str, Any]]] = {}
         self._class_names: Dict[str, Dict[int, str]] = {}
+        # Account transmogs: (fetch time, parsed collection)
+        self._account_transmogs: Optional[Any] = None
         # Current Mythic+ season: {"fetched", "season"}
         self._mythic_season: Dict[str, Any] = {}
         # PvP leaderboards per "season:bracket": (fetch time, ranks by character ID)
@@ -1202,12 +1206,27 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 await asyncio.sleep(0.05)
         result["account_gold_total"] = total_gold
         result["account_characters"] = account_characters
-        for kind, sensor, list_key in (("mounts", "account_mounts", "mounts"), ("pets", "account_pets", "pets")):
-            collection = await self.client.get_account_collection(token, kind)
-            if collection:
-                result[sensor] = len(collection.get(list_key) or [])
+        for sensor, (kind, list_keys) in ACCOUNT_COLLECTIONS.items():
+            count = count_collection(await self.client.get_account_collection(token, kind), list_keys)
+            if count is not None:
+                result[sensor] = count
             elif sensor in self._account_last:
                 result[sensor] = self._account_last[sensor]
+
+        # Transmogs: up to 5 MB, so at most every few hours and off the event loop
+        last_transmogs = self._account_transmogs
+        if last_transmogs and datetime.now() - last_transmogs[0] < timedelta(seconds=SLOW_REFRESH_INTERVAL):
+            transmogs = last_transmogs[1]
+        else:
+            transmogs = parse_transmogs(await self.client.get_account_collection(token, "transmogs", parse_in_thread=True))
+            if transmogs:
+                self._account_transmogs = (datetime.now(), transmogs)
+        if transmogs:
+            result["account_transmogs"] = transmogs["transmogs_collected"]
+            result["attrs"] = {"account_transmogs": transmogs["attrs"]["transmogs_collected"]}
+        elif "account_transmogs" in self._account_last:
+            result["account_transmogs"] = self._account_last["account_transmogs"]
+            result["attrs"] = {"account_transmogs": (self._account_last.get("attrs") or {}).get("account_transmogs") or {}}
         return result
 
     async def _async_update_data(self):
@@ -2097,6 +2116,7 @@ class WoWAccountSensor(CoordinatorEntity, SensorEntity):
             "category": "account",
             # False once the 24 hour login has expired; values are then the last known ones
             "login_valid": self._account.get("login_valid", False),
+            **((self._account.get("attrs") or {}).get(self._sensor_type) or {}),
         }
 
     @property

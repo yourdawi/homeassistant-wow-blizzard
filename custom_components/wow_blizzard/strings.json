@@ -392,6 +392,18 @@
       "account_pets": {
         "name": "Account Pets"
       },
+      "account_toys": {
+        "name": "Account Toys"
+      },
+      "account_heirlooms": {
+        "name": "Account Heirlooms"
+      },
+      "account_decor": {
+        "name": "Account Housing Decor"
+      },
+      "account_transmogs": {
+        "name": "Account Transmog Appearances"
+      },
       "account_login": {
         "name": "Battle.net Login Expires"
       },

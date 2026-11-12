@@ -44,7 +44,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 | Mythic+ leaderboards (opt-in) | Best key of the week per realm, with the best runs of your characters. |
 | PvP leaderboards (opt-in) | Rank of your characters on the regional 2v2, 3v3, RBG, Solo Shuffle and Blitz leaderboards. |
 | Auction house | Lowest price for item IDs you choose (Retail commodities and realm auctions, Classic Progression realm auctions). |
-| Battle.net account (optional) | Import characters by logging in with Battle.net. While the login is valid (24 hours): gold per character, total gold, account mounts and pets. |
+| Battle.net account (optional) | Import characters by logging in with Battle.net. While the login is valid (24 hours): gold per character, total gold, account mounts, pets, toys, heirlooms, housing decor and transmog appearances. |
 
 Numeric sensors have the `measurement` state class, so Home Assistant keeps long-term statistics and you can graph them (for example a leveling race).
 
@@ -297,7 +297,7 @@ automation:
 
 ### Battle.net account (optional)
 
-With a kept Battle.net login, the device `Battle.net Account` has `Total Gold` (Retail), `Characters`, `Account Mounts`, `Account Pets` and `Battle.net Login Expires`. The attribute `login_valid` turns `false` when the 24 hour login has expired or Blizzard rejects it (for example after a password change); the values then keep their last state. Temporary API errors also keep the last values instead of dropping to 0.
+With a kept Battle.net login, the device `Battle.net Account` has `Total Gold` (Retail), `Characters`, `Account Mounts`, `Account Pets`, `Account Toys`, `Account Heirlooms`, `Account Housing Decor`, `Account Transmog Appearances` (with `appearance_sets` and `appearances_per_slot`) and `Battle.net Login Expires`. The account transmog collection can be several MB, so it is fetched at most every 6 hours. The attribute `login_valid` turns `false` when the 24 hour login has expired or Blizzard rejects it (for example after a password change); the values then keep their last state. Temporary API errors also keep the last values instead of dropping to 0.
 
 ### Hall of Fame sensors
 

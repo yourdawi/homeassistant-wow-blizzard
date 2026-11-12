@@ -434,10 +434,12 @@ class WoWBlizzardAPIClient:
         endpoint = f"/profile/user/wow/protected-character/{realm_id}-{character_id}"
         return await self._make_request(endpoint, params, user_token=user_token)
 
-    async def get_account_collection(self, user_token: str, kind: str) -> Dict[str, Any]:
-        """Get an account-wide collection, e.g. "mounts" or "pets" (Retail)."""
+    async def get_account_collection(self, user_token: str, kind: str, parse_in_thread: bool = False) -> Dict[str, Any]:
+        """Get an account-wide collection, e.g. "mounts", "pets" or "transmogs" (Retail)."""
         params = {"namespace": self.get_namespace("profile", "retail")}
-        return await self._make_request(f"/profile/user/wow/collections/{kind}", params, user_token=user_token)
+        return await self._make_request(
+            f"/profile/user/wow/collections/{kind}", params, user_token=user_token, parse_in_thread=parse_in_thread
+        )
 
     # === Region-wide data ===
 

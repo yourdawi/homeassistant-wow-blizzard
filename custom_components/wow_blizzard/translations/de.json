@@ -392,6 +392,18 @@
       "account_pets": {
         "name": "Account-Haustiere"
       },
+      "account_toys": {
+        "name": "Account-Spielzeuge"
+      },
+      "account_heirlooms": {
+        "name": "Account-Erbstücke"
+      },
+      "account_decor": {
+        "name": "Account-Housing-Dekor"
+      },
+      "account_transmogs": {
+        "name": "Account-Transmog-Vorlagen"
+      },
       "account_login": {
         "name": "Battle.net-Login läuft ab"
       },

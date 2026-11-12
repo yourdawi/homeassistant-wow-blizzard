@@ -29,6 +29,26 @@ def parse_active_quests(data: Dict[str, Any]) -> Dict[str, Any]:
     return {"active_quests": len(quests), "attrs": {"active_quests": {"quests": quests}}}
 
 
+# Account collections: sensor -> (endpoint kind, possible list keys). The
+# account decor list is not documented; the character endpoint calls it
+# "decor_collected".
+ACCOUNT_COLLECTIONS = {
+    "account_mounts": ("mounts", ("mounts",)),
+    "account_pets": ("pets", ("pets",)),
+    "account_toys": ("toys", ("toys",)),
+    "account_heirlooms": ("heirlooms", ("heirlooms",)),
+    "account_decor": ("decor", ("decor_collected", "decor", "decors")),
+}
+
+
+def count_collection(data: Dict[str, Any], list_keys: tuple) -> Optional[int]:
+    """Number of entries of the first list key the response has (None if none)."""
+    for key in list_keys:
+        if isinstance((data or {}).get(key), list):
+            return len(data[key])
+    return None
+
+
 def parse_transmogs(data: Dict[str, Any]) -> Dict[str, Any]:
     """Collected transmog appearances (per slot) and appearance sets."""
     if not data or "slots" not in data:
