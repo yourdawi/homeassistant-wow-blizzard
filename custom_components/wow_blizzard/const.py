@@ -400,6 +400,13 @@ DETAIL_SENSOR_TYPES = {
         "device_class": None,
         "state_class": "measurement",
     },
+    "achievements_completed": {
+        "name": "Achievements",
+        "icon": "mdi:trophy-award",
+        "unit": "achievements",
+        "device_class": None,
+        "state_class": "measurement",
+    },
     "deaths": {
         "name": "Deaths",
         "icon": "mdi:grave-stone",
@@ -647,6 +654,18 @@ REGION_SENSOR_TYPES = {
         "device_class": None,
         "state_class": "measurement",
     },
+    "pvp_season_classic": {
+        "name": "PvP Season (Classic)",
+        "icon": "mdi:sword-cross",
+        "unit": None,
+        "device_class": None,
+    },
+    "pvp_season_classicann": {
+        "name": "PvP Season (Anniversary)",
+        "icon": "mdi:sword-cross",
+        "unit": None,
+        "device_class": None,
+    },
     "pvp_cutoff_hero": {
         "name": "Hero Cutoff",
         "icon": "mdi:flag-checkered",
@@ -720,7 +739,8 @@ VERSION_SENSOR_SUPPORT = {
         "basic": None,
         "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season", "pvp_honorable_kills"},
         "details": {"stat_health", "stat_crit", "stat_haste", "stat_mastery", "active_title",
-                    "reputations", "talents", "deaths", "quests_completed", "hunter_pet"},
+                    "reputations", "talents", "deaths", "quests_completed", "hunter_pet",
+                    "achievements_completed"},
         "guild": None,
     },
     # Classic Anniversary (Burning Crusade): no achievements
@@ -749,7 +769,7 @@ VERSION_SENSOR_SUPPORT = {
         "raid": {"raid_progress_normal", "raid_kills_total"},
         "details": {"professions", "stat_health", "stat_crit", "active_title", "reputations",
                     "talents", "dungeons_completed", "deaths", "quests_completed", "active_quests",
-                    "hunter_pet"},
+                    "hunter_pet", "achievements_completed"},
         "collections": {"mounts_collected", "pets_collected", "toys_collected", "heirlooms_collected",
                         "transmogs_collected"},
         # Guild achievements answer without data (EU, 2026-11)

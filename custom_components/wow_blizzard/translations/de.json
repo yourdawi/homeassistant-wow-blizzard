@@ -198,6 +198,9 @@
     "image": {
       "character_full_body_render": {
         "name": "Ganzkörper-Render"
+      },
+      "guild_crest": {
+        "name": "Gildenwappen"
       }
     },
     "sensor": {
@@ -350,6 +353,15 @@
       "guild_achievements": {
         "name": "Gildenerfolge"
       },
+      "achievements_completed": {
+        "name": "Erfolge"
+      },
+      "pvp_season_classic": {
+        "name": "PvP-Saison (Classic)"
+      },
+      "pvp_season_classicann": {
+        "name": "PvP-Saison (Anniversary)"
+      },
       "active_quests": {
         "name": "Aktive Quests"
       },
@@ -433,6 +445,16 @@
               "encounter": "Boss-Kill",
               "member_joined": "Mitglied beigetreten",
               "member_left": "Mitglied ausgetreten"
+            }
+          }
+        }
+      },
+      "character_achievements": {
+        "name": "Erfolge",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "achievement": "Neuer Erfolg"
             }
           }
         }

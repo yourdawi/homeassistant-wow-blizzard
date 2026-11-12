@@ -21,6 +21,62 @@ COLLECTION_ENDPOINTS = {
 }
 
 
+def parse_character_achievements(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Completed achievements of a character and the most recent ones (newest first)."""
+    if not data or "total_quantity" not in data:
+        return {}
+    recent = sorted(
+        (
+            {
+                "achievement": (event.get("achievement") or {}).get("name"),
+                "achievement_id": (event.get("achievement") or {}).get("id"),
+                "timestamp": event.get("timestamp"),
+            }
+            for event in data.get("recent_events") or []
+        ),
+        key=lambda e: e.get("timestamp") or 0,
+        reverse=True,
+    )
+    return {
+        "achievements_completed": data.get("total_quantity"),
+        "attrs": {"achievements_completed": {
+            "total_points": data.get("total_points"),
+            "recent_achievements": recent,
+        }},
+    }
+
+
+def parse_title_cutoffs(data: Dict[str, Any]) -> Dict[str, list]:
+    """Title rating cutoffs per bracket type, highest first (Classic has several titles per bracket)."""
+    result: Dict[str, list] = {}
+    for reward in (data or {}).get("rewards") or []:
+        bracket = (reward.get("bracket") or {}).get("type")
+        if not bracket or not isinstance(reward.get("rating_cutoff"), int):
+            continue
+        result.setdefault(bracket, []).append({
+            "title": (reward.get("achievement") or {}).get("name"),
+            "rating": reward["rating_cutoff"],
+        })
+    return {bracket: sorted(tiers, key=lambda t: -t["rating"]) for bracket, tiers in result.items()}
+
+
+def parse_mythic_best_runs(best_runs: list) -> Dict[str, Dict[str, Any]]:
+    """Best run per dungeon of a Mythic+ season, by dungeon name."""
+    result: Dict[str, Dict[str, Any]] = {}
+    for run in best_runs or []:
+        name = (run.get("dungeon") or {}).get("name")
+        level = run.get("keystone_level") or 0
+        if not name or (name in result and result[name]["keystone_level"] >= level):
+            continue
+        duration = run.get("duration")
+        result[name] = {
+            "keystone_level": level,
+            "timed": bool(run.get("is_completed_within_time")),
+            "duration_minutes": round(duration / 60000, 1) if isinstance(duration, (int, float)) else None,
+        }
+    return dict(sorted(result.items(), key=lambda i: -i[1]["keystone_level"]))
+
+
 def parse_active_quests(data: Dict[str, Any]) -> Dict[str, Any]:
     """Quests in the quest log of a character."""
     if not data or ("in_progress" not in data and "completed" not in data):

@@ -32,12 +32,12 @@ Use it to track levels and item level over time, watch realm status on reset day
 | Area | What you get |
 | --- | --- |
 | Characters | Level, item level, guild, achievement points, profile status, portrait as entity picture, full-body render as image entity, equipment per slot. Any number of characters across realms and game versions. |
-| Character details | Professions, health and secondary stats, title, reputations, talents, dungeons completed, deaths, quests completed, active quests, hunter pets. |
+| Character details | Professions, health and secondary stats, title, reputations, talents, dungeons completed, deaths, quests completed, active quests, achievements (with an event for every new one), hunter pets. |
 | Collections | Number of mounts, pets, toys, heirlooms, transmog appearances and housing decor. |
-| Guild | Member count, members at max level by class, your guild rank, completed guild achievements and an event entity for new guild achievements, boss kills and members joining or leaving. |
+| Guild | Member count, members at max level by class, your guild rank, completed guild achievements, the guild crest as image and an event entity for new guild achievements, boss kills and members joining or leaving. |
 | Realms | Realm status, population and whether a login queue is active. |
 | Region | WoW Token price (Retail and Classic Progression), the next weekly reset, the Mythic+ season, the PvP season with its title cutoffs and, opt-in, the weekly Mythic+ affixes. |
-| PvP | 2v2, 3v3, RBG, Solo Shuffle and Blitz ratings of the current season, honor level, season wins, honorable kills and the Classic Era PvP rank. |
+| PvP | 2v2, 3v3, RBG, Solo Shuffle and Blitz ratings of the current season, honor level, season wins, honorable kills, the Classic Era PvP rank and the PvP seasons of Classic Progression and Anniversary with their title cutoffs. |
 | Raids | Bosses defeated per difficulty in the current expansion, plus a lifetime total. |
 | Mythic+ | Season score, highest key, best runs, timed runs, weekly best key. |
 | Hall of Fame | One sensor per raid of the current expansion with the world first guild and the ranks of your own guilds. |
@@ -55,10 +55,10 @@ Each character is added with its game version. The integration only creates the 
 | Game version | API namespace | Basic | PvP | Raids | Mythic+ | Details | Collections | Guild | Hall of Fame |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Retail | `profile-{region}` | All | All except PvP rank | Yes | Yes | All | Yes | Yes | Yes |
-| Classic Progression (currently Mists of Pandaria) | `profile-classic-{region}` | All | 2v2, 3v3, wins, honorable kills | No | No | No professions, versatility, dungeons or active quests | No | Yes | No |
+| Classic Progression (currently Mists of Pandaria) | `profile-classic-{region}` | All | 2v2, 3v3, wins, honorable kills | No | No | No professions, versatility, dungeons or active quests | No | Yes, no crest | No |
 | Classic Anniversary (Burning Crusade) | `profile-classicann-{region}` | No achievement points | 2v2, 3v3, wins, honorable kills | No | No | Health, crit, haste, title, reputations, talents, hunter pets | No | Yes | No |
 | Classic Era (Vanilla) | `profile-classic1x-{region}` | No achievement points | Honorable kills, PvP rank | No | No | Health, crit, title, reputations, talents, hunter pets | No | Yes | No |
-| WoW Forever | `profile-forever-{region}` | All | Honorable kills, PvP rank | Normal progress, total kills | No | No versatility, haste or mastery | Mounts, pets, toys, heirlooms, transmogs | Yes | No |
+| WoW Forever | `profile-forever-{region}` | All | Honorable kills, PvP rank | Normal progress, total kills | No | No versatility, haste or mastery | Mounts, pets, toys, heirlooms, transmogs | Yes, no crest | No |
 
 The support per version was checked against the live API (EU, October 2026; WoW Forever November 2026). The WoW Token price is available for Retail and Classic Progression; Blizzard does not offer it for Classic Era and Anniversary.
 
@@ -113,6 +113,7 @@ config/
       api_client.py
       config_flow.py
       const.py
+      crest.py
       manifest.json
       event.py
       image.py
@@ -186,6 +187,8 @@ Each character becomes a device named `<Character> (<realm>)`, each realm become
 | Honor Level | `sensor.thrall_stormrage_honor_level` | PvP, Retail |
 | PvP Wins (Season) | `sensor.thrall_stormrage_pvp_wins_season` | Sum over the tracked brackets |
 
+Classic Progression and Anniversary characters get `title_cutoffs` on the 2v2 and 3v3 sensors instead: every title of the season (for example Gladiator, Duelist, Rival) with the rating it needs, highest first.
+
 The rated PvP sensors only count the current season. Blizzard returns the last season a character played; ratings from an older season show as 0, with the old rating in `last_season_rating`. Every bracket sensor has `season_played`, `season_won`, `season_lost`, `weekly_played` and `weekly_won`, and 3v3 / RBG show the `gladiator_cutoff` / `hero_cutoff`.
 
 With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail character played this season also get `leaderboard_rank` (place on the regional leaderboard, `null` if not on it), `leaderboard_entries` and `leaderboard_min_rating` (the rating needed to be listed). Blizzard only lists the best players of the region, about 5000 per bracket. Each leaderboard needed by one of your characters is downloaded once per hour (about 2 MB).
@@ -193,7 +196,7 @@ With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail
 | LFR / Normal / Heroic / Mythic Progress | `sensor.thrall_stormrage_mythic_progress` | Bosses defeated in the current expansion's raids |
 | Total Boss Kills | `sensor.thrall_stormrage_total_boss_kills` | Bosses defeated across all raids, lifetime |
 | M+ Score | `sensor.thrall_stormrage_m_score` | Current season |
-| Best M+ Level | `sensor.thrall_stormrage_best_m_level` | Highest key this season |
+| Best M+ Level | `sensor.thrall_stormrage_best_m_level` | Highest key this season; best key, timing and duration per dungeon in `best_runs` |
 | M+ Runs Completed | `sensor.thrall_stormrage_m_runs_completed` | Number of best runs the API reports this season, not all runs |
 | M+ Runs Timed | `sensor.thrall_stormrage_m_runs_timed` | Timed runs among those best runs |
 | Weekly Best M+ | `sensor.thrall_stormrage_weekly_best_m` | Highest key this week |
@@ -210,6 +213,7 @@ With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail
 | Deaths | `sensor.thrall_stormrage_deaths` | Details, lifetime |
 | Quests Completed | `sensor.thrall_stormrage_quests_completed` | Details, lifetime |
 | Active Quests | `sensor.thrall_stormrage_active_quests` | Details, Retail and WoW Forever; quest names in `quests` |
+| Achievements | `sensor.thrall_stormrage_achievements` | Details, Retail, Classic Progression and WoW Forever; `total_points` and the 10 most recent achievements in `recent_achievements`. The response is 1 to 3 MB, it is only fetched after a new login and at most every 6 hours |
 | Hunter Pet | `sensor.thrall_stormrage_hunter_pet` | Details, hunters only; summoned pet, all pets in `pets` |
 | Mounts / Pets / Toys / Heirlooms / Housing Decor | `sensor.thrall_stormrage_mounts` | Collections, Retail |
 | Transmog Appearances | `sensor.thrall_stormrage_transmog_appearances` | Collections, Retail and WoW Forever; `appearance_sets` and `appearances_per_slot` in attributes. The response can be several MB, it is only fetched after a new login and at most every 6 hours |
@@ -220,11 +224,11 @@ With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail
 | Guild Rank | `sensor.thrall_stormrage_guild_rank` | Guild; the character's rank number, 0 is the guild master (the API has no rank names) |
 | Guild Achievements | `sensor.thrall_stormrage_guild_achievements` | Guild, Retail and Classic Progression; `total_points`, progress per category and the 10 most recent achievements |
 
-Attributes on every character sensor: `character_name`, `realm`, `character_class`, `class_color`, `character_race`, `character_level`, `guild`, `faction`, `active_spec`, `last_login`, `game_version`, `category`.
+Attributes on every character sensor: `character_name`, `realm`, `character_class`, `class_color`, `character_race`, `gender`, `character_level`, `guild`, `faction`, `active_spec`, `last_login`, `game_version`, `category`.
 
 Raid difficulty sensors also have `expansion`, `total_bosses` and `raids`, which holds the per-raid progress, for example `{"The Dreamrift": "6/8"}`.
 
-The Equipment Details sensor lists the gear in `equipped_items` (keyed by slot, e.g. `head`, `trinket_1`) and `equipped_items_list`. Each item has `slot`, `name`, `item_id`, `icon` (image URL), `item_level`, `quality`, `quality_color` and `stats`. These two attributes are not written to the recorder database.
+The Equipment Details sensor lists the gear in `equipped_items` (keyed by slot, e.g. `head`, `trinket_1`) and `equipped_items_list`. Each item has `slot`, `name`, `item_id`, `icon` (image URL), `item_level`, `quality`, `quality_color`, `stats` and `transmog` (name of the transmogrified appearance, if any). These two attributes are not written to the recorder database.
 
 ### Character image
 
@@ -260,6 +264,7 @@ Region-wide data lives on the device `WoW <REGION>`, for example `WoW EU`.
 | Weekly Reset | `sensor.wow_eu_weekly_reset` | Timestamp of the next weekly reset (Retail) |
 | M+ Season | `sensor.wow_eu_m_season` | Mythic+, Retail; season ID, start and number of weeks in attributes |
 | PvP Season | `sensor.wow_eu_pvp_season` | PvP, Retail; season ID and start in attributes |
+| PvP Season (Classic) / (Anniversary) | `sensor.wow_eu_pvp_season_classic` | PvP, only with a character of that version; season number, start and `title_cutoffs` per bracket |
 | Gladiator Cutoff | `sensor.wow_eu_gladiator_cutoff` | 3v3 rating needed for Gladiator this season |
 | Hero Cutoff | `sensor.wow_eu_hero_cutoff` | RBG rating for Hero of the Alliance/Horde, per faction in attributes |
 | M+ Affixes | `sensor.wow_eu_m_affixes` | Mythic+ leaderboards only; affixes of the week with their starting key level |
@@ -294,6 +299,14 @@ automation:
             Guild kill: {{ state_attr('event.thrall_stormrage_guild_activity', 'encounter') }}
             ({{ state_attr('event.thrall_stormrage_guild_activity', 'difficulty_name') }})
 ```
+
+### Character achievements
+
+With character details enabled, every Retail, Classic Progression and WoW Forever character gets an event entity, e.g. `event.thrall_stormrage_achievements`. It fires `achievement` (attributes `achievement`, `achievement_id`, `timestamp`, `character`) for every new achievement. Blizzard updates achievements when the character logs out, and the integration checks them after a new login, so the event follows the logout.
+
+### Guild crest
+
+Each guild with a crest gets an image entity on the device of the first character in it, e.g. `image.thrall_stormrage_guild_crest`. The integration colors Blizzard's emblem and border images with the guild's colors. Classic Progression and WoW Forever guilds have no crest in the API.
 
 ### Battle.net account (optional)
 

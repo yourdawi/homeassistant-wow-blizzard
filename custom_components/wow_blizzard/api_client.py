@@ -448,9 +448,9 @@ class WoWBlizzardAPIClient:
         params = {"namespace": self.get_namespace("dynamic", game_version)}
         return await self._make_request("/data/wow/token/index", params)
 
-    async def get_current_pvp_season(self) -> Dict[str, Any]:
-        """Get the current Retail PvP season (id, name, start)."""
-        params = {"namespace": self.get_namespace("dynamic", "retail")}
+    async def get_current_pvp_season(self, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the current PvP season (id, name, start) of Retail or a Classic version."""
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
         index = await self._make_request("/data/wow/pvp-season/index", params)
         season_id = (index.get("current_season") or {}).get("id")
         if not isinstance(season_id, int):
@@ -466,10 +466,20 @@ class WoWBlizzardAPIClient:
             return {}
         return await self._make_request(f"/data/wow/mythic-keystone/season/{season_id}", params)
 
-    async def get_pvp_rewards(self, season_id: int) -> Dict[str, Any]:
+    async def get_pvp_rewards(self, season_id: int, game_version: str = "retail") -> Dict[str, Any]:
         """Get the rating cutoffs for the titles of a PvP season."""
-        params = {"namespace": self.get_namespace("dynamic", "retail")}
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
         return await self._make_request(f"/data/wow/pvp-season/{season_id}/pvp-reward/index", params)
+
+    async def get_guild_crest_index(self, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the guild crest colors (by ID) of a game version."""
+        params = {"namespace": self.get_namespace("static", game_version)}
+        return await self._make_request("/data/wow/guild-crest/index", params)
+
+    async def get_guild_crest_media(self, kind: str, media_id: int, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the image of a guild crest "emblem" or "border"."""
+        params = {"namespace": self.get_namespace("static", game_version)}
+        return await self._make_request(f"/data/wow/media/guild-crest/{kind}/{media_id}", params)
 
     async def get_pvp_leaderboard(self, season_id: int, bracket: str) -> Dict[str, Any]:
         """Get the top of a PvP leaderboard (up to about 5000 entries, about 2 MB)."""

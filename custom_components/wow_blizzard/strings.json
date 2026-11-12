@@ -198,6 +198,9 @@
     "image": {
       "character_full_body_render": {
         "name": "Full Body Render"
+      },
+      "guild_crest": {
+        "name": "Guild Crest"
       }
     },
     "sensor": {
@@ -350,6 +353,15 @@
       "guild_achievements": {
         "name": "Guild Achievements"
       },
+      "achievements_completed": {
+        "name": "Achievements"
+      },
+      "pvp_season_classic": {
+        "name": "PvP Season (Classic)"
+      },
+      "pvp_season_classicann": {
+        "name": "PvP Season (Anniversary)"
+      },
       "active_quests": {
         "name": "Active Quests"
       },
@@ -433,6 +445,16 @@
               "encounter": "Boss kill",
               "member_joined": "Member joined",
               "member_left": "Member left"
+            }
+          }
+        }
+      },
+      "character_achievements": {
+        "name": "Achievements",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "achievement": "New achievement"
             }
           }
         }

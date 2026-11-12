@@ -23,15 +23,14 @@ EVENT_TYPES = ACTIVITY_EVENT_TYPES + ROSTER_EVENT_TYPES
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up one guild activity event entity per guild of the configured characters."""
+    """Set up the guild activity event per guild and the achievement event per character."""
     coordinator: WoWDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    if not coordinator.features.get(CONF_ENABLE_GUILD, False):
-        return
-
     entities = []
     seen = set()
     feeds = (coordinator.data or {}).get("guild_activity") or {}
     rosters = (coordinator.data or {}).get("guild_roster_events") or {}
+    if not coordinator.features.get(CONF_ENABLE_GUILD, False):
+        feeds, rosters = {}, {}
     for character in coordinator.characters:
         char_data = (coordinator.data or {}).get(character["key"]) or {}
         guild_key = char_data.get("guild_key")
@@ -51,6 +50,19 @@ async def async_setup_entry(
                 character[CONF_GAME_VERSION],
             )
         )
+    # New achievements per character (character details)
+    for character in coordinator.characters:
+        char_data = (coordinator.data or {}).get(character["key"]) or {}
+        if "achievements_completed" in char_data:
+            entities.append(
+                WoWCharacterAchievementEvent(
+                    coordinator,
+                    character["key"],
+                    character[CONF_CHARACTER_NAME],
+                    character[CONF_REALM],
+                    character[CONF_GAME_VERSION],
+                )
+            )
     async_add_entities(entities)
 
 
@@ -137,6 +149,72 @@ class WoWGuildActivityEvent(CoordinatorEntity, EventEntity):
         self._last_roster_timestamp = self._fire_new(
             self._roster_events(), self._last_roster_timestamp, ROSTER_EVENT_TYPES
         )
+        super()._handle_coordinator_update()
+
+    @property
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {(DOMAIN, self._id_base)},
+            "name": f"{self._character_name} ({self._realm})",
+            "manufacturer": "Blizzard Entertainment",
+            "model": "World of Warcraft Character",
+            "sw_version": _game_version_label(self._game_version),
+        }
+
+
+class WoWCharacterAchievementEvent(CoordinatorEntity, EventEntity):
+    """Fires an event for every new achievement of a character."""
+
+    _attr_event_types = ["achievement"]
+
+    def __init__(
+        self,
+        coordinator: WoWDataUpdateCoordinator,
+        char_key: str,
+        character_name: str,
+        realm: str,
+        game_version: str,
+    ) -> None:
+        """Initialize the event entity."""
+        super().__init__(coordinator)
+        self._char_key = char_key
+        self._character_name = character_name
+        self._realm = realm
+        self._game_version = game_version
+        self._id_base = char_key.replace(f"{realm}-{character_name}", f"{realm}_{character_name}", 1)
+
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "character_achievements"
+        self._attr_unique_id = f"{DOMAIN}_{self._id_base}_achievement_event"
+        self._attr_icon = "mdi:trophy-award"
+        # Only achievements newer than what was there at startup are reported
+        self._last_timestamp = max((a.get("timestamp") or 0 for a in self._recent()), default=0)
+
+    def _recent(self) -> list[dict[str, Any]]:
+        """The character's most recent achievements (Blizzard lists the last 10)."""
+        char_data = (self.coordinator.data or {}).get(self._char_key) or {}
+        attrs = (char_data.get("attrs") or {}).get("achievements_completed") or {}
+        return attrs.get("recent_achievements") or []
+
+    async def async_added_to_hass(self) -> None:
+        """Start from the newest known achievement instead of "unknown" when first created."""
+        await super().async_added_to_hass()
+        if self.state is not None:
+            return
+        newest = next(iter(self._recent()), None)
+        if newest:
+            self._trigger_event("achievement", {**newest, "character": self._character_name})
+            self.async_write_ha_state()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Trigger an event for each achievement newer than the last one seen, oldest first."""
+        new = [a for a in self._recent() if (a.get("timestamp") or 0) > self._last_timestamp]
+        for achievement in sorted(new, key=lambda a: a.get("timestamp") or 0):
+            self._trigger_event("achievement", {**achievement, "character": self._character_name})
+        if new:
+            self._last_timestamp = max(a.get("timestamp") or 0 for a in new)
         super()._handle_coordinator_update()
 
     @property

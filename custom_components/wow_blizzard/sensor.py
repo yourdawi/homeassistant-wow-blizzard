@@ -89,6 +89,9 @@ from .parsers import (
     ACCOUNT_COLLECTIONS,
     count_collection,
     parse_active_quests,
+    parse_character_achievements,
+    parse_mythic_best_runs,
+    parse_title_cutoffs,
     parse_connected_realm_search,
     with_render_fallback,
     parse_pvp_leaderboard,
@@ -217,6 +220,11 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._class_names: Dict[str, Dict[int, str]] = {}
         # Account transmogs: (fetch time, parsed collection)
         self._account_transmogs: Optional[Any] = None
+        # Classic PvP seasons per game version: {"fetched", "season", "titles"}
+        self._classic_pvp_seasons: Dict[str, Dict[str, Any]] = {}
+        # Guild crests per guild key, crest colors per game version
+        self._guild_crests: Dict[str, Dict[str, Any]] = {}
+        self._crest_colors: Dict[str, Dict[str, Dict[int, Any]]] = {}
         # Current Mythic+ season: {"fetched", "season"}
         self._mythic_season: Dict[str, Any] = {}
         # PvP leaderboards per "season:bracket": (fetch time, ranks by character ID)
@@ -355,6 +363,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 "quality": quality.get("name", quality_type.title()),
                 "quality_color": ITEM_QUALITY_COLORS.get(quality_type, "#FFFFFF"),
                 "stats": stats,
+                # Transmogrified appearance, if any
+                "transmog": ((item.get("transmog") or {}).get("item") or {}).get("name"),
             })
         return items
 
@@ -491,7 +501,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             # Brackets report the last season the character played; older
             # seasons count as 0 for the current one (Retail only)
             current_season = (self._pvp_season.get("season") or {}).get("id") if game_version == "retail" else None
-            cutoffs = self._pvp_season.get("cutoffs") or {}
+            # Retail title cutoffs only for Retail; Classic seasons list several titles per bracket
+            cutoffs = (self._pvp_season.get("cutoffs") or {}) if game_version == "retail" else {}
+            title_cutoffs = (self._classic_pvp_seasons.get(game_version) or {}).get("titles") or {}
             faction = (basic.get("faction_type") or "").lower()
 
             wins_season = 0
@@ -523,7 +535,10 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                     "weekly_played": weekly_stats.get("played", 0),
                     "weekly_won": weekly_stats.get("won", 0),
                 }
-                if sensor == "pvp_3v3_rating":
+                classic_bracket = {"pvp_2v2_rating": "ARENA_2v2", "pvp_3v3_rating": "ARENA_3v3"}.get(sensor)
+                if classic_bracket and title_cutoffs.get(classic_bracket):
+                    attrs["title_cutoffs"] = title_cutoffs[classic_bracket]
+                if sensor == "pvp_3v3_rating" and game_version == "retail":
                     attrs["gladiator_cutoff"] = cutoffs.get("gladiator")
                 elif sensor == "pvp_rbg_rating":
                     attrs["hero_cutoff"] = (cutoffs.get("hero") or {}).get(faction)
@@ -651,6 +666,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                         weekly_best = max(run.get("keystone_level", 0) for run in weekly_runs)
 
             return {
+                "attrs": {"mythicplus_best_run": {
+                    "best_runs": parse_mythic_best_runs((season_data or {}).get("best_runs") or []),
+                }},
                 "mythicplus_score": score,
                 "mythicplus_best_run": best_run,
                 "mythicplus_runs_completed": runs_completed,
@@ -686,6 +704,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             ("encounters/dungeons", parse_dungeons, {"dungeons_completed"}),
             ("achievements/statistics", parse_achievement_statistics, {"deaths", "quests_completed"}),
             ("quests", parse_active_quests, {"active_quests"}),
+            # 1 to 3 MB, decoded off the event loop
+            ("achievements", parse_character_achievements, {"achievements_completed"}),
         ]
         if class_id == HUNTER_CLASS_ID:
             sources.append(("hunter-pets", parse_hunter_pets, {"hunter_pet"}))
@@ -694,7 +714,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         for resource, parser, sensors in sources:
             if not sensors & set(supported):
                 continue
-            data = await self.client.get_character_resource(realm, character_name, resource, game_version)
+            data = await self.client.get_character_resource(
+                realm, character_name, resource, game_version, parse_in_thread=resource == "achievements"
+            )
             if not data and self.client.last_status == 404 and resource in ("reputations", "encounters/dungeons"):
                 # Blizzard answers 404 when a character has none of these yet: that is 0, not unknown
                 data = {"_links": {}}
@@ -772,6 +794,10 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 "guild_created": _format_timestamp(guild.get("created_timestamp")),
             }},
         }
+        if guild.get("crest"):
+            # Shown as an image entity (not every game version has crests)
+            await self._guild_crest(cache_key, guild["crest"], game_version)
+
         # Recent achievements and boss kills, shown as events
         activity = await self.client.get_guild_activity(guild_path, game_version)
         if "activities" in activity:
@@ -910,8 +936,90 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
     def _is_fresh(cache: Optional[Any], seconds: int) -> bool:
         return cache is not None and datetime.now() - cache[0] < timedelta(seconds=seconds)
 
+    async def _fetch_classic_pvp_seasons(self) -> None:
+        """Current PvP seasons of Classic Progression and Anniversary with their title cutoffs."""
+        if not self.features.get(CONF_ENABLE_PVP, False):
+            return
+        versions = {c[CONF_GAME_VERSION] for c in self.characters} & {"classic", "classicann"}
+        for game_version in sorted(versions):
+            cached = self._classic_pvp_seasons.get(game_version) or {}
+            fetched = cached.get("fetched")
+            if fetched and datetime.now() - fetched < timedelta(seconds=PVP_SEASON_REFRESH_INTERVAL):
+                continue
+            season = await self.client.get_current_pvp_season(game_version)
+            if not season:
+                continue
+            rewards = await self.client.get_pvp_rewards(season["id"], game_version)
+            self._classic_pvp_seasons[game_version] = {
+                "fetched": datetime.now(),
+                "season": season,
+                "titles": parse_title_cutoffs(rewards) if rewards else cached.get("titles", {}),
+            }
+
+    def _classic_pvp_region_data(self) -> Dict[str, Any]:
+        """Region sensors for the Classic PvP seasons."""
+        result: Dict[str, Any] = {"attrs": {}}
+        for game_version, data in self._classic_pvp_seasons.items():
+            season = data.get("season") or {}
+            sensor = f"pvp_season_{game_version}"
+            # Classic seasons have no name, only a number
+            result[sensor] = season.get("season_name") or season.get("id")
+            result["attrs"][sensor] = {
+                "season_id": season.get("id"),
+                "season_start": _format_timestamp(season.get("season_start_timestamp")),
+                "title_cutoffs": {
+                    bracket.lower(): tiers for bracket, tiers in (data.get("titles") or {}).items()
+                },
+            }
+        return result if result["attrs"] else {}
+
+    async def _guild_crest(self, guild_key: str, crest: Dict[str, Any], game_version: str) -> Optional[Dict[str, Any]]:
+        """Image URLs and colors of a guild crest; colors without RGB come from the crest index."""
+        emblem_id = (crest.get("emblem") or {}).get("id")
+        border_id = (crest.get("border") or {}).get("id")
+        if not isinstance(emblem_id, int) or not isinstance(border_id, int):
+            return None
+
+        async def color(part: str, group: str) -> Optional[list]:
+            value = ((crest.get(part) or {}).get("color") or {})
+            rgba = value.get("rgba")
+            if not rgba and isinstance(value.get("id"), int):
+                # Classic crests only carry color IDs
+                if game_version not in self._crest_colors:
+                    index = await self.client.get_guild_crest_index(game_version)
+                    if not index.get("colors") and game_version != "retail":
+                        # Era and Anniversary list no colors; their IDs are the Retail palette
+                        index = await self.client.get_guild_crest_index("retail")
+                    self._crest_colors[game_version] = {
+                        name: {c.get("id"): c.get("rgba") for c in colors or []}
+                        for name, colors in (index.get("colors") or {}).items()
+                    }
+                rgba = (self._crest_colors.get(game_version, {}).get(group) or {}).get(value["id"])
+            return [rgba.get("r", 0), rgba.get("g", 0), rgba.get("b", 0)] if rgba else None
+
+        async def image(kind: str, media_id: int) -> Optional[str]:
+            media = await self.client.get_guild_crest_media(kind, media_id, game_version)
+            return next((a.get("value") for a in media.get("assets") or [] if a.get("key") == "image"), None)
+
+        previous = self._guild_crests.get(guild_key)
+        if previous and previous.get("source") == crest:
+            return previous
+        parts = {
+            "source": crest,
+            "emblem_url": await image("emblem", emblem_id),
+            "border_url": await image("border", border_id),
+            "emblem_color": await color("emblem", "emblems"),
+            "border_color": await color("border", "borders"),
+            "background_color": await color("background", "backgrounds"),
+        }
+        if not (parts["emblem_url"] and parts["border_url"]):
+            return previous
+        self._guild_crests[guild_key] = parts
+        return parts
+
     async def _fetch_pvp_season(self) -> None:
         """Current Retail PvP season and its title cutoffs, refreshed every few hours."""
+        await self._fetch_classic_pvp_seasons()
         if not self.features.get(CONF_ENABLE_PVP, False) or not self.has_retail:
             return
         fetched = self._pvp_season.get("fetched")
@@ -1265,13 +1373,11 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                     guild_data = {**guild_data, "guild_rank": guild_rank}
 
                 # Combine all character data
-                char_data = {
-                    **basic_data,
-                    **pvp_data,
-                    **raid_data,
-                    **mythicplus_data,
-                }
                 # Per-sensor attributes are merged, not overwritten
+                char_data = {**basic_data}
+                _merge(char_data, pvp_data)
+                _merge(char_data, raid_data)
+                _merge(char_data, mythicplus_data)
                 _merge(char_data, slow_data)
                 _merge(char_data, guild_data)
                 all_data[char_key] = char_data
@@ -1304,6 +1410,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
             region_data = await self._fetch_region_data()
             _merge(region_data, self._pvp_region_data())
+            _merge(region_data, self._classic_pvp_region_data())
             _merge(region_data, await self._mythic_season_region_data())
 
             leaderboards = await self._fetch_mythic_leaderboards()
@@ -1316,6 +1423,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             all_data["auctions"] = await self._fetch_auctions() or self._previous("auctions")
             all_data["guild_activity"] = dict(self._guild_activity)
             all_data["guild_roster_events"] = dict(self._guild_roster_events)
+            all_data["guild_crests"] = dict(self._guild_crests)
 
             account = await self._fetch_account_data()
             if self.hass is not None:
@@ -1558,6 +1666,11 @@ async def async_setup_entry(
     if features[CONF_ENABLE_MYTHIC_PLUS] and coordinator.has_retail:
         entities.append(WoWRegionSensor(coordinator, "mythicplus_season", entry.entry_id))
 
+    # PvP seasons of Classic Progression and Anniversary
+    if features[CONF_ENABLE_PVP]:
+        for game_version in sorted({c[CONF_GAME_VERSION] for c in coordinator.characters} & {"classic", "classicann"}):
+            entities.append(WoWRegionSensor(coordinator, f"pvp_season_{game_version}", entry.entry_id))
+
     # PvP season and title cutoffs (Retail)
     if features[CONF_ENABLE_PVP] and coordinator.has_retail:
         for sensor_type in ("pvp_season", "pvp_cutoff_gladiator", "pvp_cutoff_hero"):
@@ -1598,7 +1711,7 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
     _unrecorded_attributes = frozenset({
         "equipped_items", "equipped_items_list", "factions", "professions",
         "talent_list", "talent_points", "glyphs", "loadout_code", "dungeons", "pets",
-        "categories", "recent_achievements", "quests", "appearances_per_slot",
+        "categories", "recent_achievements", "quests", "appearances_per_slot", "best_runs",
     })
 
     def __init__(
@@ -1671,6 +1784,7 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
             "last_login": _format_timestamp(char_data.get("last_login_timestamp")),
             "faction": char_data.get("faction"),
             "active_spec": char_data.get("spec"),
+            "gender": char_data.get("gender"),
             "game_version": self._game_version,
             "avatar_url": char_data.get("avatar_url"),
             "full_body_url": char_data.get("full_body_url"),
