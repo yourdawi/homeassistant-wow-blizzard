@@ -17,3 +17,19 @@ jobs:
         uses: hacs/action@main
         with:
           category: integration
+
+  build-cards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cards/package-lock.json
+      - name: Type check and build the dashboard cards
+        working-directory: cards
+        run: |
+          npm ci
+          npm run build
+          test -s ../custom_components/wow_blizzard/www/wow-cards.js

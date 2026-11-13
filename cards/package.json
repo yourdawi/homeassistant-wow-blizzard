@@ -1,0 +1,19 @@
+{
+  "name": "wow-blizzard-cards",
+  "description": "Dashboard cards of the World of Warcraft integration",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "lit": "^3.3.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  }
+}

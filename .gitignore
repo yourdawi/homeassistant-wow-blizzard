@@ -26,3 +26,7 @@ Thumbs.db
 
 # Local Battle.net API documentation
 documentation/
+
+# Dashboard cards: dependencies, and the bundle the release workflow builds
+node_modules/
+custom_components/wow_blizzard/www/

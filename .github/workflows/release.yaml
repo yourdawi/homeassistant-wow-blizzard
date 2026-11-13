@@ -29,6 +29,18 @@ jobs:
           print("version:", manifest["version"])
           PY
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cards/package-lock.json
+
+      - name: Build the dashboard cards
+        working-directory: cards
+        run: |
+          npm ci
+          npm run build
+
       - name: Build wow_blizzard.zip
         run: |
           cd custom_components/wow_blizzard

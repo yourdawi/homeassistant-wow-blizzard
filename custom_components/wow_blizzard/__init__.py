@@ -7,10 +7,11 @@ from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry, ConfigSuben
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import config_validation as cv, issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     CONF_ACCOUNT_TOKEN,
@@ -53,6 +54,7 @@ from .account import (
     is_account_entry,
     reload_gold_entries,
 )
+from .frontend import async_register_cards
 from .sensor import assign_character_keys, assign_realm_keys, async_create_coordinator, cache_store_key
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,6 +62,15 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.IMAGE, Platform.EVENT]
 # The Battle.net account entry only has sensors
 ACCOUNT_PLATFORMS: list[Platform] = [Platform.SENSOR]
+
+# Set up from the UI only
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Make the dashboard cards available."""
+    await async_register_cards(hass)
+    return True
 
 
 def _strip_cached_realms(hass: HomeAssistant, entry: ConfigEntry) -> None:

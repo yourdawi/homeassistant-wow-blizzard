@@ -5,7 +5,7 @@
   "categories": ["media_entertainment.gaming"],
   "codeowners": ["@yourdawi"],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["frontend", "http"],
   "documentation": "https://github.com/yourdawi/homeassistant-wow-blizzard",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/yourdawi/homeassistant-wow-blizzard/issues",

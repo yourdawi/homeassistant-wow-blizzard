@@ -21,6 +21,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 - [Configuration](#configuration)
 - [Entities](#entities)
 - [Hall of Fame](#hall-of-fame)
+- [Dashboard cards](#dashboard-cards)
 - [Examples](#examples)
 - [Update behavior](#update-behavior)
 - [Troubleshooting](#troubleshooting)
@@ -45,6 +46,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 | Mythic+ leaderboards (opt-in) | Best key of the week per realm, with the best runs of your characters. |
 | PvP leaderboards (opt-in) | Rank of your characters on the regional 2v2, 3v3, RBG, Solo Shuffle and Blitz leaderboards. |
 | Auction house | Lowest price for item IDs you choose (Retail commodities and realm auctions, Classic Progression realm auctions). |
+| Dashboard cards | A character card in the style of the in-game UI, with render, stats, progress and equipment. Included, no extra download. |
 | Battle.net account (optional) | Its own entry: import characters by logging in with Battle.net. While the login is valid (24 hours): gold per Retail character, total gold, account mounts, pets, toys, heirlooms and transmog appearances. |
 
 Numeric sensors have the `measurement` state class, so Home Assistant keeps long-term statistics and you can graph them (for example a leveling race).
@@ -238,7 +240,7 @@ Attributes on every character sensor: `character_name`, `realm`, `character_clas
 
 Raid difficulty sensors also have `expansion`, `total_bosses` and `raids`, which holds the per-raid progress, for example `{"The Dreamrift": "6/8"}`.
 
-The Equipment Details sensor lists the gear in `equipped_items` (keyed by slot, e.g. `head`, `trinket_1`) and `equipped_items_list`. Each item has `slot`, `name`, `item_id`, `icon` (image URL), `item_level`, `quality`, `quality_color`, `stats` and `transmog` (name of the transmogrified appearance, if any). These two attributes are not written to the recorder database.
+The Equipment Details sensor lists the gear in `equipped_items` (keyed by slot, e.g. `head`, `trinket_1`) and `equipped_items_list`. Each item has `slot`, `name`, `item_id`, `icon` (image URL), `item_level` (from the item itself in Classic, whose equipment has none; `null` if Blizzard returns none), `quality`, `quality_color`, `stats` and `transmog` (name of the transmogrified appearance, if any). These two attributes are not written to the recorder database.
 
 ### Character image
 
@@ -337,6 +339,47 @@ The Hall of Fame shows the first guilds worldwide to defeat a raid on Mythic. Th
 - Hall of Fame data is only fetched when at least one Retail character is configured.
 
 The website only accepts a fixed set of pre-registered (persisted) queries. When Blizzard changes them, the integration reads the current query IDs from the website's script bundle and retries. If the website itself is restructured, the Hall of Fame may break until the integration is updated.
+
+## Dashboard cards
+
+The integration includes its own dashboard cards. They load with the integration, so you do not need to download anything or add a dashboard resource. After installing or updating, reload the browser once.
+
+### Character card
+
+Edit a dashboard, select **Add card** and choose **WoW Character** (under the community cards). Pick a character; the card finds its entities on its own.
+
+```yaml
+type: custom:wow-character-card
+device: 270f6e8b30eed0c326a3891a590356e8
+show_equipment: true
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `device` | – | The character device. Required. The editor only lists World of Warcraft characters. |
+| `show_render` | `true` | Shows the character render in the background, or between the item slots. |
+| `show_stats` | `true` | Shows achievement points, honorable kills and PvP ratings. Ratings of 0 are hidden. |
+| `show_progress` | `true` | Shows raid progress per difficulty and the Mythic+ rating with the best key of the week. |
+| `show_equipment` | `false` | Shows the equipped items like the in-game character window. Hover an item for its name. |
+
+The card only shows values whose entities exist and are enabled. Classic characters, for example, have no Mythic+ entities, so that part is left out. Select the header, a stat or a progress bar to open the entity's history.
+
+The card texts are in English and German, following the language of your Home Assistant profile. Names, classes and titles come from the Blizzard API in the language set for the integration.
+
+### Card styling
+
+All colors are CSS custom properties, so a theme or card-mod can change them:
+
+| Property | Default | Used for |
+| --- | --- | --- |
+| `--wow-gold` | `#c8a95c` | Frame corners, values, titles |
+| `--wow-panel` / `--wow-panel-2` | `#0d0f14` / `#181b24` | Background |
+| `--wow-text` / `--wow-text-dim` | `#f2ead7` / `#a59e8c` | Text |
+| `--wow-guild` | `#40ff40` | Guild name |
+| `--wow-alliance` / `--wow-horde` | `#2f6fd6` / `#c4232b` | Faction glow |
+| `--wow-heading-font` | Friz Quadrata, Georgia, serif | Names and large numbers |
+
+The cards ship no fonts or textures and load no code from other sites. Pictures (portraits, renders, item icons) come from Blizzard's render server, the same addresses the entities use.
 
 ## Examples
 
@@ -512,6 +555,16 @@ Bug reports and feature requests are welcome in the [issue tracker](https://gith
 - Relevant log lines with debug logging enabled
 
 Pull requests are welcome as well.
+
+The dashboard cards are written in TypeScript with Lit in [`cards/`](cards). Build them with Node.js 22 or newer:
+
+```bash
+cd cards
+npm install
+npm run build
+```
+
+The build writes `custom_components/wow_blizzard/www/wow-cards.js`, which the release workflow builds for every release. `npm run watch` rebuilds on every change. Restart Home Assistant to serve a new build under a new cache key, then reload the browser.
 
 ## License
 
