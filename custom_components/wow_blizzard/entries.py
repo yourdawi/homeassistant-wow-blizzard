@@ -183,10 +183,14 @@ def realm_title(realm_slug: str) -> str:
 
 
 def _device_entries(device: dr.DeviceEntry) -> set:
-    """Config entries of a device (one per device in newer Home Assistant versions)."""
-    if hasattr(device, "config_entries"):
-        return set(device.config_entries)
-    return {getattr(device, "config_entry_id", None)} - {None}
+    """Config entries of a device.
+
+    Newer Home Assistant versions link a device to one entry (config_entry_id) and
+    deprecate config_entries, so that is only read on versions without the new field.
+    """
+    if hasattr(device, "config_entry_id"):
+        return {device.config_entry_id} - {None}
+    return set(device.config_entries)
 
 
 async def async_cleanup_devices(hass: HomeAssistant, current_entry_id: str) -> None:
@@ -209,7 +213,13 @@ async def async_cleanup_devices(hass: HomeAssistant, current_entry_id: str) -> N
     our_entries = {entry.entry_id for entry in entries if not entry.disabled_by}
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
-    for device in list(device_registry.devices.values()):
+    # Only devices of our entries; the registry is no longer read as a mapping
+    devices = {
+        device.id: device
+        for entry_id in our_entries
+        for device in dr.async_entries_for_config_entry(device_registry, entry_id)
+    }
+    for device in devices.values():
         linked = _device_entries(device)
         if not linked & our_entries or linked - our_entries & {e.entry_id for e in entries}:
             continue
