@@ -399,7 +399,7 @@ function achievementList(ctx: SectionContext, items: Achievement[]): Content {
 
 const achievements: Renderer = (ctx) => {
   const top = tiles(ctx, [
-    tile(ctx, "achievement_points", "achievement_points", { accent: "var(--wow-gold)" }),
+    tile(ctx, "achievement_points", "achievement_points_long", { accent: "var(--wow-gold)" }),
     tile(ctx, "achievements_completed", "achievements_completed"),
   ]);
   let recent = (attr(ctx, "achievements_completed", "recent_achievements") ?? []) as Achievement[];
