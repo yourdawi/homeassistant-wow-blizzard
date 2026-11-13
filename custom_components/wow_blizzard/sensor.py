@@ -230,7 +230,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         # Connected realm ID per (realm, game version); icons per (version, item ID)
         self._connected_realms: Dict[Any, int] = {}
         self._item_icons: Dict[Any, Optional[str]] = {}
-        self._item_names: Dict[Any, Optional[str]] = {}
+        self._item_names: Dict[Any, Optional[Dict[str, Any]]] = {}
+        # Item level per (version, item ID), for Classic, whose equipment has none
+        self._item_levels: Dict[Any, int] = {}
         # Hourly data: (fetch time, data)
         self._leaderboard_cache: Optional[Any] = None
         self._auction_cache: Optional[Any] = None
@@ -310,6 +312,11 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             icons = await asyncio.gather(*(self._item_icon(i.get("media_id"), game_version) for i in equipped_items_list))
             for item, icon in zip(equipped_items_list, icons):
                 item["icon"] = icon
+            # Classic equipment has no item level; the item itself has it
+            missing = [i for i in equipped_items_list if i["item_level"] is None]
+            levels = await asyncio.gather(*(self._item_level(i.get("item_id"), game_version) for i in missing))
+            for item, level in zip(missing, levels):
+                item["item_level"] = level
 
             character_class = profile.get("character_class") or {}
             result = {
@@ -378,7 +385,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 "name": item.get("name", "Unknown Item"),
                 "item_id": (item.get("item") or {}).get("id"),
                 "media_id": (item.get("media") or {}).get("id"),
-                "item_level": (item.get("level") or {}).get("value", 0),
+                # Missing in Classic; filled in from the item afterwards
+                "item_level": (item.get("level") or {}).get("value"),
                 "quality": quality.get("name", quality_type.title()),
                 "quality_color": ITEM_QUALITY_COLORS.get(quality_type, "#FFFFFF"),
                 "stats": stats,
@@ -950,6 +958,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
     def _cache_data(self) -> Dict[str, Any]:
         return {
             "item_icons": {f"{k[0]}:{k[1]}": v for k, v in self._item_icons.items()},
+            "item_levels": {f"{k[0]}:{k[1]}": v for k, v in self._item_levels.items()},
             "slow": {
                 char_key: [last_login, fetched.isoformat(), data]
                 for char_key, (last_login, fetched, data) in self._slow_cache.items()
@@ -964,6 +973,10 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             flavor, _, media_id = key.partition(":")
             if media_id.isdigit():
                 self._item_icons[(flavor, int(media_id))] = url
+        for key, level in (stored.get("item_levels") or {}).items():
+            version, _, item_id = key.partition(":")
+            if item_id.isdigit() and isinstance(level, int):
+                self._item_levels[(version, int(item_id))] = level
         known = {c["key"] for c in self.characters}
         for char_key, (last_login, fetched, data) in (stored.get("slow") or {}).items():
             if char_key in known:
@@ -972,14 +985,33 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 except (TypeError, ValueError):
                     continue
 
-    async def _item_name(self, item_id: int, game_version: str) -> Optional[str]:
-        """Localized item name, cached for the runtime."""
+    async def _item_level(self, item_id: Optional[int], game_version: str) -> Optional[int]:
+        """Item level of an item, cached across restarts (it is fixed per item in Classic)."""
+        if not isinstance(item_id, int):
+            return None
+        key = (game_version, item_id)
+        if key not in self._item_levels:
+            item = await self.client.get_item(item_id, game_version)
+            level = (item or {}).get("level")
+            if not isinstance(level, int):
+                # Do not cache failures, retry on the next update
+                return None
+            self._item_levels[key] = level
+            self._schedule_cache_save()
+        return self._item_levels[key]
+
+    async def _item_info(self, item_id: int, game_version: str) -> Optional[Dict[str, Any]]:
+        """Localized name, quality and media ID of an item, cached for the runtime."""
         key = (game_version, item_id)
         if key not in self._item_names:
             item = await self.client.get_item(item_id, game_version)
             if not item:
                 return None
-            self._item_names[key] = item.get("name")
+            self._item_names[key] = {
+                "name": item.get("name"),
+                "quality": ((item.get("quality") or {}).get("type") or "").upper() or None,
+                "media_id": (item.get("media") or {}).get("id"),
+            }
         return self._item_names[key]
 
     async def _connected_realm(self, realm: str, game_version: str) -> Optional[int]:
@@ -1271,6 +1303,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
             for item_id in self.auction_items:
                 entry = found.get(item_id) or {"min_price": None, "quantity": 0, "auctions": 0, "sources": {}}
+                info = await self._item_info(item_id, game_version) or {}
                 result[f"{game_version}:{item_id}"] = {
                     # Copper to gold, keeping silver and copper as decimals
                     "price": round(entry["min_price"] / 10000, 4) if entry["min_price"] is not None else None,
@@ -1280,7 +1313,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                         source: round(price / 10000, 4) if price is not None else None
                         for source, price in entry["sources"].items()
                     },
-                    "item_name": await self._item_name(item_id, game_version),
+                    "item_name": info.get("name"),
+                    "item_icon": await self._item_icon(info.get("media_id"), game_version),
+                    "quality": info.get("quality"),
                 }
 
         self._auction_cache = (datetime.now(), result)
@@ -1740,6 +1775,8 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
             "last_update": self.coordinator.last_update_success,
             "last_login": _format_timestamp(char_data.get("last_login_timestamp")),
             "faction": char_data.get("faction"),
+            # Language-independent: "ALLIANCE", "HORDE" or "NEUTRAL"
+            "faction_type": char_data.get("faction_type"),
             "active_spec": char_data.get("spec"),
             "gender": char_data.get("gender"),
             "game_version": self._game_version,
@@ -1912,8 +1949,15 @@ class WoWServerSensor(CoordinatorEntity, SensorEntity):
         }
 
 
+# Guilds of the Hall of Fame listed in the top_guilds attribute
+HOF_TOP_GUILDS = 10
+
+
 class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
     """Representation of a WoW Mythic Raid Hall of Fame leaderboard sensor."""
+
+    # The top list only changes while a raid is new; keep it out of the recorder
+    _unrecorded_attributes = frozenset({"top_guilds"})
 
     def __init__(
         self,
@@ -1976,6 +2020,7 @@ class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
             "last_guild_timestamp": None,
             "last_guild_timestamp_formatted": None,
             "character_guild_ranks": {},
+            "top_guilds": [],
         }
 
         if not leaderboard:
@@ -1999,6 +2044,17 @@ class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
             attributes["last_guild_rank"] = last_entry.get("rank")
             attributes["last_guild_timestamp"] = last_entry.get("timestamp")
             attributes["last_guild_timestamp_formatted"] = _format_timestamp(last_entry.get("timestamp"))
+            attributes["top_guilds"] = [
+                {
+                    "rank": entry.get("rank"),
+                    "guild": (entry.get("guild") or {}).get("name"),
+                    "realm": ((entry.get("guild") or {}).get("realm") or {}).get("name"),
+                    "region": str(entry.get("region") or "").upper(),
+                    "faction": ((entry.get("faction") or {}).get("type") or "").upper() or None,
+                    "timestamp": entry.get("timestamp"),
+                }
+                for entry in entries[:HOF_TOP_GUILDS]
+            ]
 
         # Map configured retail characters to their guild rank
         char_ranks = {}
@@ -2166,6 +2222,11 @@ class WoWAuctionSensor(CoordinatorEntity, SensorEntity):
         return self._auction.get("price")
 
     @property
+    def entity_picture(self) -> Optional[str]:
+        """The item icon."""
+        return self._auction.get("item_icon")
+
+    @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return additional state attributes."""
         auction = self._auction
@@ -2175,6 +2236,9 @@ class WoWAuctionSensor(CoordinatorEntity, SensorEntity):
             "quantity": auction.get("quantity"),
             "auctions": auction.get("auctions"),
             "sources": auction.get("sources", {}),
+            "item_icon": auction.get("item_icon"),
+            "quality": auction.get("quality"),
+            "quality_color": ITEM_QUALITY_COLORS.get(auction.get("quality") or "", None),
             "category": "auction",
         }
 

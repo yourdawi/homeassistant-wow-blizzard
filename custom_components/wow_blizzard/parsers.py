@@ -4,6 +4,7 @@ from urllib.parse import unquote
 from typing import Any, Dict, Optional
 
 from .api_client import WoWBlizzardAPIClient
+from .const import CLASS_COLORS
 
 # Achievement statistic IDs (stable across locales)
 STATISTIC_TOTAL_DEATHS = 60
@@ -560,12 +561,16 @@ def parse_guild_roster(data: Dict[str, Any], class_names: Dict[int, str]) -> Dic
     max_level = max(levels) if levels else None
     by_rank: Dict[int, int] = {}
     by_class: Dict[str, int] = {}
+    # Class color per class name, so cards can color the localized names
+    class_colors: Dict[str, str] = {}
     by_class_max: Dict[str, int] = {}
     for member in members.values():
         if isinstance(member["rank"], int):
             by_rank[member["rank"]] = by_rank.get(member["rank"], 0) + 1
         class_name = class_names.get(member["class_id"]) or str(member["class_id"])
         by_class[class_name] = by_class.get(class_name, 0) + 1
+        if member["class_id"] in CLASS_COLORS:
+            class_colors[class_name] = CLASS_COLORS[member["class_id"]]
         if max_level is not None and member["level"] == max_level:
             by_class_max[class_name] = by_class_max.get(class_name, 0) + 1
 
@@ -576,11 +581,13 @@ def parse_guild_roster(data: Dict[str, Any], class_names: Dict[int, str]) -> Dic
             "guild_members": {
                 "members_by_rank": dict(sorted(by_rank.items())),
                 "members_by_class": dict(sorted(by_class.items(), key=lambda i: -i[1])),
+                "class_colors": class_colors,
                 "guild_master": guild_master["name"] if guild_master else None,
             },
             "guild_max_level_members": {
                 "max_level": max_level,
                 "members_by_class": dict(sorted(by_class_max.items(), key=lambda i: -i[1])),
+                "class_colors": class_colors,
             },
         },
     }}

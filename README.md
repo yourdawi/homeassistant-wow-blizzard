@@ -21,7 +21,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 - [Configuration](#configuration)
 - [Entities](#entities)
 - [Hall of Fame](#hall-of-fame)
-- [Examples](#examples)
+- [Dashboard cards](#dashboard-cards)
 - [Update behavior](#update-behavior)
 - [Troubleshooting](#troubleshooting)
 - [Known limitations](#known-limitations)
@@ -45,6 +45,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 | Mythic+ leaderboards (opt-in) | Best key of the week per realm, with the best runs of your characters. |
 | PvP leaderboards (opt-in) | Rank of your characters on the regional 2v2, 3v3, RBG, Solo Shuffle and Blitz leaderboards. |
 | Auction house | Lowest price for item IDs you choose (Retail commodities and realm auctions, Classic Progression realm auctions). |
+| Dashboard cards | Cards in the style of the in-game UI for characters, guilds, the Battle.net account, realms, the auction house and the Hall of Fame. Included, no extra download. |
 | Battle.net account (optional) | Its own entry: import characters by logging in with Battle.net. While the login is valid (24 hours): gold per Retail character, total gold, account mounts, pets, toys, heirlooms and transmog appearances. |
 
 Numeric sensors have the `measurement` state class, so Home Assistant keeps long-term statistics and you can graph them (for example a leveling race).
@@ -229,8 +230,8 @@ With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail
 | Transmog Appearances | `sensor.thrall_stormrage_transmog_appearances` | Collections, Retail and WoW Forever; `appearance_sets` and `appearances_per_slot` in attributes. The response can be several MB, it is only fetched after a new login and at most every 6 hours |
 | Solo Shuffle Rating / Blitz Rating | `sensor.thrall_stormrage_solo_shuffle_rating` | PvP, Retail, for the active specialization; `legend_cutoff` attribute |
 | Gold | `sensor.thrall_stormrage_gold` | Retail, with the Battle.net Account entry; gold gained/lost, deaths, location and hearthstone in attributes |
-| Guild Members | `sensor.thrall_stormrage_guild_members` | Guild, only for characters in a guild; achievement points, realm, faction, creation date, guild master and members per rank and class in attributes |
-| Guild Members at Max Level | `sensor.thrall_stormrage_guild_members_at_max_level` | Guild; members at the highest level in the guild (`max_level`), per class in `members_by_class` |
+| Guild Members | `sensor.thrall_stormrage_guild_members` | Guild, only for characters in a guild; achievement points, realm, faction, creation date, guild master and members per rank and class in attributes, with the color of each class in `class_colors` |
+| Guild Members at Max Level | `sensor.thrall_stormrage_guild_members_at_max_level` | Guild; members at the highest level in the guild (`max_level`), per class in `members_by_class`, class colors in `class_colors` |
 | Guild Rank | `sensor.thrall_stormrage_guild_rank` | Guild; the character's rank number, 0 is the guild master (the API has no rank names) |
 | Guild Achievements | `sensor.thrall_stormrage_guild_achievements` | Guild, Retail and Classic Progression; `total_points`, progress per category and the 10 most recent achievements |
 
@@ -238,7 +239,7 @@ Attributes on every character sensor: `character_name`, `realm`, `character_clas
 
 Raid difficulty sensors also have `expansion`, `total_bosses` and `raids`, which holds the per-raid progress, for example `{"The Dreamrift": "6/8"}`.
 
-The Equipment Details sensor lists the gear in `equipped_items` (keyed by slot, e.g. `head`, `trinket_1`) and `equipped_items_list`. Each item has `slot`, `name`, `item_id`, `icon` (image URL), `item_level`, `quality`, `quality_color`, `stats` and `transmog` (name of the transmogrified appearance, if any). These two attributes are not written to the recorder database.
+The Equipment Details sensor lists the gear in `equipped_items` (keyed by slot, e.g. `head`, `trinket_1`) and `equipped_items_list`. Each item has `slot`, `name`, `item_id`, `icon` (image URL), `item_level` (from the item itself in Classic, whose equipment has none; `null` if Blizzard returns none), `quality`, `quality_color`, `stats` and `transmog` (name of the transmogrified appearance, if any). These two attributes are not written to the recorder database.
 
 ### Character image
 
@@ -285,7 +286,7 @@ With **Mythic+ leaderboards** enabled, every Retail realm device gets `Best M+ K
 
 ### Auction house
 
-Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, named after the item, with the lowest price per item in gold (silver and copper as decimals). Attributes: `quantity` (items listed), `auctions`, and `sources` (lowest price per source). Retail looks in the region-wide commodity market first and in the auctions of your characters' realms for everything else; Classic Progression uses the realms of your Classic Progression characters. Classic Era and Anniversary auctions are not available in the API. The data is refreshed hourly; the Retail commodity market alone is about 30 MB, so only add the auction house if you need it.
+Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, named after the item, with the lowest price per item in gold (silver and copper as decimals). Attributes: `quantity` (items listed), `auctions`, `sources` (lowest price per source), `item_icon`, `quality` and `quality_color`; the icon is also the entity picture. Retail looks in the region-wide commodity market first and in the auctions of your characters' realms for everything else; Classic Progression uses the realms of your Classic Progression characters. Classic Era and Anniversary auctions are not available in the API. The data is refreshed hourly; the Retail commodity market alone is about 30 MB, so only add the auction house if you need it.
 
 ### Guild activity
 
@@ -332,125 +333,145 @@ The Hall of Fame shows the first guilds worldwide to defeat a raid on Mythic. Th
 
 - The raids of the newest expansion are discovered on their own and refreshed every 24 hours. New raids show up after the next reload of the integration.
 - The sensor state is the name of the world first guild, or `Pending` while nobody has cleared the raid.
-- Attributes: `world_first_guild`, `world_first_realm`, `world_first_region`, `world_first_timestamp_formatted`, `last_guild_name`, `last_guild_rank`, `total_entries`, `completed` (the list is full), `info_url` (link to the official page) and `character_guild_ranks` (rank of each configured Retail character's guild, if listed).
+- Attributes: `world_first_guild`, `world_first_realm`, `world_first_region`, `world_first_timestamp_formatted`, `last_guild_name`, `last_guild_rank`, `total_entries`, `completed` (the list is full), `info_url` (link to the official page) `character_guild_ranks` (rank of each configured Retail character's guild, if listed) and `top_guilds` (the first 10 guilds with rank, realm, region and time).
 - Leaderboards are cached for 2 hours while the race is on and kept once the list is full.
 - Hall of Fame data is only fetched when at least one Retail character is configured.
 
 The website only accepts a fixed set of pre-registered (persisted) queries. When Blizzard changes them, the integration reads the current query IDs from the website's script bundle and retries. If the website itself is restructured, the Hall of Fame may break until the integration is updated.
 
-## Examples
+## Dashboard cards
 
-### Dashboard: characters
+The integration includes its own dashboard cards. They load with the integration, so you do not need to download anything or add a dashboard resource. After installing or updating, reload the browser once.
 
-```yaml
-type: entities
-title: Characters
-entities:
-  - entity: sensor.thrall_stormrage_level
-    name: Thrall - Level
-  - entity: sensor.thrall_stormrage_item_level
-    name: Thrall - Item Level
-  - entity: sensor.jaina_stormrage_level
-    name: Jaina - Level
-```
+The screenshots show made-up data, not real characters.
 
-### Dashboard: leveling race
+### Character card
+
+Edit a dashboard, select **Add card** and choose **WoW Character** (under the community cards). Pick a character, then choose its sections under **Sections**. The list only offers the sections the character has data for, so a Classic character has no Mythic+ section. Drag the sections to change their order.
+
+<img width="30%" alt="Character card with overview, progress and equipment" src="https://github.com/user-attachments/assets/2462c32f-ece8-4c35-9b5a-15d78c21e77c" />
+<img width="30%" alt="Character card with attributes, talents, Mythic+ and raids" src="https://github.com/user-attachments/assets/1cf1f766-5b86-4d19-b28a-82a3a3bb5ef7" />
+<img width="30%" alt="Character card with PvP, professions, collections, achievements and activity" src="https://github.com/user-attachments/assets/c423fefe-c48c-4830-96f4-4f6991778467" />
 
 ```yaml
-type: history-graph
-title: Leveling race
-hours_to_show: 168
-entities:
-  - entity: sensor.thrall_stormrage_level
-  - entity: sensor.jaina_stormrage_level
+type: custom:wow-character-card
+device: 270f6e8b30eed0c326a3891a590356e8
+sections:
+  - overview
+  - equipment
+  - stats
+  - mythic_plus
 ```
 
-### Dashboard: raid progress
+| Option | Default | Description |
+| --- | --- | --- |
+| `device` | – | The character device. Required. The editor only lists World of Warcraft characters. |
+| `sections` | `[overview, progress]` | The sections below the header, in this order. See the table below. |
+| `show_render` | `true` | Shows the character render in the background, or between the item slots of the equipment section. |
+
+The header is always shown: portrait, name, title, level, race, class and spec in class color, guild, realm and item level.
+
+| Section | Shows |
+| --- | --- |
+| `overview` | Achievement points, honorable kills, gold and PvP ratings above 0, as tiles |
+| `progress` | Raid progress per difficulty and the Mythic+ rating, in one line |
+| `equipment` | The equipped items like the in-game character window, with item level and quality; hover an item for its name and transmog |
+| `stats` | Health, power, primary stats, armor, attack and spell power, critical strike, haste, mastery and versatility |
+| `talents` | Specialization, hero talents and the loadout code with buttons to copy it or open it in the Wowhead talent calculator, or the talent points per tree and glyphs in Classic |
+| `raids` | Bosses per difficulty and per raid of the current expansion, and boss kills in total |
+| `mythic_plus` | Rating, best key, weekly best, runs in time and completed, and the best run per dungeon |
+| `pvp` | All ratings, honor level, season wins, honorable kills and the Classic PvP rank |
+| `professions` | Primary and secondary professions with skill |
+| `reputations` | All factions with standing, with progress where Blizzard provides it |
+| `collections` | Mounts, pets, toys, heirlooms, appearances and decor |
+| `achievements` | Achievement points, achievements completed and the latest achievements |
+| `activity` | Gold, deaths, quests, active quests, dungeons completed, location, hearthstone and last login |
+| `guild` | Crest, members, members at max level, your rank, guild master, founding date, guild achievements and the latest guild activity |
+| `hunter_pet` | The hunter's pets with level and the active one |
+
+A section the character has no data for is left out, also when it is in `sections`. Select a value to open the entity's history.
+
+Cards from the first version with `show_stats`, `show_progress` and `show_equipment` keep working; the editor converts them to `sections` when you change them.
+
+The card texts are in English and German, following the language of your Home Assistant profile. Names, classes, factions and dungeons come from the Blizzard API in the language set for the integration.
+
+### Guild card
+
+`custom:wow-guild-card` shows the guild of a character: crest, guild master and founding date, members, your rank, members per class in class colors (with how many are at max level), members per rank, guild achievements and the latest guild activity. Pick the character whose guild you want to see; characters without a guild show a hint.
+
+<img width="30%" alt="Guild card" src="https://github.com/user-attachments/assets/f2fb2363-09b2-4b26-b17f-c8efb47a0f1e" />
 
 ```yaml
-type: horizontal-stack
-cards:
-  - type: entity
-    entity: sensor.thrall_stormrage_normal_progress
-    name: Normal
-  - type: entity
-    entity: sensor.thrall_stormrage_heroic_progress
-    name: Heroic
-  - type: entity
-    entity: sensor.thrall_stormrage_mythic_progress
-    name: Mythic
+type: custom:wow-guild-card
+device: 270f6e8b30eed0c326a3891a590356e8
+sections: [overview, classes, ranks, achievements, activity]
 ```
 
-### Dashboard: Hall of Fame
+### Battle.net account card
+
+`custom:wow-account-card` needs the Battle.net account entry. It shows whether the login is still valid, total gold and characters, the account-wide collections and the gold of every character, richest first.
+
+<img width="30%" alt="Battle.net account card" src="https://github.com/user-attachments/assets/ed28c8c7-6f14-4519-9153-4ea6ed0b6c99" />
 
 ```yaml
-type: entities
-title: Mythic Hall of Fame
-entities:
-  - entity: sensor.wow_leaderboards_the_dreamrift
-  - entity: sensor.wow_leaderboards_march_on_queldanas
+type: custom:wow-account-card
+device: 5ef87166a984aa7e4171b1b086063050
+sections: [overview, collections, characters]
 ```
 
-### Automation: level up
+### Realm card
+
+`custom:wow-realm-card` shows a realm's status, population and login queue, and the best Mythic+ keys of the week on it (Retail, with the Mythic+ leaderboards enabled). With a region device it also shows the WoW Token price, the next weekly reset, the Mythic+ season with this week's affixes and the PvP season with its title cutoffs.
+
+<img width="30%" alt="Realm card with region" src="https://github.com/user-attachments/assets/01f6c925-3295-412b-bc50-4bb533df0bea" />
 
 ```yaml
-automation:
-  - alias: WoW level up
-    triggers:
-      - trigger: state
-        entity_id:
-          - sensor.thrall_stormrage_level
-          - sensor.jaina_stormrage_level
-    conditions:
-      - condition: template
-        value_template: >
-          {{ trigger.from_state.state | int(0) > 0 and
-             trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}
-    actions:
-      - action: notify.mobile_app_phone
-        data:
-          title: Level up
-          message: >
-            {{ trigger.to_state.attributes.character_name }} reached level
-            {{ trigger.to_state.state }}.
+type: custom:wow-realm-card
+device: 171b768099577d3b957eaaeb1b6dd16e
+region: b421a2ce5da6834ea2b8db740870696b
+sections: [status, mythic_plus, token, reset, mythic_season, pvp_season]
 ```
 
-### Automation: new Mythic boss
+### Auction house card
+
+`custom:wow-auction-card` lists the tracked items of an auction house device with icon, quality color and the lowest price in gold, silver and copper, plus how many are listed. `items` picks and orders the items (all items when left out); `show_sources: true` adds the price per realm.
+
+<img width="30%" alt="Auction house card" src="https://github.com/user-attachments/assets/0bede9bb-3c88-42cc-836d-f57d21210190" />
 
 ```yaml
-automation:
-  - alias: WoW new Mythic boss
-    triggers:
-      - trigger: state
-        entity_id: sensor.thrall_stormrage_mythic_progress
-    conditions:
-      - condition: template
-        value_template: >
-          {{ trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}
-    actions:
-      - action: notify.mobile_app_phone
-        data:
-          message: >
-            {{ trigger.to_state.attributes.character_name }} defeated a new Mythic boss
-            ({{ trigger.to_state.state }}/{{ trigger.to_state.attributes.total_bosses }}).
+type: custom:wow-auction-card
+device: 24f4c6a8299facea604b8d55332651ff
+show_sources: true
 ```
 
-### Automation: realm back online
+### Hall of Fame card
+
+`custom:wow-hall-of-fame-card` shows each Mythic raid of the current expansion like the in-game Hall of Fame: the world first guild, the next guilds, the last guild once the list is full, where the guilds of your characters placed, and a link to the official page. `raids` picks and orders the raids (all when left out); `top` sets how many guilds are listed per raid (0 to 10, default 5).
+
+<img width="30%" alt="Hall of Fame card" src="https://github.com/user-attachments/assets/733693f7-1b24-4b55-bf6a-dfdbcfbc1eaf" />
 
 ```yaml
-automation:
-  - alias: WoW realm back online
-    triggers:
-      - trigger: state
-        entity_id: sensor.stormrage_server_realm_status
-        attribute: status_type
-        from: DOWN
-        to: UP
-    actions:
-      - action: notify.mobile_app_phone
-        data:
-          message: Stormrage is back online.
+type: custom:wow-hall-of-fame-card
+device: 7e3349bc5e9d09b2baf8132e7a67e1d6
+top: 3
 ```
+
+In every card, the editor only offers the sections (or items) the chosen device has data for.
+
+### Card styling
+
+All colors are CSS custom properties, so a theme or card-mod can change them:
+
+| Property | Default | Used for |
+| --- | --- | --- |
+| `--wow-gold` | `#c8a95c` | Frame corners, values, titles |
+| `--wow-panel` / `--wow-panel-2` | `#0d0f14` / `#181b24` | Background |
+| `--wow-text` / `--wow-text-dim` | `#f2ead7` / `#a59e8c` | Text |
+| `--wow-guild` | `#40ff40` | Guild name |
+| `--wow-alliance` / `--wow-horde` | `#2f6fd6` / `#c4232b` | Faction glow |
+| `--wow-heading-font` | Friz Quadrata, Georgia, serif | Names and large numbers |
+
+The cards ship no fonts or textures and load no code from other sites. Pictures (portraits, renders, item icons) come from Blizzard's render server, the same addresses the entities use.
 
 ## Update behavior
 
@@ -513,8 +534,19 @@ Bug reports and feature requests are welcome in the [issue tracker](https://gith
 
 Pull requests are welcome as well.
 
+The dashboard cards are written in TypeScript with Lit in [`cards/`](cards). Build them with Node.js 22 or newer:
+
+```bash
+cd cards
+npm install
+npm run build
+```
+
+The build writes `custom_components/wow_blizzard/www/wow-cards.js`, which the release workflow builds for every release. `npm run watch` rebuilds on every change. Restart Home Assistant to serve a new build under a new cache key, then reload the browser.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
 
 World of Warcraft and Blizzard Entertainment are trademarks of Blizzard Entertainment, Inc. This project is not affiliated with or endorsed by Blizzard Entertainment.
+The character picture in the screenshots is Blizzard artwork of Arthas Menethil; all names and values shown are made up.
