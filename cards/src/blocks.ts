@@ -26,11 +26,12 @@ export function cssUrl(url: string): string {
   return `url("${String(url).replace(/["\\\n]/g, encodeURIComponent)}")`;
 }
 
-export function section(ctx: BlockContext, title: StringKey, body: Content, extra?: string): Content {
+/** A titled section; the title is a text key, or { text } for names from the API. */
+export function section(ctx: BlockContext, title: StringKey | { text: string }, body: Content, extra?: string): Content {
   if (body === nothing) return nothing;
   return html`
     <section>
-      <h3 class="section-title heading"><span>${ctx.t(title)}${extra ? html` <small>${extra}</small>` : nothing}</span></h3>
+      <h3 class="section-title heading"><span>${typeof title === "string" ? ctx.t(title) : title.text}${extra ? html` <small>${extra}</small>` : nothing}</span></h3>
       ${body}
     </section>
   `;

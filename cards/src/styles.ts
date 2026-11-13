@@ -245,4 +245,24 @@ export const extraStyles = css`
   .coin.gold { background: radial-gradient(circle at 35% 35%, #fff2a8, #e5b10b 60%, #8a6400); }
   .coin.silver { background: radial-gradient(circle at 35% 35%, #ffffff, #b8b8b8 60%, #6b6b6b); }
   .coin.copper { background: radial-gradient(circle at 35% 35%, #ffc9a0, #c0662b 60%, #6e3410); }
+
+  /* Hall of Fame */
+  .world-first {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--wow-gold-dim);
+    border-radius: 6px;
+    background: linear-gradient(to right, rgba(255, 209, 0, 0.12), transparent);
+    cursor: pointer;
+  }
+  .first-guild {
+    font-size: 1.15rem;
+    color: #ffd100;
+  }
+  .key.gold-key {
+    color: #000;
+    background: linear-gradient(to bottom, #ffe066, #c8a95c);
+  }
 `;

@@ -1949,8 +1949,15 @@ class WoWServerSensor(CoordinatorEntity, SensorEntity):
         }
 
 
+# Guilds of the Hall of Fame listed in the top_guilds attribute
+HOF_TOP_GUILDS = 10
+
+
 class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
     """Representation of a WoW Mythic Raid Hall of Fame leaderboard sensor."""
+
+    # The top list only changes while a raid is new; keep it out of the recorder
+    _unrecorded_attributes = frozenset({"top_guilds"})
 
     def __init__(
         self,
@@ -2013,6 +2020,7 @@ class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
             "last_guild_timestamp": None,
             "last_guild_timestamp_formatted": None,
             "character_guild_ranks": {},
+            "top_guilds": [],
         }
 
         if not leaderboard:
@@ -2036,6 +2044,17 @@ class WoWLeaderboardSensor(CoordinatorEntity, SensorEntity):
             attributes["last_guild_rank"] = last_entry.get("rank")
             attributes["last_guild_timestamp"] = last_entry.get("timestamp")
             attributes["last_guild_timestamp_formatted"] = _format_timestamp(last_entry.get("timestamp"))
+            attributes["top_guilds"] = [
+                {
+                    "rank": entry.get("rank"),
+                    "guild": (entry.get("guild") or {}).get("name"),
+                    "realm": ((entry.get("guild") or {}).get("realm") or {}).get("name"),
+                    "region": str(entry.get("region") or "").upper(),
+                    "faction": ((entry.get("faction") or {}).get("type") or "").upper() or None,
+                    "timestamp": entry.get("timestamp"),
+                }
+                for entry in entries[:HOF_TOP_GUILDS]
+            ]
 
         # Map configured retail characters to their guild rank
         char_ranks = {}

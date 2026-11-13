@@ -46,7 +46,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 | Mythic+ leaderboards (opt-in) | Best key of the week per realm, with the best runs of your characters. |
 | PvP leaderboards (opt-in) | Rank of your characters on the regional 2v2, 3v3, RBG, Solo Shuffle and Blitz leaderboards. |
 | Auction house | Lowest price for item IDs you choose (Retail commodities and realm auctions, Classic Progression realm auctions). |
-| Dashboard cards | Cards in the style of the in-game UI for characters, guilds, the Battle.net account, realms and the auction house. Included, no extra download. |
+| Dashboard cards | Cards in the style of the in-game UI for characters, guilds, the Battle.net account, realms, the auction house and the Hall of Fame. Included, no extra download. |
 | Battle.net account (optional) | Its own entry: import characters by logging in with Battle.net. While the login is valid (24 hours): gold per Retail character, total gold, account mounts, pets, toys, heirlooms and transmog appearances. |
 
 Numeric sensors have the `measurement` state class, so Home Assistant keeps long-term statistics and you can graph them (for example a leveling race).
@@ -334,7 +334,7 @@ The Hall of Fame shows the first guilds worldwide to defeat a raid on Mythic. Th
 
 - The raids of the newest expansion are discovered on their own and refreshed every 24 hours. New raids show up after the next reload of the integration.
 - The sensor state is the name of the world first guild, or `Pending` while nobody has cleared the raid.
-- Attributes: `world_first_guild`, `world_first_realm`, `world_first_region`, `world_first_timestamp_formatted`, `last_guild_name`, `last_guild_rank`, `total_entries`, `completed` (the list is full), `info_url` (link to the official page) and `character_guild_ranks` (rank of each configured Retail character's guild, if listed).
+- Attributes: `world_first_guild`, `world_first_realm`, `world_first_region`, `world_first_timestamp_formatted`, `last_guild_name`, `last_guild_rank`, `total_entries`, `completed` (the list is full), `info_url` (link to the official page) `character_guild_ranks` (rank of each configured Retail character's guild, if listed) and `top_guilds` (the first 10 guilds with rank, realm, region and time).
 - Leaderboards are cached for 2 hours while the race is on and kept once the list is full.
 - Hall of Fame data is only fetched when at least one Retail character is configured.
 
@@ -429,6 +429,16 @@ sections: [status, mythic_plus, token, reset, mythic_season, pvp_season]
 type: custom:wow-auction-card
 device: 24f4c6a8299facea604b8d55332651ff
 show_sources: true
+```
+
+### Hall of Fame card
+
+`custom:wow-hall-of-fame-card` shows each Mythic raid of the current expansion like the in-game Hall of Fame: the world first guild, the next guilds, the last guild once the list is full, where the guilds of your characters placed, and a link to the official page. `raids` picks and orders the raids (all when left out); `top` sets how many guilds are listed per raid (0 to 10, default 5).
+
+```yaml
+type: custom:wow-hall-of-fame-card
+device: 7e3349bc5e9d09b2baf8132e7a67e1d6
+top: 3
 ```
 
 In every card, the editor only offers the sections (or items) the chosen device has data for.

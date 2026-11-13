@@ -14,6 +14,7 @@ export const MODELS = {
   realm: "World of Warcraft Realm",
   region: "World of Warcraft Region",
   auction: "World of Warcraft Auction House",
+  leaderboards: "World of Warcraft Leaderboards",
 } as const;
 export const CHARACTER_MODEL = MODELS.character;
 

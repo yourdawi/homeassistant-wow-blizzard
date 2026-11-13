@@ -4,6 +4,7 @@ import { ACCOUNT_CARD_TYPE, WowAccountCard } from "./wow-account-card";
 import { AUCTION_CARD_TYPE, WowAuctionCard } from "./wow-auction-card";
 import { CARD_TYPE, WowCharacterCard } from "./wow-character-card";
 import { GUILD_CARD_TYPE, WowGuildCard } from "./wow-guild-card";
+import { HALL_OF_FAME_CARD_TYPE, WowHallOfFameCard } from "./wow-hall-of-fame-card";
 import { REALM_CARD_TYPE, WowRealmCard } from "./wow-realm-card";
 
 const DOCS = "https://github.com/yourdawi/homeassistant-wow-blizzard#dashboard-cards";
@@ -14,6 +15,7 @@ const CARDS: Array<[string, CustomElementConstructor, StringKey, StringKey]> = [
   [ACCOUNT_CARD_TYPE, WowAccountCard, "card_account_name", "card_account_description"],
   [REALM_CARD_TYPE, WowRealmCard, "card_realm_name", "card_realm_description"],
   [AUCTION_CARD_TYPE, WowAuctionCard, "card_auction_name", "card_auction_description"],
+  [HALL_OF_FAME_CARD_TYPE, WowHallOfFameCard, "card_hof_name", "card_hof_description"],
 ];
 
 const lang = uiLanguage();
