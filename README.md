@@ -343,10 +343,16 @@ The website only accepts a fixed set of pre-registered (persisted) queries. When
 ## Dashboard cards
 
 The integration includes its own dashboard cards. They load with the integration, so you do not need to download anything or add a dashboard resource. After installing or updating, reload the browser once.
+Images are created with Mock Data, not real Characters.
 
 ### Character card
 
 Edit a dashboard, select **Add card** and choose **WoW Character** (under the community cards). Pick a character, then choose its sections under **Sections**. The list only offers the sections the character has data for, so a Classic character has no Mythic+ section. Drag the sections to change their order.
+
+<img width="30%" alt="character-equipment" src="https://github.com/user-attachments/assets/2462c32f-ece8-4c35-9b5a-15d78c21e77c" />
+<img width="30%" alt="character-more" src="https://github.com/user-attachments/assets/c423fefe-c48c-4830-96f4-4f6991778467" />
+<img width="30%" alt="character-details" src="https://github.com/user-attachments/assets/1cf1f766-5b86-4d19-b28a-82a3a3bb5ef7" />
+
 
 ```yaml
 type: custom:wow-character-card
@@ -394,6 +400,9 @@ The card texts are in English and German, following the language of your Home As
 
 `custom:wow-guild-card` shows the guild of a character: crest, guild master and founding date, members, your rank, members per class in class colors (with how many are at max level), members per rank, guild achievements and the latest guild activity. Pick the character whose guild you want to see; characters without a guild show a hint.
 
+<img width="30%" alt="guild" src="https://github.com/user-attachments/assets/f2fb2363-09b2-4b26-b17f-c8efb47a0f1e" />
+
+
 ```yaml
 type: custom:wow-guild-card
 device: 270f6e8b30eed0c326a3891a590356e8
@@ -404,6 +413,9 @@ sections: [overview, classes, ranks, achievements, activity]
 
 `custom:wow-account-card` needs the Battle.net account entry. It shows whether the login is still valid, total gold and characters, the account-wide collections and the gold of every character, richest first.
 
+<img width="30%" alt="account" src="https://github.com/user-attachments/assets/ed28c8c7-6f14-4519-9153-4ea6ed0b6c99" />
+
+
 ```yaml
 type: custom:wow-account-card
 device: 5ef87166a984aa7e4171b1b086063050
@@ -413,6 +425,9 @@ sections: [overview, collections, characters]
 ### Realm card
 
 `custom:wow-realm-card` shows a realm's status, population and login queue, and the best Mythic+ keys of the week on it (Retail, with the Mythic+ leaderboards enabled). With a region device it also shows the WoW Token price, the next weekly reset, the Mythic+ season with this week's affixes and the PvP season with its title cutoffs.
+
+<img width="30%" alt="realm" src="https://github.com/user-attachments/assets/01f6c925-3295-412b-bc50-4bb533df0bea" />
+
 
 ```yaml
 type: custom:wow-realm-card
@@ -425,6 +440,8 @@ sections: [status, mythic_plus, token, reset, mythic_season, pvp_season]
 
 `custom:wow-auction-card` lists the tracked items of an auction house device with icon, quality color and the lowest price in gold, silver and copper, plus how many are listed. `items` picks and orders the items (all items when left out); `show_sources: true` adds the price per realm.
 
+<img width="30%" alt="auction" src="https://github.com/user-attachments/assets/0bede9bb-3c88-42cc-836d-f57d21210190" />
+
 ```yaml
 type: custom:wow-auction-card
 device: 24f4c6a8299facea604b8d55332651ff
@@ -434,6 +451,8 @@ show_sources: true
 ### Hall of Fame card
 
 `custom:wow-hall-of-fame-card` shows each Mythic raid of the current expansion like the in-game Hall of Fame: the world first guild, the next guilds, the last guild once the list is full, where the guilds of your characters placed, and a link to the official page. `raids` picks and orders the raids (all when left out); `top` sets how many guilds are listed per raid (0 to 10, default 5).
+
+<img width="30%" alt="hall-of-fame" src="https://github.com/user-attachments/assets/733693f7-1b24-4b55-bf6a-dfdbcfbc1eaf" />
 
 ```yaml
 type: custom:wow-hall-of-fame-card
@@ -648,3 +667,4 @@ The build writes `custom_components/wow_blizzard/www/wow-cards.js`, which the re
 MIT, see [LICENSE](LICENSE).
 
 World of Warcraft and Blizzard Entertainment are trademarks of Blizzard Entertainment, Inc. This project is not affiliated with or endorsed by Blizzard Entertainment.
+The character picture in the screenshots is Blizzard artwork of Arthas Menethil; all names and values shown are made up.
