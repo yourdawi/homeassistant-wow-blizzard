@@ -22,7 +22,6 @@ Use it to track levels and item level over time, watch realm status on reset day
 - [Entities](#entities)
 - [Hall of Fame](#hall-of-fame)
 - [Dashboard cards](#dashboard-cards)
-- [Automation examples](#automation-examples)
 - [Update behavior](#update-behavior)
 - [Troubleshooting](#troubleshooting)
 - [Known limitations](#known-limitations)
@@ -343,16 +342,16 @@ The website only accepts a fixed set of pre-registered (persisted) queries. When
 ## Dashboard cards
 
 The integration includes its own dashboard cards. They load with the integration, so you do not need to download anything or add a dashboard resource. After installing or updating, reload the browser once.
-Images are created with Mock Data, not real Characters.
+
+The screenshots show made-up data, not real characters.
 
 ### Character card
 
 Edit a dashboard, select **Add card** and choose **WoW Character** (under the community cards). Pick a character, then choose its sections under **Sections**. The list only offers the sections the character has data for, so a Classic character has no Mythic+ section. Drag the sections to change their order.
 
-<img width="30%" alt="character-equipment" src="https://github.com/user-attachments/assets/2462c32f-ece8-4c35-9b5a-15d78c21e77c" />
-<img width="30%" alt="character-more" src="https://github.com/user-attachments/assets/c423fefe-c48c-4830-96f4-4f6991778467" />
-<img width="30%" alt="character-details" src="https://github.com/user-attachments/assets/1cf1f766-5b86-4d19-b28a-82a3a3bb5ef7" />
-
+<img width="30%" alt="Character card with overview, progress and equipment" src="https://github.com/user-attachments/assets/2462c32f-ece8-4c35-9b5a-15d78c21e77c" />
+<img width="30%" alt="Character card with attributes, talents, Mythic+ and raids" src="https://github.com/user-attachments/assets/1cf1f766-5b86-4d19-b28a-82a3a3bb5ef7" />
+<img width="30%" alt="Character card with PvP, professions, collections, achievements and activity" src="https://github.com/user-attachments/assets/c423fefe-c48c-4830-96f4-4f6991778467" />
 
 ```yaml
 type: custom:wow-character-card
@@ -400,8 +399,7 @@ The card texts are in English and German, following the language of your Home As
 
 `custom:wow-guild-card` shows the guild of a character: crest, guild master and founding date, members, your rank, members per class in class colors (with how many are at max level), members per rank, guild achievements and the latest guild activity. Pick the character whose guild you want to see; characters without a guild show a hint.
 
-<img width="30%" alt="guild" src="https://github.com/user-attachments/assets/f2fb2363-09b2-4b26-b17f-c8efb47a0f1e" />
-
+<img width="30%" alt="Guild card" src="https://github.com/user-attachments/assets/f2fb2363-09b2-4b26-b17f-c8efb47a0f1e" />
 
 ```yaml
 type: custom:wow-guild-card
@@ -413,8 +411,7 @@ sections: [overview, classes, ranks, achievements, activity]
 
 `custom:wow-account-card` needs the Battle.net account entry. It shows whether the login is still valid, total gold and characters, the account-wide collections and the gold of every character, richest first.
 
-<img width="30%" alt="account" src="https://github.com/user-attachments/assets/ed28c8c7-6f14-4519-9153-4ea6ed0b6c99" />
-
+<img width="30%" alt="Battle.net account card" src="https://github.com/user-attachments/assets/ed28c8c7-6f14-4519-9153-4ea6ed0b6c99" />
 
 ```yaml
 type: custom:wow-account-card
@@ -426,8 +423,7 @@ sections: [overview, collections, characters]
 
 `custom:wow-realm-card` shows a realm's status, population and login queue, and the best Mythic+ keys of the week on it (Retail, with the Mythic+ leaderboards enabled). With a region device it also shows the WoW Token price, the next weekly reset, the Mythic+ season with this week's affixes and the PvP season with its title cutoffs.
 
-<img width="30%" alt="realm" src="https://github.com/user-attachments/assets/01f6c925-3295-412b-bc50-4bb533df0bea" />
-
+<img width="30%" alt="Realm card with region" src="https://github.com/user-attachments/assets/01f6c925-3295-412b-bc50-4bb533df0bea" />
 
 ```yaml
 type: custom:wow-realm-card
@@ -440,7 +436,7 @@ sections: [status, mythic_plus, token, reset, mythic_season, pvp_season]
 
 `custom:wow-auction-card` lists the tracked items of an auction house device with icon, quality color and the lowest price in gold, silver and copper, plus how many are listed. `items` picks and orders the items (all items when left out); `show_sources: true` adds the price per realm.
 
-<img width="30%" alt="auction" src="https://github.com/user-attachments/assets/0bede9bb-3c88-42cc-836d-f57d21210190" />
+<img width="30%" alt="Auction house card" src="https://github.com/user-attachments/assets/0bede9bb-3c88-42cc-836d-f57d21210190" />
 
 ```yaml
 type: custom:wow-auction-card
@@ -452,7 +448,7 @@ show_sources: true
 
 `custom:wow-hall-of-fame-card` shows each Mythic raid of the current expansion like the in-game Hall of Fame: the world first guild, the next guilds, the last guild once the list is full, where the guilds of your characters placed, and a link to the official page. `raids` picks and orders the raids (all when left out); `top` sets how many guilds are listed per raid (0 to 10, default 5).
 
-<img width="30%" alt="hall-of-fame" src="https://github.com/user-attachments/assets/733693f7-1b24-4b55-bf6a-dfdbcfbc1eaf" />
+<img width="30%" alt="Hall of Fame card" src="https://github.com/user-attachments/assets/733693f7-1b24-4b55-bf6a-dfdbcfbc1eaf" />
 
 ```yaml
 type: custom:wow-hall-of-fame-card
@@ -476,71 +472,6 @@ All colors are CSS custom properties, so a theme or card-mod can change them:
 | `--wow-heading-font` | Friz Quadrata, Georgia, serif | Names and large numbers |
 
 The cards ship no fonts or textures and load no code from other sites. Pictures (portraits, renders, item icons) come from Blizzard's render server, the same addresses the entities use.
-
-## Automation examples
-
-For dashboards, use the [dashboard cards](#dashboard-cards).
-
-### Level up
-
-```yaml
-automation:
-  - alias: WoW level up
-    triggers:
-      - trigger: state
-        entity_id:
-          - sensor.thrall_stormrage_level
-          - sensor.jaina_stormrage_level
-    conditions:
-      - condition: template
-        value_template: >
-          {{ trigger.from_state.state | int(0) > 0 and
-             trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}
-    actions:
-      - action: notify.mobile_app_phone
-        data:
-          title: Level up
-          message: >
-            {{ trigger.to_state.attributes.character_name }} reached level
-            {{ trigger.to_state.state }}.
-```
-
-### New Mythic boss
-
-```yaml
-automation:
-  - alias: WoW new Mythic boss
-    triggers:
-      - trigger: state
-        entity_id: sensor.thrall_stormrage_mythic_progress
-    conditions:
-      - condition: template
-        value_template: >
-          {{ trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}
-    actions:
-      - action: notify.mobile_app_phone
-        data:
-          message: >
-            {{ trigger.to_state.attributes.character_name }} defeated a new Mythic boss
-            ({{ trigger.to_state.state }}/{{ trigger.to_state.attributes.total_bosses }}).
-```
-
-### Realm back online
-
-```yaml
-automation:
-  - alias: WoW realm back online
-    triggers:
-      - trigger: state
-        entity_id: sensor.stormrage_server_realm_status
-        attribute: status_type
-        from: DOWN
-        to: UP
-    actions:
-      - action: notify.mobile_app_phone
-        data:
-          message: Stormrage is back online.
-```
 
 ## Update behavior
 
