@@ -22,7 +22,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 - [Entities](#entities)
 - [Hall of Fame](#hall-of-fame)
 - [Dashboard cards](#dashboard-cards)
-- [Examples](#examples)
+- [Automation examples](#automation-examples)
 - [Update behavior](#update-behavior)
 - [Troubleshooting](#troubleshooting)
 - [Known limitations](#known-limitations)
@@ -477,60 +477,11 @@ All colors are CSS custom properties, so a theme or card-mod can change them:
 
 The cards ship no fonts or textures and load no code from other sites. Pictures (portraits, renders, item icons) come from Blizzard's render server, the same addresses the entities use.
 
-## Examples
+## Automation examples
 
-### Dashboard: characters
+For dashboards, use the [dashboard cards](#dashboard-cards).
 
-```yaml
-type: entities
-title: Characters
-entities:
-  - entity: sensor.thrall_stormrage_level
-    name: Thrall - Level
-  - entity: sensor.thrall_stormrage_item_level
-    name: Thrall - Item Level
-  - entity: sensor.jaina_stormrage_level
-    name: Jaina - Level
-```
-
-### Dashboard: leveling race
-
-```yaml
-type: history-graph
-title: Leveling race
-hours_to_show: 168
-entities:
-  - entity: sensor.thrall_stormrage_level
-  - entity: sensor.jaina_stormrage_level
-```
-
-### Dashboard: raid progress
-
-```yaml
-type: horizontal-stack
-cards:
-  - type: entity
-    entity: sensor.thrall_stormrage_normal_progress
-    name: Normal
-  - type: entity
-    entity: sensor.thrall_stormrage_heroic_progress
-    name: Heroic
-  - type: entity
-    entity: sensor.thrall_stormrage_mythic_progress
-    name: Mythic
-```
-
-### Dashboard: Hall of Fame
-
-```yaml
-type: entities
-title: Mythic Hall of Fame
-entities:
-  - entity: sensor.wow_leaderboards_the_dreamrift
-  - entity: sensor.wow_leaderboards_march_on_queldanas
-```
-
-### Automation: level up
+### Level up
 
 ```yaml
 automation:
@@ -554,7 +505,7 @@ automation:
             {{ trigger.to_state.state }}.
 ```
 
-### Automation: new Mythic boss
+### New Mythic boss
 
 ```yaml
 automation:
@@ -574,7 +525,7 @@ automation:
             ({{ trigger.to_state.state }}/{{ trigger.to_state.attributes.total_bosses }}).
 ```
 
-### Automation: realm back online
+### Realm back online
 
 ```yaml
 automation:
