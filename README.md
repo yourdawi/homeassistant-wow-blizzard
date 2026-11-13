@@ -346,25 +346,49 @@ The integration includes its own dashboard cards. They load with the integration
 
 ### Character card
 
-Edit a dashboard, select **Add card** and choose **WoW Character** (under the community cards). Pick a character; the card finds its entities on its own.
+Edit a dashboard, select **Add card** and choose **WoW Character** (under the community cards). Pick a character, then choose its sections under **Sections**. The list only offers the sections the character has data for, so a Classic character has no Mythic+ section. Drag the sections to change their order.
 
 ```yaml
 type: custom:wow-character-card
 device: 270f6e8b30eed0c326a3891a590356e8
-show_equipment: true
+sections:
+  - overview
+  - equipment
+  - stats
+  - mythic_plus
 ```
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `device` | – | The character device. Required. The editor only lists World of Warcraft characters. |
-| `show_render` | `true` | Shows the character render in the background, or between the item slots. |
-| `show_stats` | `true` | Shows achievement points, honorable kills and PvP ratings. Ratings of 0 are hidden. |
-| `show_progress` | `true` | Shows raid progress per difficulty and the Mythic+ rating with the best key of the week. |
-| `show_equipment` | `false` | Shows the equipped items like the in-game character window. Hover an item for its name. |
+| `sections` | `[overview, progress]` | The sections below the header, in this order. See the table below. |
+| `show_render` | `true` | Shows the character render in the background, or between the item slots of the equipment section. |
 
-The card only shows values whose entities exist and are enabled. Classic characters, for example, have no Mythic+ entities, so that part is left out. Select the header, a stat or a progress bar to open the entity's history.
+The header is always shown: portrait, name, title, level, race, class and spec in class color, guild, realm and item level.
 
-The card texts are in English and German, following the language of your Home Assistant profile. Names, classes and titles come from the Blizzard API in the language set for the integration.
+| Section | Shows |
+| --- | --- |
+| `overview` | Achievement points, honorable kills, gold and PvP ratings above 0, as tiles |
+| `progress` | Raid progress per difficulty and the Mythic+ rating, in one line |
+| `equipment` | The equipped items like the in-game character window, with item level and quality; hover an item for its name and transmog |
+| `stats` | Health, power, primary stats, armor, attack and spell power, critical strike, haste, mastery and versatility |
+| `talents` | Specialization, hero talents and the loadout code (select it to copy), or the talent points per tree and glyphs in Classic |
+| `raids` | Bosses per difficulty and per raid of the current expansion, and boss kills in total |
+| `mythic_plus` | Rating, best key, weekly best, runs in time and completed, and the best run per dungeon |
+| `pvp` | All ratings, honor level, season wins, honorable kills and the Classic PvP rank |
+| `professions` | Primary and secondary professions with skill |
+| `reputations` | All factions with standing, with progress where Blizzard provides it |
+| `collections` | Mounts, pets, toys, heirlooms, appearances and decor |
+| `achievements` | Achievement points, achievements completed and the latest achievements |
+| `activity` | Gold, deaths, quests, active quests, dungeons completed, location, hearthstone and last login |
+| `guild` | Crest, members, members at max level, your rank, guild master, founding date, guild achievements and the latest guild activity |
+| `hunter_pet` | The hunter's pets with level and the active one |
+
+A section the character has no data for is left out, also when it is in `sections`. Select a value to open the entity's history.
+
+Cards from the first version with `show_stats`, `show_progress` and `show_equipment` keep working; the editor converts them to `sections` when you change them.
+
+The card texts are in English and German, following the language of your Home Assistant profile. Names, classes, factions and dungeons come from the Blizzard API in the language set for the integration.
 
 ### Card styling
 

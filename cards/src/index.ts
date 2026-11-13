@@ -1,4 +1,5 @@
 import { localize, uiLanguage } from "./i18n";
+import "./editor";
 import { CARD_TYPE, WowCharacterCard } from "./wow-character-card";
 
 const DOCS = "https://github.com/yourdawi/homeassistant-wow-blizzard#dashboard-cards";

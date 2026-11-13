@@ -78,3 +78,46 @@ export interface EquippedItem {
 export const SLOTS_LEFT = ["HEAD", "NECK", "SHOULDER", "BACK", "CHEST", "SHIRT", "TABARD", "WRIST"];
 export const SLOTS_RIGHT = ["HANDS", "WAIST", "LEGS", "FEET", "FINGER_1", "FINGER_2", "TRINKET_1", "TRINKET_2"];
 export const SLOTS_WEAPONS = ["MAIN_HAND", "OFF_HAND", "RANGED"];
+
+// --- Card sections -----------------------------------------------------------
+
+/**
+ * The parts of the character card, in their default order. A section is offered
+ * when the character has at least one of its entities: a Classic character, for
+ * example, has no Mythic+ entities and so no Mythic+ section.
+ */
+export const SECTIONS = {
+  overview: ["achievement_points", "pvp_honorable_kills", "character_gold", "pvp_2v2_rating", "pvp_3v3_rating"],
+  progress: ["raid_progress_lfr", "raid_progress_normal", "raid_progress_heroic", "raid_progress_mythic", "mythicplus_score"],
+  equipment: ["character_equipment"],
+  stats: ["stat_health", "stat_crit", "stat_haste", "stat_mastery", "stat_versatility"],
+  talents: ["talents"],
+  raids: ["raid_progress_lfr", "raid_progress_normal", "raid_progress_heroic", "raid_progress_mythic", "raid_kills_total"],
+  mythic_plus: ["mythicplus_score", "mythicplus_best_run", "mythicplus_weekly_best", "mythicplus_runs_completed", "mythicplus_runs_timed"],
+  pvp: [
+    "pvp_2v2_rating", "pvp_3v3_rating", "pvp_rbg_rating", "pvp_shuffle_rating", "pvp_blitz_rating",
+    "pvp_honor_level", "pvp_wins_season", "pvp_honorable_kills", "pvp_rank",
+  ],
+  professions: ["professions"],
+  reputations: ["reputations"],
+  collections: ["mounts_collected", "pets_collected", "toys_collected", "heirlooms_collected", "transmogs_collected", "decor_collected"],
+  achievements: ["achievements_completed", "achievement_points", "character_achievements"],
+  // character_status: every character has the last login, which this section shows
+  activity: ["character_gold", "deaths", "quests_completed", "active_quests", "dungeons_completed", "character_status"],
+  guild: ["guild_members", "guild_max_level_members", "guild_rank", "guild_achievements", "guild_crest", "guild_activity"],
+  hunter_pet: ["hunter_pet"],
+} as const;
+
+export type SectionId = keyof typeof SECTIONS;
+export const SECTION_IDS = Object.keys(SECTIONS) as SectionId[];
+export const DEFAULT_SECTIONS: SectionId[] = ["overview", "progress"];
+
+/** Whether the entity exists and the integration delivers it. */
+export function hasValue(state: HassEntityState | undefined): state is HassEntityState {
+  return !!state && state.state !== "unavailable";
+}
+
+/** The sections this character has entities for, in default order. */
+export function availableSections(entities: CharacterEntities): SectionId[] {
+  return SECTION_IDS.filter((id) => SECTIONS[id].some((key) => hasValue(entities.get(key))));
+}
