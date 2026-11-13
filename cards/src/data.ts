@@ -6,7 +6,16 @@
 import type { HassEntityState, HomeAssistant } from "./types";
 
 export const DOMAIN = "wow_blizzard";
-export const CHARACTER_MODEL = "World of Warcraft Character";
+
+/** Device models of the integration (device_info "model"), one per kind of card. */
+export const MODELS = {
+  character: "World of Warcraft Character",
+  account: "Battle.net Account",
+  realm: "World of Warcraft Realm",
+  region: "World of Warcraft Region",
+  auction: "World of Warcraft Auction House",
+} as const;
+export const CHARACTER_MODEL = MODELS.character;
 
 export type CharacterEntities = Map<string, HassEntityState>;
 
@@ -21,8 +30,8 @@ export function deviceEntities(hass: HomeAssistant, deviceId: string): Character
   return result;
 }
 
-/** All character devices of the integration, sorted by name. */
-export function characterDevices(hass: HomeAssistant): Array<{ id: string; name: string }> {
+/** All devices of the integration with a model, sorted by name. */
+export function devicesOf(hass: HomeAssistant, model: string): Array<{ id: string; name: string }> {
   const ids = new Set(
     Object.values(hass.entities)
       .filter((e) => e.platform === DOMAIN && e.device_id)
@@ -30,9 +39,44 @@ export function characterDevices(hass: HomeAssistant): Array<{ id: string; name:
   );
   return [...ids]
     .map((id) => hass.devices[id])
-    .filter((d) => d && d.model === CHARACTER_MODEL)
-    .map((d) => ({ id: d.id, name: d.name_by_user || d.name || d.id }))
+    .filter((d) => d && d.model === model)
+    .map((d) => ({ id: d.id, name: deviceName(hass, d.id) }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** All character devices of the integration, sorted by name. */
+export function characterDevices(hass: HomeAssistant): Array<{ id: string; name: string }> {
+  return devicesOf(hass, CHARACTER_MODEL);
+}
+
+/** "blackmoore" or "argent-dawn" as "Blackmoore", "Argent Dawn". */
+export function realmTitle(slug: unknown): string {
+  return String(slug ?? "")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function deviceName(hass: HomeAssistant, deviceId: string): string {
+  const device = hass.devices[deviceId];
+  return device?.name_by_user || device?.name || deviceId;
+}
+
+/** All states of a device's wow_blizzard entities, also those without a translation key (auction items). */
+export function deviceStates(hass: HomeAssistant, deviceId: string): HassEntityState[] {
+  return Object.values(hass.entities)
+    .filter((e) => e.device_id === deviceId && e.platform === DOMAIN && !e.hidden)
+    .map((e) => hass.states[e.entity_id])
+    .filter((s): s is HassEntityState => !!s)
+    .sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+}
+
+/** States of all wow_blizzard entities with a translation key, across devices. */
+export function statesWithKey(hass: HomeAssistant, key: string): HassEntityState[] {
+  return Object.values(hass.entities)
+    .filter((e) => e.platform === DOMAIN && e.translation_key === key)
+    .map((e) => hass.states[e.entity_id])
+    .filter((s): s is HassEntityState => !!s)
+    .sort((a, b) => a.entity_id.localeCompare(b.entity_id));
 }
 
 // The integration shows these instead of "unknown" when a character has no title.

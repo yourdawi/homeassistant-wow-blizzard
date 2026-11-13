@@ -46,7 +46,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 | Mythic+ leaderboards (opt-in) | Best key of the week per realm, with the best runs of your characters. |
 | PvP leaderboards (opt-in) | Rank of your characters on the regional 2v2, 3v3, RBG, Solo Shuffle and Blitz leaderboards. |
 | Auction house | Lowest price for item IDs you choose (Retail commodities and realm auctions, Classic Progression realm auctions). |
-| Dashboard cards | A character card in the style of the in-game UI, with render, stats, progress and equipment. Included, no extra download. |
+| Dashboard cards | Cards in the style of the in-game UI for characters, guilds, the Battle.net account, realms and the auction house. Included, no extra download. |
 | Battle.net account (optional) | Its own entry: import characters by logging in with Battle.net. While the login is valid (24 hours): gold per Retail character, total gold, account mounts, pets, toys, heirlooms and transmog appearances. |
 
 Numeric sensors have the `measurement` state class, so Home Assistant keeps long-term statistics and you can graph them (for example a leveling race).
@@ -231,8 +231,8 @@ With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail
 | Transmog Appearances | `sensor.thrall_stormrage_transmog_appearances` | Collections, Retail and WoW Forever; `appearance_sets` and `appearances_per_slot` in attributes. The response can be several MB, it is only fetched after a new login and at most every 6 hours |
 | Solo Shuffle Rating / Blitz Rating | `sensor.thrall_stormrage_solo_shuffle_rating` | PvP, Retail, for the active specialization; `legend_cutoff` attribute |
 | Gold | `sensor.thrall_stormrage_gold` | Retail, with the Battle.net Account entry; gold gained/lost, deaths, location and hearthstone in attributes |
-| Guild Members | `sensor.thrall_stormrage_guild_members` | Guild, only for characters in a guild; achievement points, realm, faction, creation date, guild master and members per rank and class in attributes |
-| Guild Members at Max Level | `sensor.thrall_stormrage_guild_members_at_max_level` | Guild; members at the highest level in the guild (`max_level`), per class in `members_by_class` |
+| Guild Members | `sensor.thrall_stormrage_guild_members` | Guild, only for characters in a guild; achievement points, realm, faction, creation date, guild master and members per rank and class in attributes, with the color of each class in `class_colors` |
+| Guild Members at Max Level | `sensor.thrall_stormrage_guild_members_at_max_level` | Guild; members at the highest level in the guild (`max_level`), per class in `members_by_class`, class colors in `class_colors` |
 | Guild Rank | `sensor.thrall_stormrage_guild_rank` | Guild; the character's rank number, 0 is the guild master (the API has no rank names) |
 | Guild Achievements | `sensor.thrall_stormrage_guild_achievements` | Guild, Retail and Classic Progression; `total_points`, progress per category and the 10 most recent achievements |
 
@@ -287,7 +287,7 @@ With **Mythic+ leaderboards** enabled, every Retail realm device gets `Best M+ K
 
 ### Auction house
 
-Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, named after the item, with the lowest price per item in gold (silver and copper as decimals). Attributes: `quantity` (items listed), `auctions`, and `sources` (lowest price per source). Retail looks in the region-wide commodity market first and in the auctions of your characters' realms for everything else; Classic Progression uses the realms of your Classic Progression characters. Classic Era and Anniversary auctions are not available in the API. The data is refreshed hourly; the Retail commodity market alone is about 30 MB, so only add the auction house if you need it.
+Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, named after the item, with the lowest price per item in gold (silver and copper as decimals). Attributes: `quantity` (items listed), `auctions`, `sources` (lowest price per source), `item_icon`, `quality` and `quality_color`; the icon is also the entity picture. Retail looks in the region-wide commodity market first and in the auctions of your characters' realms for everything else; Classic Progression uses the realms of your Classic Progression characters. Classic Era and Anniversary auctions are not available in the API. The data is refreshed hourly; the Retail commodity market alone is about 30 MB, so only add the auction house if you need it.
 
 ### Guild activity
 
@@ -372,7 +372,7 @@ The header is always shown: portrait, name, title, level, race, class and spec i
 | `progress` | Raid progress per difficulty and the Mythic+ rating, in one line |
 | `equipment` | The equipped items like the in-game character window, with item level and quality; hover an item for its name and transmog |
 | `stats` | Health, power, primary stats, armor, attack and spell power, critical strike, haste, mastery and versatility |
-| `talents` | Specialization, hero talents and the loadout code (select it to copy), or the talent points per tree and glyphs in Classic |
+| `talents` | Specialization, hero talents and the loadout code with buttons to copy it or open it in the Wowhead talent calculator, or the talent points per tree and glyphs in Classic |
 | `raids` | Bosses per difficulty and per raid of the current expansion, and boss kills in total |
 | `mythic_plus` | Rating, best key, weekly best, runs in time and completed, and the best run per dungeon |
 | `pvp` | All ratings, honor level, season wins, honorable kills and the Classic PvP rank |
@@ -389,6 +389,49 @@ A section the character has no data for is left out, also when it is in `section
 Cards from the first version with `show_stats`, `show_progress` and `show_equipment` keep working; the editor converts them to `sections` when you change them.
 
 The card texts are in English and German, following the language of your Home Assistant profile. Names, classes, factions and dungeons come from the Blizzard API in the language set for the integration.
+
+### Guild card
+
+`custom:wow-guild-card` shows the guild of a character: crest, guild master and founding date, members, your rank, members per class in class colors (with how many are at max level), members per rank, guild achievements and the latest guild activity. Pick the character whose guild you want to see; characters without a guild show a hint.
+
+```yaml
+type: custom:wow-guild-card
+device: 270f6e8b30eed0c326a3891a590356e8
+sections: [overview, classes, ranks, achievements, activity]
+```
+
+### Battle.net account card
+
+`custom:wow-account-card` needs the Battle.net account entry. It shows whether the login is still valid, total gold and characters, the account-wide collections and the gold of every character, richest first.
+
+```yaml
+type: custom:wow-account-card
+device: 5ef87166a984aa7e4171b1b086063050
+sections: [overview, collections, characters]
+```
+
+### Realm card
+
+`custom:wow-realm-card` shows a realm's status, population and login queue, and the best Mythic+ keys of the week on it (Retail, with the Mythic+ leaderboards enabled). With a region device it also shows the WoW Token price, the next weekly reset, the Mythic+ season with this week's affixes and the PvP season with its title cutoffs.
+
+```yaml
+type: custom:wow-realm-card
+device: 171b768099577d3b957eaaeb1b6dd16e
+region: b421a2ce5da6834ea2b8db740870696b
+sections: [status, mythic_plus, token, reset, mythic_season, pvp_season]
+```
+
+### Auction house card
+
+`custom:wow-auction-card` lists the tracked items of an auction house device with icon, quality color and the lowest price in gold, silver and copper, plus how many are listed. `items` picks and orders the items (all items when left out); `show_sources: true` adds the price per realm.
+
+```yaml
+type: custom:wow-auction-card
+device: 24f4c6a8299facea604b8d55332651ff
+show_sources: true
+```
+
+In every card, the editor only offers the sections (or items) the chosen device has data for.
 
 ### Card styling
 

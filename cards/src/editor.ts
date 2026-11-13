@@ -1,108 +1,87 @@
-// Visual editor of the character card. It is a small element around ha-form
-// (the form the built-in cards use), because the section list depends on the
-// chosen character: a static getConfigForm() cannot offer only the sections
-// that character has.
+// Visual editor of all cards. It is a small element around ha-form (the form
+// the built-in cards use), because the choices depend on the chosen device: a
+// static getConfigForm() cannot offer only the sections a character has.
 
 import { LitElement, html, nothing } from "lit";
-import { CHARACTER_MODEL, DOMAIN, availableSections, deviceEntities, type SectionId } from "./data";
+import { EDITOR_TYPE, type EditorField } from "./base-card";
 import { localize, type StringKey } from "./i18n";
-import type { HomeAssistant } from "./types";
-import { EDITOR_TYPE, configSections, type CharacterCardConfig } from "./wow-character-card";
+import type { HomeAssistant, LovelaceCardConfig } from "./types";
 
-const LEGACY_KEYS = ["show_stats", "show_progress", "show_equipment"] as const;
-
-interface FormData {
-  device?: string;
-  sections: SectionId[];
-  show_render: boolean;
+/** What a card class tells the editor. */
+export interface CardEditor<C extends LovelaceCardConfig = LovelaceCardConfig> {
+  /** Form fields and their current values for a config */
+  editorForm(
+    hass: HomeAssistant,
+    config: C,
+    t: (key: StringKey) => string,
+  ): { schema: EditorField[]; data: Record<string, any>; labels?: Record<string, StringKey> };
+  /** The new config after the form changed */
+  editorApply(hass: HomeAssistant, config: C, value: Record<string, any>): C;
 }
 
-export class WowCharacterCardEditor extends LitElement {
+/** Helper texts shown below a field, by field name. */
+const HELPERS: Partial<Record<string, StringKey>> = {
+  sections: "sections_helper",
+  items: "items_helper",
+  region: "region_helper",
+};
+
+export class WowCardEditor extends LitElement {
   static properties = {
     hass: { attribute: false },
+    card: { attribute: false },
     _config: { state: true },
   };
 
   hass?: HomeAssistant;
-  private _config?: CharacterCardConfig;
+  card?: CardEditor;
+  private _config?: LovelaceCardConfig;
 
-  setConfig(config: CharacterCardConfig) {
+  setConfig(config: LovelaceCardConfig) {
     this._config = config;
   }
 
-  private _t(key: StringKey) {
-    return localize(this.hass?.locale?.language ?? this.hass?.language, key);
-  }
-
-  /** Sections the chosen character has entities for. */
-  private _available(device: string | undefined): SectionId[] {
-    return this.hass && device ? availableSections(deviceEntities(this.hass, device)) : [];
-  }
-
-  private _schema(data: FormData) {
-    return [
-      {
-        name: "device",
-        required: true,
-        selector: { device: { filter: { integration: DOMAIN, model: CHARACTER_MODEL } } },
-      },
-      {
-        name: "sections",
-        selector: {
-          select: {
-            multiple: true,
-            reorder: true,
-            mode: "dropdown",
-            options: this._available(data.device).map((id) => ({ value: id, label: this._t(`section_${id}` as StringKey) })),
-          },
-        },
-      },
-      { name: "show_render", selector: { boolean: {} } },
-    ];
-  }
+  private _t = (key: StringKey) => localize(this.hass?.locale?.language ?? this.hass?.language, key);
 
   protected render() {
-    if (!this.hass || !this._config) return nothing;
-    const device = this._config.device || undefined;
-    // Sections the character does not have are not drawn, so they are not offered either
-    const available = this._available(device);
-    const data: FormData = {
-      device,
-      sections: configSections(this._config).filter((id) => available.includes(id)),
-      show_render: this._config.show_render !== false,
-    };
+    if (!this.hass || !this._config || !this.card) return nothing;
+    const { schema, data, labels } = this.card.editorForm(this.hass, this._config, this._t);
     return html`
       <ha-form
         .hass=${this.hass}
         .data=${data}
-        .schema=${this._schema(data)}
-        .computeLabel=${(s: { name: string }) => this._t(s.name as StringKey)}
-        .computeHelper=${(s: { name: string }) => (s.name === "sections" ? this._t("sections_helper") : undefined)}
+        .schema=${schema}
+        .computeLabel=${(s: { name: string }) => this._t(labels?.[s.name] ?? (s.name as StringKey))}
+        .computeHelper=${(s: { name: string }) => (HELPERS[s.name] ? this._t(HELPERS[s.name]!) : undefined)}
         @value-changed=${this._valueChanged}
       ></ha-form>
     `;
   }
 
-  private _valueChanged(ev: CustomEvent<{ value: FormData }>) {
+  private _valueChanged(ev: CustomEvent<{ value: Record<string, any> }>) {
     ev.stopPropagation();
-    if (!this._config || !this.hass) return;
-    const value = ev.detail.value;
-    let sections = (value.sections ?? []) as SectionId[];
-
-    // Keep only the sections the (possibly new) character has
-    const available = this._available(value.device);
-    if (value.device) sections = sections.filter((id) => available.includes(id));
-
-    const config: CharacterCardConfig = { ...this._config, device: value.device ?? "", sections };
-    for (const key of LEGACY_KEYS) delete config[key];
-    if (value.show_render) delete config.show_render;
-    else config.show_render = false;
-
+    if (!this._config || !this.hass || !this.card) return;
+    const config = this.card.editorApply(this.hass, this._config, ev.detail.value);
     this._config = config;
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
   }
 }
 
 if (!customElements.get(EDITOR_TYPE)) {
-  customElements.define(EDITOR_TYPE, WowCharacterCardEditor);
+  customElements.define(EDITOR_TYPE, WowCardEditor);
+}
+
+/** A device picker limited to one kind of device of the integration. */
+export function deviceField(name: string, model: string, required = true): EditorField {
+  return { name, required, selector: { device: { filter: { integration: "wow_blizzard", model } } } };
+}
+
+/** A sortable multi-select. */
+export function listField(name: string, options: Array<{ value: string; label: string }>): EditorField {
+  return { name, selector: { select: { multiple: true, reorder: true, mode: "dropdown", options } } };
+}
+
+/** Keeps the chosen values that are offered, in the chosen order. */
+export function keepOffered<T extends string>(values: unknown, offered: T[]): T[] {
+  return (Array.isArray(values) ? values : []).filter((v, i, all): v is T => offered.includes(v) && all.indexOf(v) === i);
 }

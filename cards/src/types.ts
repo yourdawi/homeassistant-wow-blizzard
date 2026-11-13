@@ -22,6 +22,7 @@ export interface HassDeviceEntry {
   name_by_user: string | null;
   model: string | null;
   manufacturer: string | null;
+  sw_version?: string | null;
 }
 
 export interface HomeAssistant {
