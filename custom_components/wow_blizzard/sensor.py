@@ -230,7 +230,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         # Connected realm ID per (realm, game version); icons per (version, item ID)
         self._connected_realms: Dict[Any, int] = {}
         self._item_icons: Dict[Any, Optional[str]] = {}
-        self._item_names: Dict[Any, Optional[str]] = {}
+        self._item_names: Dict[Any, Optional[Dict[str, Any]]] = {}
         # Item level per (version, item ID), for Classic, whose equipment has none
         self._item_levels: Dict[Any, int] = {}
         # Hourly data: (fetch time, data)
@@ -1000,14 +1000,18 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             self._schedule_cache_save()
         return self._item_levels[key]
 
-    async def _item_name(self, item_id: int, game_version: str) -> Optional[str]:
-        """Localized item name, cached for the runtime."""
+    async def _item_info(self, item_id: int, game_version: str) -> Optional[Dict[str, Any]]:
+        """Localized name, quality and media ID of an item, cached for the runtime."""
         key = (game_version, item_id)
         if key not in self._item_names:
             item = await self.client.get_item(item_id, game_version)
             if not item:
                 return None
-            self._item_names[key] = item.get("name")
+            self._item_names[key] = {
+                "name": item.get("name"),
+                "quality": ((item.get("quality") or {}).get("type") or "").upper() or None,
+                "media_id": (item.get("media") or {}).get("id"),
+            }
         return self._item_names[key]
 
     async def _connected_realm(self, realm: str, game_version: str) -> Optional[int]:
@@ -1299,6 +1303,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
             for item_id in self.auction_items:
                 entry = found.get(item_id) or {"min_price": None, "quantity": 0, "auctions": 0, "sources": {}}
+                info = await self._item_info(item_id, game_version) or {}
                 result[f"{game_version}:{item_id}"] = {
                     # Copper to gold, keeping silver and copper as decimals
                     "price": round(entry["min_price"] / 10000, 4) if entry["min_price"] is not None else None,
@@ -1308,7 +1313,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                         source: round(price / 10000, 4) if price is not None else None
                         for source, price in entry["sources"].items()
                     },
-                    "item_name": await self._item_name(item_id, game_version),
+                    "item_name": info.get("name"),
+                    "item_icon": await self._item_icon(info.get("media_id"), game_version),
+                    "quality": info.get("quality"),
                 }
 
         self._auction_cache = (datetime.now(), result)
@@ -2196,6 +2203,11 @@ class WoWAuctionSensor(CoordinatorEntity, SensorEntity):
         return self._auction.get("price")
 
     @property
+    def entity_picture(self) -> Optional[str]:
+        """The item icon."""
+        return self._auction.get("item_icon")
+
+    @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return additional state attributes."""
         auction = self._auction
@@ -2205,6 +2217,9 @@ class WoWAuctionSensor(CoordinatorEntity, SensorEntity):
             "quantity": auction.get("quantity"),
             "auctions": auction.get("auctions"),
             "sources": auction.get("sources", {}),
+            "item_icon": auction.get("item_icon"),
+            "quality": auction.get("quality"),
+            "quality_color": ITEM_QUALITY_COLORS.get(auction.get("quality") or "", None),
             "category": "auction",
         }
 
