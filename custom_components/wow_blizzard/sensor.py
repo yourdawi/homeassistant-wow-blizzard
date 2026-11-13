@@ -231,6 +231,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._connected_realms: Dict[Any, int] = {}
         self._item_icons: Dict[Any, Optional[str]] = {}
         self._item_names: Dict[Any, Optional[str]] = {}
+        # Item level per (version, item ID), for Classic, whose equipment has none
+        self._item_levels: Dict[Any, int] = {}
         # Hourly data: (fetch time, data)
         self._leaderboard_cache: Optional[Any] = None
         self._auction_cache: Optional[Any] = None
@@ -310,6 +312,11 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             icons = await asyncio.gather(*(self._item_icon(i.get("media_id"), game_version) for i in equipped_items_list))
             for item, icon in zip(equipped_items_list, icons):
                 item["icon"] = icon
+            # Classic equipment has no item level; the item itself has it
+            missing = [i for i in equipped_items_list if i["item_level"] is None]
+            levels = await asyncio.gather(*(self._item_level(i.get("item_id"), game_version) for i in missing))
+            for item, level in zip(missing, levels):
+                item["item_level"] = level
 
             character_class = profile.get("character_class") or {}
             result = {
@@ -378,7 +385,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 "name": item.get("name", "Unknown Item"),
                 "item_id": (item.get("item") or {}).get("id"),
                 "media_id": (item.get("media") or {}).get("id"),
-                "item_level": (item.get("level") or {}).get("value", 0),
+                # Missing in Classic; filled in from the item afterwards
+                "item_level": (item.get("level") or {}).get("value"),
                 "quality": quality.get("name", quality_type.title()),
                 "quality_color": ITEM_QUALITY_COLORS.get(quality_type, "#FFFFFF"),
                 "stats": stats,
@@ -950,6 +958,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
     def _cache_data(self) -> Dict[str, Any]:
         return {
             "item_icons": {f"{k[0]}:{k[1]}": v for k, v in self._item_icons.items()},
+            "item_levels": {f"{k[0]}:{k[1]}": v for k, v in self._item_levels.items()},
             "slow": {
                 char_key: [last_login, fetched.isoformat(), data]
                 for char_key, (last_login, fetched, data) in self._slow_cache.items()
@@ -964,6 +973,10 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             flavor, _, media_id = key.partition(":")
             if media_id.isdigit():
                 self._item_icons[(flavor, int(media_id))] = url
+        for key, level in (stored.get("item_levels") or {}).items():
+            version, _, item_id = key.partition(":")
+            if item_id.isdigit() and isinstance(level, int):
+                self._item_levels[(version, int(item_id))] = level
         known = {c["key"] for c in self.characters}
         for char_key, (last_login, fetched, data) in (stored.get("slow") or {}).items():
             if char_key in known:
@@ -971,6 +984,21 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                     self._slow_cache[char_key] = (last_login, datetime.fromisoformat(fetched), data)
                 except (TypeError, ValueError):
                     continue
+
+    async def _item_level(self, item_id: Optional[int], game_version: str) -> Optional[int]:
+        """Item level of an item, cached across restarts (it is fixed per item in Classic)."""
+        if not isinstance(item_id, int):
+            return None
+        key = (game_version, item_id)
+        if key not in self._item_levels:
+            item = await self.client.get_item(item_id, game_version)
+            level = (item or {}).get("level")
+            if not isinstance(level, int):
+                # Do not cache failures, retry on the next update
+                return None
+            self._item_levels[key] = level
+            self._schedule_cache_save()
+        return self._item_levels[key]
 
     async def _item_name(self, item_id: int, game_version: str) -> Optional[str]:
         """Localized item name, cached for the runtime."""
@@ -1740,6 +1768,8 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
             "last_update": self.coordinator.last_update_success,
             "last_login": _format_timestamp(char_data.get("last_login_timestamp")),
             "faction": char_data.get("faction"),
+            # Language-independent: "ALLIANCE", "HORDE" or "NEUTRAL"
+            "faction_type": char_data.get("faction_type"),
             "active_spec": char_data.get("spec"),
             "gender": char_data.get("gender"),
             "game_version": self._game_version,
