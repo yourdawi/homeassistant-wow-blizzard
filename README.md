@@ -349,9 +349,9 @@ The screenshots show made-up data, not real characters.
 
 Edit a dashboard, select **Add card** and choose **WoW Character** (under the community cards). Pick a character, then choose its sections under **Sections**. The list only offers the sections the character has data for, so a Classic character has no Mythic+ section. Drag the sections to change their order.
 
-<img width="30%" alt="Character card with overview, progress and equipment" src="https://github.com/user-attachments/assets/2462c32f-ece8-4c35-9b5a-15d78c21e77c" />
-<img width="30%" alt="Character card with attributes, talents, Mythic+ and raids" src="https://github.com/user-attachments/assets/1cf1f766-5b86-4d19-b28a-82a3a3bb5ef7" />
-<img width="30%" alt="Character card with PvP, professions, collections, achievements and activity" src="https://github.com/user-attachments/assets/c423fefe-c48c-4830-96f4-4f6991778467" />
+<img width="30%" alt="Character card with overview, progress and equipment" src="https://raw.githubusercontent.com/yourdawi/homeassistant-wow-blizzard/main/docs/images/character-card-overview.webp" />
+<img width="30%" alt="Character card with attributes, talents, Mythic+ and raids" src="https://raw.githubusercontent.com/yourdawi/homeassistant-wow-blizzard/main/docs/images/character-card-details.webp" />
+<img width="30%" alt="Character card with PvP, professions, collections, achievements and activity" src="https://raw.githubusercontent.com/yourdawi/homeassistant-wow-blizzard/main/docs/images/character-card-activity.webp" />
 
 ```yaml
 type: custom:wow-character-card
@@ -399,7 +399,7 @@ The card texts are in English and German, following the language of your Home As
 
 `custom:wow-guild-card` shows the guild of a character: crest, guild master and founding date, members, your rank, members per class in class colors (with how many are at max level), members per rank, guild achievements and the latest guild activity. Pick the character whose guild you want to see; characters without a guild show a hint.
 
-<img width="30%" alt="Guild card" src="https://github.com/user-attachments/assets/f2fb2363-09b2-4b26-b17f-c8efb47a0f1e" />
+<img width="30%" alt="Guild card" src="https://raw.githubusercontent.com/yourdawi/homeassistant-wow-blizzard/main/docs/images/guild-card.webp" />
 
 ```yaml
 type: custom:wow-guild-card
@@ -411,7 +411,7 @@ sections: [overview, classes, ranks, achievements, activity]
 
 `custom:wow-account-card` needs the Battle.net account entry. It shows whether the login is still valid, total gold and characters, the account-wide collections and the gold of every character, richest first.
 
-<img width="30%" alt="Battle.net account card" src="https://github.com/user-attachments/assets/ed28c8c7-6f14-4519-9153-4ea6ed0b6c99" />
+<img width="30%" alt="Battle.net account card" src="https://raw.githubusercontent.com/yourdawi/homeassistant-wow-blizzard/main/docs/images/account-card.webp" />
 
 ```yaml
 type: custom:wow-account-card
@@ -423,7 +423,7 @@ sections: [overview, collections, characters]
 
 `custom:wow-realm-card` shows a realm's status, population and login queue, and the best Mythic+ keys of the week on it (Retail, with the Mythic+ leaderboards enabled). With a region device it also shows the WoW Token price, the next weekly reset, the Mythic+ season with this week's affixes and the PvP season with its title cutoffs.
 
-<img width="30%" alt="Realm card with region" src="https://github.com/user-attachments/assets/01f6c925-3295-412b-bc50-4bb533df0bea" />
+<img width="30%" alt="Realm card with region" src="https://raw.githubusercontent.com/yourdawi/homeassistant-wow-blizzard/main/docs/images/realm-card.webp" />
 
 ```yaml
 type: custom:wow-realm-card
@@ -436,7 +436,7 @@ sections: [status, mythic_plus, token, reset, mythic_season, pvp_season]
 
 `custom:wow-auction-card` lists the tracked items of an auction house device with icon, quality color and the lowest price in gold, silver and copper, plus how many are listed. `items` picks and orders the items (all items when left out); `show_sources: true` adds the price per realm.
 
-<img width="30%" alt="Auction house card" src="https://github.com/user-attachments/assets/0bede9bb-3c88-42cc-836d-f57d21210190" />
+<img width="30%" alt="Auction house card" src="https://raw.githubusercontent.com/yourdawi/homeassistant-wow-blizzard/main/docs/images/auction-card.webp" />
 
 ```yaml
 type: custom:wow-auction-card
@@ -448,7 +448,7 @@ show_sources: true
 
 `custom:wow-hall-of-fame-card` shows each Mythic raid of the current expansion like the in-game Hall of Fame: the world first guild, the next guilds, the last guild once the list is full, where the guilds of your characters placed, and a link to the official page. `raids` picks and orders the raids (all when left out); `top` sets how many guilds are listed per raid (0 to 10, default 5).
 
-<img width="30%" alt="Hall of Fame card" src="https://github.com/user-attachments/assets/733693f7-1b24-4b55-bf6a-dfdbcfbc1eaf" />
+<img width="30%" alt="Hall of Fame card" src="https://raw.githubusercontent.com/yourdawi/homeassistant-wow-blizzard/main/docs/images/hall-of-fame-card.webp" />
 
 ```yaml
 type: custom:wow-hall-of-fame-card
