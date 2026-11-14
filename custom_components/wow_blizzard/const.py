@@ -48,7 +48,7 @@ FEATURE_VERSIONS = {
     "enable_raids": ("retail", "forever"),
     "enable_collections": ("retail", "forever"),
     "enable_region_data": ("retail", "classic"),
-    "auction_items": ("retail", "classic"),
+    "auction_items": ("retail", "classic", "forever"),
     "enable_mythic_plus": ("retail",),
     "enable_hall_of_fame": ("retail",),
     "enable_mythic_leaderboard": ("retail",),

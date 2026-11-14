@@ -44,7 +44,7 @@ Use it to track levels and item level over time, watch realm status on reset day
 | Hall of Fame | One sensor per raid of the current expansion with the world first guild and the ranks of your own guilds. |
 | Mythic+ leaderboards (opt-in) | Best key of the week per realm, with the best runs of your characters. |
 | PvP leaderboards (opt-in) | Rank of your characters on the regional 2v2, 3v3, RBG, Solo Shuffle and Blitz leaderboards. |
-| Auction house | Lowest price for item IDs you choose (Retail commodities and realm auctions, Classic Progression realm auctions). |
+| Auction house | Lowest price for item IDs you choose (Retail commodities and realm auctions, Classic Progression realm auctions, WoW Forever auction houses of your characters' game modes and factions). |
 | Dashboard cards | Cards in the style of the in-game UI for characters, guilds, the Battle.net account, realms, the auction house and the Hall of Fame. Included, no extra download. |
 | Battle.net account (optional) | Its own entry: import characters by logging in with Battle.net. While the login is valid (24 hours): gold per Retail character, total gold, account mounts, pets, toys, heirlooms and transmog appearances. |
 
@@ -73,7 +73,7 @@ WoW Forever has **no realms**. Characters have a first and last name and play in
 - The character device is named after it, e.g. `Arthas Menethil (normal)`.
 - The server device, e.g. `Normal (WoW Forever) Server`, only has **Realm Status** (the status of the game mode). Population and queue do not exist for Forever.
 
-Not available for Forever in the API: arena ratings, Mythic+, WoW Token, weekly reset and housing decor. Its auction house is split into 15 houses per game mode with about 10 MB each, which is too much to download hourly, so auction prices are not offered for Forever.
+Not available for Forever in the API: arena ratings, Mythic+, WoW Token, weekly reset and housing decor. Its auction house is split into 15 houses per game mode (Alliance, Horde and the neutral Blackwater houses); the integration only reads the houses your characters can use, see [Auction house](#auction-house).
 
 ## Requirements
 
@@ -286,7 +286,7 @@ With **Mythic+ leaderboards** enabled, every Retail realm device gets `Best M+ K
 
 ### Auction house
 
-Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, named after the item, with the lowest price per item in gold (silver and copper as decimals). Attributes: `quantity` (items listed), `auctions`, `sources` (lowest price per source), `item_icon`, `quality` and `quality_color`; the icon is also the entity picture. Retail looks in the region-wide commodity market first and in the auctions of your characters' realms for everything else; Classic Progression uses the realms of your Classic Progression characters. Classic Era and Anniversary auctions are not available in the API. The data is refreshed hourly; the Retail commodity market alone is about 30 MB, so only add the auction house if you need it.
+Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, named after the item, with the lowest price per item in gold (silver and copper as decimals). Attributes: `quantity` (items listed), `auctions`, `sources` (lowest price per source), `item_icon`, `quality` and `quality_color`; the icon is also the entity picture. Retail looks in the region-wide commodity market first and in the auctions of your characters' realms for everything else; Classic Progression uses the realms of your Classic Progression characters. WoW Forever reads the auction houses of your characters' game modes: the houses of their faction plus the neutral Blackwater houses, stackable goods first and the full auction lists only for items that are not traded as stackable goods; `sources` holds the price per house, e.g. `PvP: Alliance Auction House (110)`. For one faction that is 8 houses: about 2.2 MB of gzipped downloads per hour when every tracked item is a stackable good, up to about 4.5 MB otherwise (EU, November 2026). Classic Era and Anniversary auctions are not available in the API. The data is refreshed hourly; the Retail commodity market alone is about 30 MB, so only add the auction house if you need it.
 
 ### Guild activity
 
@@ -521,7 +521,6 @@ logger:
 - Account data needs a Battle.net login of the player, which Blizzard limits to 24 hours without a way to renew it automatically.
 - Classic Era and Anniversary auction houses are listed by the API but return no data.
 - Hall of Fame data comes from the public website rather than the official API and can break when Blizzard changes the site.
-- WoW Forever auction prices are not supported (see [WoW Forever](#wow-forever)).
 - Weekly activities (Great Vault, weekly quests) are not part of the public game data API for other accounts, so they cannot be tracked.
 
 ## Contributing
