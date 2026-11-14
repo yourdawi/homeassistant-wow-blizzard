@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from types import MappingProxyType
 
@@ -191,6 +191,15 @@ def store_forever_rulesets(hass: HomeAssistant, entry: ConfigEntry, char_data: D
         hass.config_entries.async_update_subentry(entry, subentry, data=new_data, **changes)
         changed = True
     return changed
+
+
+def track_forever_rulesets(hass: HomeAssistant, entry: ConfigEntry, coordinator: Any) -> Callable[[], None]:
+    """Store game modes that become known after setup (profile unavailable then).
+
+    Runs after every coordinator update; the subentry update reloads the entry
+    through its update listener. Returns the function that stops tracking.
+    """
+    return coordinator.async_add_listener(lambda: store_forever_rulesets(hass, entry, coordinator.data or {}))
 
 
 def entries_for(hass: HomeAssistant, region: str) -> Dict[str, ConfigEntry]:

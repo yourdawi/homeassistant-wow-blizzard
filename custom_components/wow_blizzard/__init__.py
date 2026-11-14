@@ -44,7 +44,7 @@ from .entries import (
     entry_title,
     entry_unique_id,
     realm_title,
-    store_forever_rulesets,
+    track_forever_rulesets,
 )
 from .account import (
     ACCOUNTS,
@@ -258,11 +258,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Reload on option and subentry (character) changes
     entry.async_on_unload(entry.add_update_listener(update_listener))
-    # WoW Forever characters whose profile was unavailable at setup: store
-    # their game mode once it is known (the subentry update reloads the entry)
-    entry.async_on_unload(coordinator.async_add_listener(
-        lambda: store_forever_rulesets(hass, entry, coordinator.data or {})
-    ))
+    entry.async_on_unload(track_forever_rulesets(hass, entry, coordinator))
     return True
 
 

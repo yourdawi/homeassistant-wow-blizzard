@@ -1,5 +1,6 @@
 // Auction house: the lowest price of each tracked item, with icon and quality
-// like the in-game auction house, and optionally the price per realm.
+// like the in-game auction house, the cheapest source, and optionally the
+// price per realm or auction house.
 
 import { html, nothing, type TemplateResult } from "lit";
 import { WowBaseCard } from "./base-card";
@@ -18,11 +19,20 @@ interface AuctionCardConfig extends LovelaceCardConfig {
   show_sources?: boolean;
 }
 
-/** Item name from the friendly name, without the device name in front. */
+/** Game version the integration appends to item names outside Retail. */
+const VERSION_SUFFIX = / \((?:Classic|WoW Forever)\)$/;
+
+/**
+ * Item name from the friendly name, without the device name in front and
+ * without the game version behind it: the device already names the version.
+ */
 function itemName(hass: HomeAssistant, state: HassEntityState, deviceId: string): string {
   const full = String(state.attributes.friendly_name ?? state.entity_id);
   const device = deviceName(hass, deviceId);
-  return full.startsWith(device) ? full.slice(device.length).trim() || full : full;
+  const name = full.startsWith(device) ? full.slice(device.length).trim() || full : full;
+  return state.attributes.game_version && state.attributes.game_version !== "retail"
+    ? name.replace(VERSION_SUFFIX, "") || name
+    : name;
 }
 
 export class WowAuctionCard extends WowBaseCard<AuctionCardConfig> {
@@ -97,6 +107,9 @@ export class WowAuctionCard extends WowBaseCard<AuctionCardConfig> {
     const price = numericState(state);
     const sources = Object.entries((a.sources ?? {}) as Record<string, number | null>);
     const showSources = this._config!.show_sources && sources.length > 1;
+    // Where to buy: only worth naming when there is more than one source
+    const cheapest = sources.length > 1 ? (a.cheapest_source as string | undefined) : undefined;
+    const sourceLabel = (source: string) => (source === "commodities" ? this.t("commodities") : source);
     return html`
       <div class="list-row auction" @click=${() => this.moreInfo(state)}>
         <div class="slot" style="--quality: ${a.quality_color ?? "#333"}">
@@ -109,10 +122,14 @@ export class WowAuctionCard extends WowBaseCard<AuctionCardConfig> {
               ? this.t("no_auctions")
               : html`${this.num(a.quantity)} ${this.t("quantity")} · ${this.num(a.auctions)} ${this.t("auctions")}`}
           </div>
+          ${cheapest && !showSources
+            ? html`<div class="dim small">${this.t("cheapest")}: ${sourceLabel(cheapest)}</div>`
+            : nothing}
           ${showSources
             ? html`<div class="sources">
                 ${sources.map(
-                  ([source, p]) => html`<span class="tag">${source === "commodities" ? this.t("commodities") : source}: ${p === null ? "–" : this._coins(p)}</span>`,
+                  ([source, p]) =>
+                    html`<span class="tag ${source === cheapest ? "cheapest" : ""}">${sourceLabel(source)}: ${p === null ? "–" : this._coins(p)}</span>`,
                 )}
               </div>`
             : nothing}

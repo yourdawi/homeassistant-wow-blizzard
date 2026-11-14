@@ -286,7 +286,7 @@ With **Mythic+ leaderboards** enabled, every Retail realm device gets `Best M+ K
 
 ### Auction house
 
-Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, named after the item, with the lowest price per item in gold (silver and copper as decimals). Attributes: `quantity` (items listed), `auctions`, `sources` (lowest price per source), `item_icon`, `quality` and `quality_color`; the icon is also the entity picture. Retail looks in the region-wide commodity market first and in the auctions of your characters' realms for everything else; Classic Progression uses the realms of your Classic Progression characters. WoW Forever reads the auction houses of your characters' game modes: the houses of their faction plus the neutral Blackwater houses, stackable goods first and the full auction lists only for items that are not traded as stackable goods; `sources` holds the price per house, e.g. `PvP: Alliance Auction House (110)`. For one faction that is 10 houses (two of them currently empty): about 2.8 MB of gzipped downloads per hour when every tracked item is a stackable good, up to about 5.7 MB otherwise (EU, November 2026). The houses are read one after another, so an update can take about 10 seconds. Classic Era and Anniversary auctions are not available in the API. The data is refreshed hourly; the Retail commodity market alone is about 30 MB, so only add the auction house if you need it.
+Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, named after the item, with the lowest price per item in gold (silver and copper as decimals). Attributes: `quantity` (items listed), `auctions`, `sources` (lowest price per source), `cheapest_source` (the source with that lowest price), `item_icon`, `quality` and `quality_color`; the icon is also the entity picture. Retail looks in the region-wide commodity market first and in the auctions of your characters' realms for everything else; Classic Progression uses the realms of your Classic Progression characters. WoW Forever reads the auction houses of your characters' game modes: the houses of their faction plus the neutral Blackwater houses, stackable goods first and the full auction lists only for items that are not traded as stackable goods; `sources` holds the price per house, e.g. `PvP: Alliance Auction House (110)`. For one faction that is 10 houses (two of them currently empty): about 2.8 MB of gzipped downloads per hour when every tracked item is a stackable good, up to about 5.7 MB otherwise (EU, November 2026). The houses are read one after another, so an update can take about 10 seconds. Classic Era and Anniversary auctions are not available in the API. The data is refreshed hourly; the Retail commodity market alone is about 30 MB, so only add the auction house if you need it.
 
 ### Guild activity
 
@@ -542,6 +542,13 @@ npm run build
 ```
 
 The build writes `custom_components/wow_blizzard/www/wow-cards.js`, which the release workflow builds for every release. `npm run watch` rebuilds on every change. Restart Home Assistant to serve a new build under a new cache key, then reload the browser.
+
+The tests use [pytest-homeassistant-custom-component](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component) and run on every push. Home Assistant does not run on Windows, so use Linux, macOS, WSL or a container there:
+
+```bash
+pip install -r requirements_test.txt
+pytest
+```
 
 ## License
 

@@ -110,6 +110,7 @@ from .parsers import (
     parse_transmogs,
     parse_pvp_rewards,
     summarize_auctions,
+    cheapest_source,
     forever_auction_houses,
     forever_ruleset_factions,
     parse_achievement_statistics,
@@ -1377,6 +1378,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                         source: round(price / 10000, 4) if price is not None else None
                         for source, price in entry["sources"].items()
                     },
+                    "cheapest_source": cheapest_source(entry["sources"]),
                     "item_name": info.get("name"),
                     "item_icon": await self._item_icon(info.get("media_id"), game_version),
                     "quality": info.get("quality"),
@@ -2314,6 +2316,7 @@ class WoWAuctionSensor(CoordinatorEntity, SensorEntity):
             "quantity": auction.get("quantity"),
             "auctions": auction.get("auctions"),
             "sources": auction.get("sources", {}),
+            "cheapest_source": auction.get("cheapest_source"),
             "item_icon": auction.get("item_icon"),
             "quality": auction.get("quality"),
             "quality_color": ITEM_QUALITY_COLORS.get(auction.get("quality") or "", None),

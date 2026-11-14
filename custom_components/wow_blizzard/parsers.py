@@ -683,6 +683,15 @@ def summarize_auctions(data: Dict[str, Any], item_ids: set) -> Dict[int, Dict[st
     return result
 
 
+def cheapest_source(sources: Dict[str, Optional[float]]) -> Optional[str]:
+    """The source (realm, auction house or "commodities") with the lowest price.
+
+    Sources without a price (bids only) are skipped; on a tie the first one wins.
+    """
+    priced = [(price, source) for source, price in (sources or {}).items() if price is not None]
+    return min(priced, key=lambda entry: entry[0])[1] if priced else None
+
+
 def forever_ruleset_factions(characters: list) -> Dict[int, Any]:
     """WoW Forever rulesets with their name and the factions whose houses are needed.
 
