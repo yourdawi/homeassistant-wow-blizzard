@@ -2323,13 +2323,8 @@ class WoWAuctionSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_info(self):
         """Return device info."""
-        # One device per game version; Retail keeps its original ID so
-        # existing devices stay in place
-        device_id = f"auctions_{self._region}"
-        if self._game_version != "retail":
-            device_id += f"_{self._game_version}"
         return {
-            "identifiers": {(DOMAIN, device_id)},
+            "identifiers": {(DOMAIN, f"auctions_{self._region}")},
             "name": f"WoW {self._region.upper()} Auction House" + (
                 "" if self._game_version == "retail" else f" ({_game_version_label(self._game_version)})"
             ),
