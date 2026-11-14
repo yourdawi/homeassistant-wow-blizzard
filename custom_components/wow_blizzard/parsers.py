@@ -683,6 +683,31 @@ def summarize_auctions(data: Dict[str, Any], item_ids: set) -> Dict[int, Dict[st
     return result
 
 
+def forever_ruleset_factions(characters: list) -> Dict[int, Any]:
+    """WoW Forever rulesets with their name and the factions whose houses are needed.
+
+    ``characters`` holds ``(ruleset_id, ruleset_name, faction_type)`` per character.
+    A character without a known faction needs every house of its ruleset, so the
+    ruleset then gets an empty set (see ``forever_auction_houses``), even if other
+    characters there have a faction.
+    """
+    targets: Dict[int, Any] = {}
+    unknown: set = set()
+    for ruleset_id, ruleset_name, faction_type in characters:
+        if not isinstance(ruleset_id, int):
+            continue
+        _, factions = targets.setdefault(ruleset_id, (ruleset_name, set()))
+        faction = (faction_type or "").upper()
+        if faction in ("ALLIANCE", "HORDE"):
+            factions.add(faction)
+        else:
+            unknown.add(ruleset_id)
+    return {
+        ruleset_id: (name, set() if ruleset_id in unknown else factions)
+        for ruleset_id, (name, factions) in targets.items()
+    }
+
+
 def forever_auction_houses(index: Dict[str, Any], factions: set) -> list:
     """Auction houses of a WoW Forever ruleset that characters of these factions can use.
 

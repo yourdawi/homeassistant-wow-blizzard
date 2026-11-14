@@ -150,6 +150,49 @@ def realm_keys(hass: HomeAssistant, entry: ConfigEntry, characters: List[Dict[st
     return realms
 
 
+def store_forever_rulesets(hass: HomeAssistant, entry: ConfigEntry, char_data: Dict[str, Any]) -> bool:
+    """Store the game mode (ruleset) of WoW Forever characters added without one.
+
+    Characters imported by login may come without a ruleset (realm "forever"),
+    so their game mode gets no server device. The profile always names it:
+    store its ID and, as when adding a character by name, use the ruleset as
+    the realm (unless another character already has that subentry unique ID).
+    ``char_data`` holds the fetched character data by character key.
+    Returns whether a subentry was updated.
+    """
+    if not GAME_VERSIONS.get(entry_game_version(entry), {}).get("realmless"):
+        return False
+    taken = {s.unique_id for s in entry.subentries.values() if s.subentry_type == SUBENTRY_CHARACTER}
+    changed = False
+    for character in entry_characters(entry):
+        if character.get(CONF_RULESET_ID) is not None:
+            continue
+        data = char_data.get(character["key"]) or {}
+        ruleset_id = data.get("ruleset_id")
+        if not isinstance(ruleset_id, int):
+            continue
+        subentry = entry.subentries[character["subentry_id"]]
+        name = subentry.data[CONF_CHARACTER_NAME]
+        old_realm = subentry.data[CONF_REALM]
+        new_data = {**subentry.data, CONF_RULESET_ID: ruleset_id}
+        changes: Dict[str, Any] = {}
+        ruleset_name = data.get("ruleset_name")
+        realm = WoWBlizzardAPIClient.realm_to_slug(ruleset_name) if ruleset_name else ""
+        unique_id = character_unique_id(realm, name)
+        if realm and realm != old_realm and unique_id not in taken:
+            taken.discard(subentry.unique_id)
+            taken.add(unique_id)
+            new_data[CONF_REALM] = realm
+            changes["unique_id"] = unique_id
+            # Keep titles the user has changed
+            if subentry.title in (name, character_title(name, realm_title(old_realm))):
+                changes["title"] = character_title(name, ruleset_name)
+        _LOGGER.debug("Storing ruleset %s of WoW Forever character %s", ruleset_id, name)
+        hass.config_entries.async_update_subentry(entry, subentry, data=new_data, **changes)
+        changed = True
+    return changed
+
+
 def entries_for(hass: HomeAssistant, region: str) -> Dict[str, ConfigEntry]:
     """Existing game version entries of a region by game version (no account entry)."""
     return {

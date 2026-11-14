@@ -72,7 +72,14 @@ from .const import (
     no_value_text,
 )
 from .api_client import WoWBlizzardAPIClient
-from .entries import entry_characters, entry_game_version, group_subentry_id, realm_keys, unique_base
+from .entries import (
+    entry_characters,
+    entry_game_version,
+    group_subentry_id,
+    realm_keys,
+    store_forever_rulesets,
+    unique_base,
+)
 from .account import (
     AccountCoordinator,
     account_coordinator,
@@ -104,6 +111,7 @@ from .parsers import (
     parse_pvp_rewards,
     summarize_auctions,
     forever_auction_houses,
+    forever_ruleset_factions,
     parse_achievement_statistics,
     parse_dungeons,
     parse_hunter_pets,
@@ -1279,21 +1287,17 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         The ruleset comes from the profile and falls back to the one stored
         with the character (characters imported by login may have none).
         """
-        targets: Dict[int, Any] = {}
+        entries = []
         for character in self.characters:
             if character[CONF_GAME_VERSION] != "forever":
                 continue
             char_data = (all_data or {}).get(character["key"]) or self._previous(character["key"]) or {}
-            ruleset_id = char_data.get("ruleset_id") or character.get(CONF_RULESET_ID)
-            if not isinstance(ruleset_id, int):
-                continue
-            name, factions = targets.setdefault(
-                ruleset_id, (char_data.get("ruleset_name") or character[CONF_REALM], set())
-            )
-            faction = (char_data.get("faction_type") or "").upper()
-            if faction in ("ALLIANCE", "HORDE"):
-                factions.add(faction)
-        return targets
+            entries.append((
+                char_data.get("ruleset_id") or character.get(CONF_RULESET_ID),
+                char_data.get("ruleset_name") or character[CONF_REALM],
+                char_data.get("faction_type"),
+            ))
+        return forever_ruleset_factions(entries)
 
     async def _fetch_auctions(self, all_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Lowest auction price per tracked item (hourly; Retail, Classic Progression and WoW Forever)."""
@@ -1601,6 +1605,14 @@ async def async_create_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> W
     coordinator._cache_store = Store(hass, 1, cache_store_key(entry.entry_id))
     coordinator.load_cache(await coordinator._cache_store.async_load())
     await coordinator.async_config_entry_first_refresh()
+    if store_forever_rulesets(hass, entry, coordinator.data or {}):
+        # WoW Forever characters got their game mode. The entry's update
+        # listener is not registered yet (no reload), so pick up the new
+        # server devices here.
+        coordinator.characters = entry_characters(entry)
+        coordinator.realms = realm_keys(hass, entry, coordinator.characters)
+        servers = await coordinator._fetch_all_server_data()
+        coordinator.data.setdefault("servers", {}).update({key: value for key, value in servers.items() if value})
     return coordinator
 
 
@@ -2311,8 +2323,13 @@ class WoWAuctionSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_info(self):
         """Return device info."""
+        # One device per game version; Retail keeps its original ID so
+        # existing devices stay in place
+        device_id = f"auctions_{self._region}"
+        if self._game_version != "retail":
+            device_id += f"_{self._game_version}"
         return {
-            "identifiers": {(DOMAIN, f"auctions_{self._region}")},
+            "identifiers": {(DOMAIN, device_id)},
             "name": f"WoW {self._region.upper()} Auction House" + (
                 "" if self._game_version == "retail" else f" ({_game_version_label(self._game_version)})"
             ),
