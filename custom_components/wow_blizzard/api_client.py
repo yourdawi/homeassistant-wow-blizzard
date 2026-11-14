@@ -629,6 +629,27 @@ class WoWBlizzardAPIClient:
         endpoint = f"/data/wow/connected-realm/{connected_realm_id}/auctions"
         return await self._make_request(endpoint, params, parse_in_thread=True)
 
+    async def get_ruleset_auction_index(self, ruleset_id: int, game_version: str = "forever") -> Dict[str, Any]:
+        """Get the auction houses of a WoW Forever ruleset.
+
+        The names are requested in English because they are the only way to
+        tell the Alliance, Horde and neutral (Blackwater) houses apart.
+        """
+        params = {"namespace": self.get_namespace("dynamic", game_version), "locale": "en_US"}
+        return await self._make_request(f"/data/wow/ruleset/{ruleset_id}/auctions/", params)
+
+    async def get_ruleset_auctions(self, ruleset_id: int, house_id: int, game_version: str = "forever") -> Dict[str, Any]:
+        """Get the auctions of one WoW Forever auction house (up to about 10 MB, about 1 MB gzipped)."""
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
+        endpoint = f"/data/wow/ruleset/{ruleset_id}/auctions/{house_id}"
+        return await self._make_request(endpoint, params, parse_in_thread=True)
+
+    async def get_ruleset_commodities(self, ruleset_id: int, house_id: int, game_version: str = "forever") -> Dict[str, Any]:
+        """Get the stackable goods of one WoW Forever auction house (up to about 8 MB, about 0.8 MB gzipped)."""
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
+        endpoint = f"/data/wow/ruleset/{ruleset_id}/auctions/{house_id}/commodities"
+        return await self._make_request(endpoint, params, parse_in_thread=True)
+
     async def get_current_keystone_period(self) -> Dict[str, Any]:
         """Get the current weekly period (start and end of the reset week)."""
         params = {"namespace": self.get_namespace("dynamic", "retail")}

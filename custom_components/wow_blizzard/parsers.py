@@ -683,6 +683,61 @@ def summarize_auctions(data: Dict[str, Any], item_ids: set) -> Dict[int, Dict[st
     return result
 
 
+def cheapest_source(sources: Dict[str, Optional[float]]) -> Optional[str]:
+    """The source (realm, auction house or "commodities") with the lowest price.
+
+    Sources without a price (bids only) are skipped; on a tie the first one wins.
+    """
+    priced = [(price, source) for source, price in (sources or {}).items() if price is not None]
+    return min(priced, key=lambda entry: entry[0])[1] if priced else None
+
+
+def forever_ruleset_factions(characters: list) -> Dict[int, Any]:
+    """WoW Forever rulesets with their name and the factions whose houses are needed.
+
+    ``characters`` holds ``(ruleset_id, ruleset_name, faction_type)`` per character.
+    A character without a known faction needs every house of its ruleset, so the
+    ruleset then gets an empty set (see ``forever_auction_houses``), even if other
+    characters there have a faction.
+    """
+    targets: Dict[int, Any] = {}
+    unknown: set = set()
+    for ruleset_id, ruleset_name, faction_type in characters:
+        if not isinstance(ruleset_id, int):
+            continue
+        _, factions = targets.setdefault(ruleset_id, (ruleset_name, set()))
+        faction = (faction_type or "").upper()
+        if faction in ("ALLIANCE", "HORDE"):
+            factions.add(faction)
+        else:
+            unknown.add(ruleset_id)
+    return {
+        ruleset_id: (name, set() if ruleset_id in unknown else factions)
+        for ruleset_id, (name, factions) in targets.items()
+    }
+
+
+def forever_auction_houses(index: Dict[str, Any], factions: set) -> list:
+    """Auction houses of a WoW Forever ruleset that characters of these factions can use.
+
+    A ruleset has several Alliance, Horde and neutral (Blackwater) houses; the
+    index only tells them apart by their English name. Neutral houses are open
+    to both factions. Without a known faction every house is returned.
+    """
+    houses = []
+    for house in (index or {}).get("auctions") or []:
+        house_id = house.get("id")
+        if not isinstance(house_id, int):
+            continue
+        name = house.get("name") or ""
+        lowered = name.lower()
+        kind = "ALLIANCE" if "alliance" in lowered else "HORDE" if "horde" in lowered else "NEUTRAL"
+        if factions and kind != "NEUTRAL" and kind not in factions:
+            continue
+        houses.append({"id": house_id, "name": name or f"Auction House {house_id}", "faction": kind})
+    return houses
+
+
 def parse_account_characters(data: Dict[str, Any]) -> list:
     """Characters of all WoW accounts of the logged-in player."""
     characters = []

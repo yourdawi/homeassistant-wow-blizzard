@@ -224,6 +224,10 @@ export const extraStyles = css`
     gap: 4px;
     margin-top: 4px;
   }
+  .sources .tag.cheapest {
+    color: var(--wow-gold);
+    border-color: var(--wow-gold);
+  }
   .price {
     flex: none;
     font-weight: 600;

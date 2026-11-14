@@ -72,7 +72,14 @@ from .const import (
     no_value_text,
 )
 from .api_client import WoWBlizzardAPIClient
-from .entries import entry_characters, entry_game_version, group_subentry_id, realm_keys, unique_base
+from .entries import (
+    entry_characters,
+    entry_game_version,
+    group_subentry_id,
+    realm_keys,
+    store_forever_rulesets,
+    unique_base,
+)
 from .account import (
     AccountCoordinator,
     account_coordinator,
@@ -103,6 +110,9 @@ from .parsers import (
     parse_transmogs,
     parse_pvp_rewards,
     summarize_auctions,
+    cheapest_source,
+    forever_auction_houses,
+    forever_ruleset_factions,
     parse_achievement_statistics,
     parse_dungeons,
     parse_hunter_pets,
@@ -212,6 +222,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self.game_version = game_version or (self.characters[0][CONF_GAME_VERSION] if self.characters else "retail")
         self.has_retail = self.game_version == "retail"
         self.has_classic_progression = self.game_version == "classic"
+        self.has_forever = self.game_version == "forever"
 
         # Cache for dynamic raid discovery and Hall of Fame leaderboards
         self._cached_raids = None
@@ -236,6 +247,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         # Hourly data: (fetch time, data)
         self._leaderboard_cache: Optional[Any] = None
         self._auction_cache: Optional[Any] = None
+        # WoW Forever: auction house index per ruleset, read once per runtime
+        self._ruleset_auction_houses: Dict[int, Dict[str, Any]] = {}
         self._guild_activity: Dict[str, List[Dict[str, Any]]] = {}
         # Guild members per guild (to spot joins and leaves), the joins and
         # leaves of the last roster check, class names per game version
@@ -340,6 +353,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 "spec": (profile.get("active_spec") or {}).get("name"),
                 "spec_id": (profile.get("active_spec") or {}).get("id"),
                 "faction_type": (profile.get("faction") or {}).get("type"),
+                # WoW Forever: the game mode (ruleset) the character plays in
+                "ruleset_id": (profile.get("ruleset") or {}).get("id"),
+                "ruleset_name": (profile.get("ruleset") or {}).get("name"),
                 "avatar_url": avatar_url,
                 "full_body_url": full_body_url,
                 "character_equipment": len(equipped_items_list),
@@ -1266,8 +1282,26 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._leaderboard_cache = (datetime.now(), result)
         return result
 
-    async def _fetch_auctions(self) -> Dict[str, Any]:
-        """Lowest auction price per tracked item (hourly; Retail and Classic Progression)."""
+    def _forever_auction_targets(self, all_data: Optional[Dict[str, Any]]) -> Dict[int, Any]:
+        """WoW Forever rulesets with their name and the factions of the characters in them.
+
+        The ruleset comes from the profile and falls back to the one stored
+        with the character (characters imported by login may have none).
+        """
+        entries = []
+        for character in self.characters:
+            if character[CONF_GAME_VERSION] != "forever":
+                continue
+            char_data = (all_data or {}).get(character["key"]) or self._previous(character["key"]) or {}
+            entries.append((
+                char_data.get("ruleset_id") or character.get(CONF_RULESET_ID),
+                char_data.get("ruleset_name") or character[CONF_REALM],
+                char_data.get("faction_type"),
+            ))
+        return forever_ruleset_factions(entries)
+
+    async def _fetch_auctions(self, all_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Lowest auction price per tracked item (hourly; Retail, Classic Progression and WoW Forever)."""
         if not self.auction_items:
             return {}
         if self._is_fresh(self._auction_cache, AUCTION_REFRESH_INTERVAL):
@@ -1275,31 +1309,62 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
 
         item_ids = set(self.auction_items)
         result: Dict[str, Any] = {}
-        for game_version, enabled in (("retail", self.has_retail), ("classic", self.has_classic_progression)):
+        for game_version, enabled in (
+            ("retail", self.has_retail),
+            ("classic", self.has_classic_progression),
+            ("forever", self.has_forever),
+        ):
             if not enabled:
                 continue
             found: Dict[int, Dict[str, Any]] = {}
-            if game_version == "retail":
-                # Stackable goods trade region-wide as commodities
-                for item_id, entry in summarize_auctions(await self.client.get_commodities(), item_ids).items():
-                    found[item_id] = {**entry, "sources": {"commodities": entry["min_price"]}}
-            missing = item_ids - set(found) if game_version == "retail" else item_ids
-            if missing:
-                realms = {realm["realm"] for realm in self.realms.values() if realm["game_version"] == game_version}
-                seen = set()
-                for realm in sorted(realms):
-                    connected_realm_id = await self._connected_realm(realm, game_version)
-                    if connected_realm_id is None or connected_realm_id in seen:
-                        continue
-                    seen.add(connected_realm_id)
-                    auctions = await self.client.get_realm_auctions(connected_realm_id, game_version)
-                    for item_id, entry in summarize_auctions(auctions, missing).items():
-                        total = found.setdefault(item_id, {"min_price": None, "quantity": 0, "auctions": 0, "sources": {}})
-                        total["quantity"] += entry["quantity"]
-                        total["auctions"] += entry["auctions"]
-                        total["sources"][realm] = entry["min_price"]
-                        if entry["min_price"] is not None and (total["min_price"] is None or entry["min_price"] < total["min_price"]):
-                            total["min_price"] = entry["min_price"]
+
+            def add_source(source: str, auctions: Dict[str, Any], wanted: set) -> None:
+                for item_id, entry in summarize_auctions(auctions, wanted).items():
+                    total = found.setdefault(item_id, {"min_price": None, "quantity": 0, "auctions": 0, "sources": {}})
+                    total["quantity"] += entry["quantity"]
+                    total["auctions"] += entry["auctions"]
+                    total["sources"][source] = entry["min_price"]
+                    if entry["min_price"] is not None and (total["min_price"] is None or entry["min_price"] < total["min_price"]):
+                        total["min_price"] = entry["min_price"]
+
+            if game_version == "forever":
+                # No realms: every ruleset (game mode) has its own Alliance,
+                # Horde and neutral houses; only those the characters can use.
+                # Like Retail, stackable goods are listed separately as
+                # commodities, so the larger auction lists are only read for
+                # items that no house lists as a commodity.
+                houses = []
+                for ruleset_id, (ruleset_name, factions) in self._forever_auction_targets(all_data).items():
+                    if ruleset_id not in self._ruleset_auction_houses:
+                        index = await self.client.get_ruleset_auction_index(ruleset_id, game_version)
+                        if not forever_auction_houses(index, set()):
+                            continue
+                        self._ruleset_auction_houses[ruleset_id] = index
+                    houses.extend(
+                        (ruleset_id, house, f"{ruleset_name}: {house['name']} ({house['id']})")
+                        for house in forever_auction_houses(self._ruleset_auction_houses[ruleset_id], factions)
+                    )
+                for ruleset_id, house, label in houses:
+                    add_source(label, await self.client.get_ruleset_commodities(ruleset_id, house["id"], game_version), item_ids)
+                missing = item_ids - set(found)
+                if missing:
+                    for ruleset_id, house, label in houses:
+                        add_source(label, await self.client.get_ruleset_auctions(ruleset_id, house["id"], game_version), missing)
+            else:
+                if game_version == "retail":
+                    # Stackable goods trade region-wide as commodities
+                    for item_id, entry in summarize_auctions(await self.client.get_commodities(), item_ids).items():
+                        found[item_id] = {**entry, "sources": {"commodities": entry["min_price"]}}
+                missing = item_ids - set(found) if game_version == "retail" else item_ids
+                if missing:
+                    realms = {realm["realm"] for realm in self.realms.values() if realm["game_version"] == game_version}
+                    seen = set()
+                    for realm in sorted(realms):
+                        connected_realm_id = await self._connected_realm(realm, game_version)
+                        if connected_realm_id is None or connected_realm_id in seen:
+                            continue
+                        seen.add(connected_realm_id)
+                        add_source(realm, await self.client.get_realm_auctions(connected_realm_id, game_version), missing)
 
             for item_id in self.auction_items:
                 entry = found.get(item_id) or {"min_price": None, "quantity": 0, "auctions": 0, "sources": {}}
@@ -1313,6 +1378,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                         source: round(price / 10000, 4) if price is not None else None
                         for source, price in entry["sources"].items()
                     },
+                    "cheapest_source": cheapest_source(entry["sources"]),
                     "item_name": info.get("name"),
                     "item_icon": await self._item_icon(info.get("media_id"), game_version),
                     "quality": info.get("quality"),
@@ -1408,7 +1474,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 region_data.setdefault("attrs", {})["mythicplus_affixes"] = {"affixes": leaderboards["affixes"]}
             all_data["region"] = region_data or self._previous("region")
 
-            all_data["auctions"] = await self._fetch_auctions() or self._previous("auctions")
+            all_data["auctions"] = await self._fetch_auctions(all_data) or self._previous("auctions")
             all_data["guild_activity"] = dict(self._guild_activity)
             all_data["guild_roster_events"] = dict(self._guild_roster_events)
             all_data["guild_crests"] = dict(self._guild_crests)
@@ -1541,6 +1607,14 @@ async def async_create_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> W
     coordinator._cache_store = Store(hass, 1, cache_store_key(entry.entry_id))
     coordinator.load_cache(await coordinator._cache_store.async_load())
     await coordinator.async_config_entry_first_refresh()
+    if store_forever_rulesets(hass, entry, coordinator.data or {}):
+        # WoW Forever characters got their game mode. The entry's update
+        # listener is not registered yet (no reload), so pick up the new
+        # server devices here.
+        coordinator.characters = entry_characters(entry)
+        coordinator.realms = realm_keys(hass, entry, coordinator.characters)
+        servers = await coordinator._fetch_all_server_data()
+        coordinator.data.setdefault("servers", {}).update({key: value for key, value in servers.items() if value})
     return coordinator
 
 
@@ -1665,7 +1739,11 @@ async def async_setup_entry(
                 )
 
     # Auction prices per tracked item
-    for game_version, enabled in (("retail", coordinator.has_retail), ("classic", coordinator.has_classic_progression)):
+    for game_version, enabled in (
+        ("retail", coordinator.has_retail),
+        ("classic", coordinator.has_classic_progression),
+        ("forever", coordinator.has_forever),
+    ):
         if enabled:
             for item_id in coordinator.auction_items:
                 entities.append(WoWAuctionSensor(coordinator, game_version, item_id, base))
@@ -2214,7 +2292,9 @@ class WoWAuctionSensor(CoordinatorEntity, SensorEntity):
     def name(self):
         """Item name, falls back to the item ID."""
         name = self._auction.get("item_name") or f"Item {self._item_id}"
-        return f"{name} (Classic)" if self._game_version == "classic" else name
+        if self._game_version == "retail":
+            return name
+        return f"{name} (Classic)" if self._game_version == "classic" else f"{name} ({_game_version_label(self._game_version)})"
 
     @property
     def native_value(self):
@@ -2236,6 +2316,7 @@ class WoWAuctionSensor(CoordinatorEntity, SensorEntity):
             "quantity": auction.get("quantity"),
             "auctions": auction.get("auctions"),
             "sources": auction.get("sources", {}),
+            "cheapest_source": auction.get("cheapest_source"),
             "item_icon": auction.get("item_icon"),
             "quality": auction.get("quality"),
             "quality_color": ITEM_QUALITY_COLORS.get(auction.get("quality") or "", None),

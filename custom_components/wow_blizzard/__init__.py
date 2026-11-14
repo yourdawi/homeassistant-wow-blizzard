@@ -44,6 +44,7 @@ from .entries import (
     entry_title,
     entry_unique_id,
     realm_title,
+    track_forever_rulesets,
 )
 from .account import (
     ACCOUNTS,
@@ -257,6 +258,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Reload on option and subentry (character) changes
     entry.async_on_unload(entry.add_update_listener(update_listener))
+    entry.async_on_unload(track_forever_rulesets(hass, entry, coordinator))
     return True
 
 
