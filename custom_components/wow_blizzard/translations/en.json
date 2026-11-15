@@ -424,6 +424,12 @@
       "account_transmogs": {
         "name": "Account Transmog Appearances"
       },
+      "account_transmogs_forever": {
+        "name": "Account Transmog Appearances (WoW Forever)"
+      },
+      "account_houses": {
+        "name": "Houses"
+      },
       "account_login": {
         "name": "Battle.net Login Expires"
       },

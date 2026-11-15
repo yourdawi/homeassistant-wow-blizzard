@@ -23,7 +23,14 @@ from .const import (
     ENTRY_TYPE_ACCOUNT,
     SLOW_REFRESH_INTERVAL,
 )
-from .parsers import ACCOUNT_COLLECTIONS, count_collection, parse_account_characters, parse_transmogs
+from .parsers import (
+    ACCOUNT_COLLECTIONS,
+    count_collection,
+    parse_account_characters,
+    parse_account_houses,
+    parse_transmogs,
+    protected_stats_attributes,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,6 +104,8 @@ class AccountCoordinator(DataUpdateCoordinator):
         self._store = store
         self._last: Dict[str, Any] = {}
         self._transmogs: Optional[Any] = None
+        # WoW Forever account transmogs: (fetch time, parsed) or (fetch time, None) without Forever
+        self._forever_transmogs: Optional[Any] = None
         super().__init__(
             hass, _LOGGER, name=f"{DOMAIN}_account", config_entry=entry,
             update_interval=timedelta(seconds=ACCOUNT_REFRESH_INTERVAL),
@@ -158,6 +167,9 @@ class AccountCoordinator(DataUpdateCoordinator):
                 if game_version == "retail":
                     return None
                 continue
+            if game_version == "retail":
+                # Houses of the account (not documented)
+                _merge_attrs(result, parse_account_houses(profile))
             characters = [c for c in parse_account_characters(profile) if c.get("realm_id") and c.get("id")]
             if game_version == "retail":
                 account_characters = len(characters)
@@ -178,16 +190,9 @@ class AccountCoordinator(DataUpdateCoordinator):
                 gold = money // 10000
                 if game_version == "retail":
                     total_gold += gold
-                stats = protected.get("protected_stats") or {}
                 result["characters"][key] = {
                     "character_gold": gold,
-                    "attrs": {"character_gold": {
-                        "total_gold_gained": (stats.get("total_gold_gained") or 0) // 10000,
-                        "total_gold_lost": (stats.get("total_gold_lost") or 0) // 10000,
-                        "total_deaths": stats.get("total_number_deaths"),
-                        "location": ((protected.get("position") or {}).get("zone") or {}).get("name"),
-                        "hearthstone": ((protected.get("bind_position") or {}).get("zone") or {}).get("name"),
-                    }},
+                    "attrs": {"character_gold": protected_stats_attributes(protected)},
                 }
         result["account_gold_total"] = total_gold
         result["account_characters"] = account_characters
@@ -208,11 +213,47 @@ class AccountCoordinator(DataUpdateCoordinator):
                 self._transmogs = (datetime.now(), transmogs)
         if transmogs:
             result["account_transmogs"] = transmogs["transmogs_collected"]
-            result["attrs"] = {"account_transmogs": transmogs["attrs"]["transmogs_collected"]}
+            _merge_attrs(result, {"attrs": {"account_transmogs": transmogs["attrs"]["transmogs_collected"]}})
         elif "account_transmogs" in self._last:
             result["account_transmogs"] = self._last["account_transmogs"]
-            result["attrs"] = {"account_transmogs": (self._last.get("attrs") or {}).get("account_transmogs") or {}}
+            _merge_attrs(result, {"attrs": {"account_transmogs": (self._last.get("attrs") or {}).get("account_transmogs") or {}}})
+
+        # WoW Forever: the account has transmogs (its mounts, pets and toys answer empty)
+        forever = await self._fetch_forever_transmogs(token)
+        if forever:
+            result["account_transmogs_forever"] = forever["transmogs_collected"]
+            _merge_attrs(result, {"attrs": {"account_transmogs_forever": forever["attrs"]["transmogs_collected"]}})
+        elif "account_transmogs_forever" in self._last:
+            result["account_transmogs_forever"] = self._last["account_transmogs_forever"]
+            _merge_attrs(result, {"attrs": {
+                "account_transmogs_forever": (self._last.get("attrs") or {}).get("account_transmogs_forever") or {},
+            }})
         return result
+
+    async def _fetch_forever_transmogs(self, token: str) -> Optional[Dict[str, Any]]:
+        """Transmogs of the WoW Forever account, every few hours; None without Forever characters."""
+        if self._forever_transmogs and datetime.now() - self._forever_transmogs[0] < timedelta(seconds=SLOW_REFRESH_INTERVAL):
+            return self._forever_transmogs[1]
+        profile = await self.client.get_account_profile(token, "forever")
+        if not parse_account_characters(profile or {}):
+            parsed = None
+        else:
+            parsed = parse_transmogs(await self.client.get_account_collection(token, "transmogs", game_version="forever")) or None
+            if parsed is None and self._forever_transmogs:
+                # Temporary error: keep the last value
+                parsed = self._forever_transmogs[1]
+        if profile:
+            self._forever_transmogs = (datetime.now(), parsed)
+        return parsed
+
+
+def _merge_attrs(result: Dict[str, Any], part: Dict[str, Any]) -> None:
+    """Merge values and per-sensor attributes into the account data."""
+    for key, value in part.items():
+        if key == "attrs":
+            result.setdefault("attrs", {}).update(value)
+        else:
+            result[key] = value
 
 
 def reload_gold_entries(hass: HomeAssistant, region: str, linked: Optional[bool]) -> None:

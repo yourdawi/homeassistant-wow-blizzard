@@ -286,3 +286,38 @@ def test_no_primary_professions(hass: HomeAssistant) -> None:
     assert sensor.native_value == "Keine Hauptberufe"
     coordinator.data = {"stormwind-Varian": {"character_level": 80}}
     assert sensor.native_value is None
+
+
+def test_account_houses():
+    from custom_components.wow_blizzard.parsers import parse_account_houses
+
+    profile = {"wow_accounts": [], "houses": [
+        {"href": "https://eu.api.blizzard.com/profile/wow/character/stormwind/varian/house/house-1?namespace=profile-eu"},
+    ]}
+    assert parse_account_houses(profile) == {
+        "account_houses": 1,
+        "attrs": {"account_houses": {"houses": [{"character": "Varian", "realm": "stormwind", "house_number": 1}]}},
+    }
+    assert parse_account_houses({"wow_accounts": []})["account_houses"] == 0
+    assert parse_account_houses({}) == {}
+
+
+def test_protected_stats_attributes():
+    from custom_components.wow_blizzard.parsers import protected_stats_attributes
+
+    attrs = protected_stats_attributes({
+        "protected_stats": {
+            "total_number_deaths": 120, "total_gold_gained": 50_000_000, "total_gold_lost": 20_000_000,
+            "total_item_value_gained": 9_990_000, "level_number_deaths": 3, "level_gold_gained": 1_230_000,
+            "level_gold_lost": 10_000, "level_item_value_gained": 25_000,
+        },
+        "position": {"zone": {"name": "Stormwind City"}},
+        "bind_position": {"zone": {"name": "Goldshire"}},
+    })
+    assert attrs == {
+        "total_gold_gained": 5000, "total_gold_lost": 2000, "total_item_value_gained": 999,
+        "total_deaths": 120, "level_gold_gained": 123, "level_gold_lost": 1, "level_item_value_gained": 2,
+        "level_deaths": 3, "location": "Stormwind City", "hearthstone": "Goldshire",
+    }
+    # Missing stats stay None (the totals of gold keep their old 0)
+    assert protected_stats_attributes({})["total_item_value_gained"] is None

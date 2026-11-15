@@ -519,9 +519,14 @@ class WoWBlizzardAPIClient:
         endpoint = f"/profile/user/wow/protected-character/{realm_id}-{character_id}"
         return await self._make_request(endpoint, params, user_token=user_token)
 
-    async def get_account_collection(self, user_token: str, kind: str, parse_in_thread: bool = False) -> Dict[str, Any]:
-        """Get an account-wide collection, e.g. "mounts", "pets" or "transmogs" (Retail)."""
-        params = {"namespace": self.get_namespace("profile", "retail")}
+    async def get_account_collection(
+        self, user_token: str, kind: str, parse_in_thread: bool = False, game_version: str = "retail"
+    ) -> Dict[str, Any]:
+        """Get an account-wide collection, e.g. "mounts", "pets" or "transmogs".
+
+        Retail, and (not documented) WoW Forever, whose account only has transmogs.
+        """
+        params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(
             f"/profile/user/wow/collections/{kind}", params, user_token=user_token, parse_in_thread=parse_in_thread
         )

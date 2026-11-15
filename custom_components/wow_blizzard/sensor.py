@@ -1961,7 +1961,7 @@ def _setup_account_sensors(hass: HomeAssistant, entry: ConfigEntry, async_add_en
     """Sensors of the Battle.net account entry (totals, collections, login)."""
     account: AccountCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     data = account.data or {}
-    collections = set(ACCOUNT_COLLECTIONS) | {"account_transmogs"}
+    collections = set(ACCOUNT_COLLECTIONS) | {"account_transmogs", "account_transmogs_forever", "account_houses"}
     async_add_entities(
         WoWAccountSensor(account, sensor_type, unique_base(entry))
         for sensor_type in ACCOUNT_SENSOR_TYPES

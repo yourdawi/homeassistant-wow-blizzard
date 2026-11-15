@@ -13,8 +13,11 @@ import type { HassEntityState, HomeAssistant, LovelaceCardConfig } from "./types
 export const ACCOUNT_CARD_TYPE = "wow-account-card";
 
 const SECTIONS = {
-  overview: ["account_gold_total", "account_characters"],
-  collections: ["account_mounts", "account_pets", "account_toys", "account_heirlooms", "account_transmogs", "account_decor"],
+  overview: ["account_gold_total", "account_characters", "account_houses"],
+  collections: [
+    "account_mounts", "account_pets", "account_toys", "account_heirlooms", "account_transmogs", "account_decor",
+    "account_transmogs_forever",
+  ],
   characters: [],
 } as const;
 type AccountSection = keyof typeof SECTIONS;
@@ -108,6 +111,7 @@ export class WowAccountCard extends WowBaseCard<AccountCardConfig> {
         return tiles(ctx, [
           tile(ctx, "account_gold_total", "gold_total", { accent: "#ffd100" }),
           tile(ctx, "account_characters", "characters"),
+          tile(ctx, "account_houses", "houses", { min: 1 }),
         ]);
       case "collections":
         return section(
@@ -120,6 +124,7 @@ export class WowAccountCard extends WowBaseCard<AccountCardConfig> {
             tile(ctx, "account_heirlooms", "heirlooms"),
             tile(ctx, "account_transmogs", "transmogs"),
             tile(ctx, "account_decor", "decor"),
+            tile(ctx, "account_transmogs_forever", "transmogs_forever"),
           ]),
         );
       case "characters":

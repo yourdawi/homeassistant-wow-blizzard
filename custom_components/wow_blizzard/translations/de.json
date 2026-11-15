@@ -424,6 +424,12 @@
       "account_transmogs": {
         "name": "Account-Transmog-Vorlagen"
       },
+      "account_transmogs_forever": {
+        "name": "Account-Transmog-Vorlagen (WoW Forever)"
+      },
+      "account_houses": {
+        "name": "Häuser"
+      },
       "account_login": {
         "name": "Battle.net-Login läuft ab"
       },

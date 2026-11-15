@@ -596,6 +596,20 @@ ACCOUNT_SENSOR_TYPES = {
         "device_class": None,
         "state_class": "measurement",
     },
+    "account_transmogs_forever": {
+        "name": "Account Transmog Appearances (WoW Forever)",
+        "icon": "mdi:tshirt-crew-outline",
+        "unit": "appearances",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_houses": {
+        "name": "Houses",
+        "icon": "mdi:home-variant-outline",
+        "unit": "houses",
+        "device_class": None,
+        "state_class": "measurement",
+    },
     "account_login": {
         "name": "Battle.net Login",
         "icon": "mdi:login",

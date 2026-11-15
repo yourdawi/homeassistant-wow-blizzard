@@ -98,6 +98,54 @@ ACCOUNT_COLLECTIONS = {
 }
 
 
+def parse_account_houses(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """Houses of the account (Retail, not documented): number and owning characters.
+
+    The profile links each house to its owner, e.g.
+    /profile/wow/character/stormwind/varian/house/house-1. Blizzard does not
+    answer that link yet (404, November 2026), so only the owners are known.
+    """
+    if not isinstance(profile, dict) or "wow_accounts" not in profile:
+        return {}
+    owners = []
+    for house in profile.get("houses") or []:
+        href = (house or {}).get("href") or ""
+        match = re.search(r"/character/([^/]+)/([^/]+)/house/house-(\d+)", href)
+        if match:
+            realm, name, number = match.groups()
+            owners.append({
+                "character": unquote(name).capitalize(),
+                "realm": realm,
+                "house_number": int(number),
+            })
+    return {"account_houses": len(profile.get("houses") or []), "attrs": {"account_houses": {"houses": owners}}}
+
+
+def protected_stats_attributes(protected: Dict[str, Any]) -> Dict[str, Any]:
+    """Gold, deaths and location of a protected character; gold values in gold.
+
+    The level_* values count since the last level-up (not documented).
+    """
+    stats = (protected or {}).get("protected_stats") or {}
+
+    def gold(key: str) -> Optional[int]:
+        value = stats.get(key)
+        return value // 10000 if isinstance(value, int) else None
+
+    return {
+        "total_gold_gained": gold("total_gold_gained") or 0,
+        "total_gold_lost": gold("total_gold_lost") or 0,
+        "total_item_value_gained": gold("total_item_value_gained"),
+        "total_deaths": stats.get("total_number_deaths"),
+        "level_gold_gained": gold("level_gold_gained"),
+        "level_gold_lost": gold("level_gold_lost"),
+        "level_item_value_gained": gold("level_item_value_gained"),
+        "level_deaths": stats.get("level_number_deaths"),
+        "location": ((protected.get("position") or {}).get("zone") or {}).get("name"),
+        "hearthstone": ((protected.get("bind_position") or {}).get("zone") or {}).get("name"),
+    }
+
+
 def count_collection(data: Dict[str, Any], list_keys: tuple) -> Optional[int]:
     """Number of entries of the first list key the response has (None if none)."""
     for key in list_keys:
