@@ -262,7 +262,7 @@ show_state: false
 | Population | `sensor.stormrage_server_population` | Localized, e.g. "High" |
 | Queue | `sensor.stormrage_server_queue` | `True` while a login queue is active |
 
-The `status_type` (`UP`, `DOWN`) and `population_type` (`LOW`, `MEDIUM`, `HIGH`, `FULL`, ...) attributes are language independent. Use them in automations. `realm_category` is the realm list category, for example `Seasonal` (Classic Era), `Active` or `Legacy` (Classic Progression), and `realm_type` is `NORMAL`, `PVP`, `RP` or `PVP_RP`. Classic Era realms also have `locked_for_new_characters` and `locked_for_transfers` (paid character transfers); no other game version reports locks.
+The `status_type` (`UP`, `DOWN`) and `population_type` (`LOW`, `MEDIUM`, `HIGH`, `FULL`, ...) attributes are language independent. Use them in automations. `realm_category` is the realm list category, for example `Seasonal` (Classic Era), `Active` or `Legacy` (Classic Progression), and `realm_type` is `NORMAL`, `PVP`, `RP` or `PVP_RP`. Classic Era realms that report it (in November 2026 11 of 26 EU connected realms, mostly the seasonal and newer ones) also have `locked_for_new_characters` and `locked_for_transfers` (paid character transfers); no other game version reports locks.
 
 If the same realm name exists in two game versions, the second device gets the game version appended to its name.
 
