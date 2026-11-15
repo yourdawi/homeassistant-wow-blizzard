@@ -32,18 +32,18 @@ Use it to track levels and item level over time, watch realm status on reset day
 
 | Area | What you get |
 | --- | --- |
-| Characters | Level, item level, guild, achievement points, profile status, portrait as entity picture, full-body render as image entity, equipment per slot. Any number of characters across realms and game versions. |
+| Characters | Level, experience, item level, guild, achievement points, profile status, portrait as entity picture, full-body render as image entity, equipment per slot. Any number of characters across realms and game versions. |
 | Character details | Professions, health and secondary stats, title, reputations, talents, dungeons completed, deaths, quests completed, active quests, achievements (with an event for every new one), hunter pets. |
-| Collections | Number of mounts, pets, toys, heirlooms, transmog appearances and housing decor. |
+| Collections | Number of mounts, pets, toys, heirlooms, transmog appearances and housing decor, with how many the game has ("47 of 141 mounts"). |
 | Guild | Member count, members at max level by class, your guild rank, completed guild achievements, the guild crest as image and an event entity for new guild achievements, boss kills and members joining or leaving. |
-| Realms | Realm status, population and whether a login queue is active. |
-| Region | WoW Token price (Retail and Classic Progression), the next weekly reset, the Mythic+ season, the PvP season with its title cutoffs and, opt-in, the weekly Mythic+ affixes. |
-| PvP | 2v2, 3v3, RBG, Solo Shuffle and Blitz ratings of the current season, honor level, season wins, honorable kills, the Classic Era PvP rank and the PvP seasons of Classic Progression and Anniversary with their title cutoffs. |
+| Realms | Realm status, population, whether a login queue is active, the realm category (e.g. Seasonal) and type, and for Classic Era whether the realm is closed for new characters. |
+| Region | WoW Token price (Retail and Classic Progression), the next weekly reset (Retail and Classic Progression), the game version and build, the Mythic+ season, the PvP season with its title cutoffs and, opt-in, the weekly Mythic+ affixes. |
+| PvP | 2v2, 3v3, 5v5 (Classic Progression and Anniversary), RBG, Solo Shuffle and Blitz ratings of the current season, honor level, season wins, honorable kills, the Classic Era PvP rank and the PvP seasons of Classic Progression and Anniversary with their title cutoffs. |
 | Raids | Bosses defeated per difficulty in the current expansion, plus a lifetime total. |
 | Mythic+ | Season score, highest key, best runs, timed runs, weekly best key. |
 | Hall of Fame | One sensor per raid of the current expansion with the world first guild and the ranks of your own guilds. |
 | Mythic+ leaderboards (opt-in) | Best key of the week per realm, with the best runs of your characters. |
-| PvP leaderboards (opt-in) | Rank of your characters on the regional 2v2, 3v3, RBG, Solo Shuffle and Blitz leaderboards. |
+| PvP leaderboards (opt-in) | Rank of your characters on the regional leaderboards: 2v2, 3v3, RBG, Solo Shuffle and Blitz in Retail, 2v2, 3v3, 5v5 and RBG in Classic Progression, 2v2, 3v3 and 5v5 in Anniversary. |
 | Auction house | Lowest price for item IDs you choose (Retail commodities and realm auctions, Classic Progression realm auctions, WoW Forever auction houses of your characters' game modes and factions). |
 | Dashboard cards | Cards in the style of the in-game UI for characters, guilds, the Battle.net account, realms, the auction house and the Hall of Fame. Included, no extra download. |
 | Battle.net account (optional) | Its own entry: import characters by logging in with Battle.net. While the login is valid (24 hours): gold per Retail character, total gold, account mounts, pets, toys, heirlooms and transmog appearances. |
@@ -57,12 +57,12 @@ Each character is added with its game version. The integration only creates the 
 | Game version | API namespace | Basic | PvP | Raids | Mythic+ | Details | Collections | Guild | Hall of Fame |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Retail | `profile-{region}` | All | All except PvP rank | Yes | Yes | All | Yes | Yes | Yes |
-| Classic Progression (currently Mists of Pandaria) | `profile-classic-{region}` | All | 2v2, 3v3, wins, honorable kills | No | No | No professions, versatility, dungeons or active quests | No | Yes, no crest | No |
-| Classic Anniversary (Burning Crusade) | `profile-classicann-{region}` | No achievement points | 2v2, 3v3, wins, honorable kills | No | No | Health, crit, haste, title, reputations, talents, hunter pets | No | Yes | No |
+| Classic Progression (currently Mists of Pandaria) | `profile-classic-{region}` | All | 2v2, 3v3, 5v5, RBG, wins, honorable kills | No | No | No professions, versatility, dungeons or active quests | No | Yes, no crest | No |
+| Classic Anniversary (Burning Crusade) | `profile-classicann-{region}` | No achievement points | 2v2, 3v3, 5v5, wins, honorable kills | No | No | Health, crit, haste, title, reputations, talents, hunter pets | No | Yes | No |
 | Classic Era (Vanilla) | `profile-classic1x-{region}` | No achievement points | Honorable kills, PvP rank | No | No | Health, crit, title, reputations, talents, hunter pets | No | Yes | No |
 | WoW Forever | `profile-forever-{region}` | All | Honorable kills, PvP rank | Normal progress, total kills | No | No versatility, haste or mastery | Mounts, pets, toys, heirlooms, transmogs | Yes, no crest | No |
 
-The support per version was checked against the live API (EU, October 2026; WoW Forever November 2026). The WoW Token price is available for Retail and Classic Progression; Blizzard does not offer it for Classic Era and Anniversary.
+The support per version was checked against the live API (EU, October 2026; WoW Forever, 5v5, Classic RBG and the Classic leaderboards November 2026). The WoW Token price and the weekly reset are available for Retail and Classic Progression; Blizzard does not offer them for Classic Era, Anniversary and WoW Forever. Several of these endpoints are not in Blizzard's documentation (the Classic leaderboards, the Classic weekly periods, the Classic Era, Anniversary and Forever namespaces).
 
 ### WoW Forever
 
@@ -144,7 +144,7 @@ The integration has **one entry per game version** (Retail, Classic Progression,
 1. Click the button above, or go to **Settings > Devices & Services > Add Integration** and search for **World of Warcraft**.
 2. Enter the client ID and secret, select your **region** (US, EU, KR, TW, CN) and the **API locale**. The locale sets the language of names returned by the API, such as classes, realm status and raid names. For the second and later game versions the credentials of the first entry are filled in.
 3. Select the **game version**. Game versions that are already set up in the region are not offered again.
-4. Choose which feature groups to enable: realm status, PvP, raids, Mythic+, Hall of Fame, character details, collections, guild, region data (WoW Token, weekly reset), the Mythic+ realm leaderboards (off by default, they download about 8 MB per realm and hour) and the PvP leaderboard ranks (off by default, about 2 MB per bracket and hour).
+4. Choose which feature groups to enable: realm status, PvP, raids, Mythic+, Hall of Fame, character details, collections, guild, region data (WoW Token, weekly reset, game version), the Mythic+ realm leaderboards (off by default, they download about 8 MB per realm and hour) and the PvP leaderboard ranks (off by default, about 2 MB per bracket and hour).
 5. Optionally enter item IDs to track auction prices, for example `210796, 224025`. You find the ID in the item's Wowhead URL. Leave the field empty to skip the auction house.
 
 ### 3. Add characters
@@ -188,21 +188,23 @@ Each character becomes a device named `<Character> (<realm>)`, each realm become
 | Sensor | Example entity ID (English) | Notes |
 | --- | --- | --- |
 | Level | `sensor.thrall_stormrage_level` | |
+| Experience | `sensor.thrall_stormrage_experience` | Experience points in the current level, 0 at the maximum level |
 | Item Level | `sensor.thrall_stormrage_item_level` | Equipped item level |
 | Guild | `sensor.thrall_stormrage_guild` | "No guild" if the character is in none |
 | Achievement Points | `sensor.thrall_stormrage_achievement_points` | |
 | Equipment Details | `sensor.thrall_stormrage_equipment_details` | Number of equipped items; gear per slot in attributes |
 | 2v2 Arena Rating | `sensor.thrall_stormrage_2v2_arena_rating` | PvP |
 | 3v3 Arena Rating | `sensor.thrall_stormrage_3v3_arena_rating` | PvP |
-| RBG Rating | `sensor.thrall_stormrage_rbg_rating` | PvP, Retail |
+| 5v5 Arena Rating | `sensor.thrall_stormrage_5v5_arena_rating` | PvP, Classic Progression and Anniversary |
+| RBG Rating | `sensor.thrall_stormrage_rbg_rating` | PvP, Retail and Classic Progression |
 | Honor Level | `sensor.thrall_stormrage_honor_level` | PvP, Retail |
 | PvP Wins (Season) | `sensor.thrall_stormrage_pvp_wins_season` | Sum over the tracked brackets |
 
-Classic Progression and Anniversary characters get `title_cutoffs` on the 2v2 and 3v3 sensors instead: every title of the season (for example Gladiator, Duelist, Rival) with the rating it needs, highest first.
+Classic Progression and Anniversary characters get `title_cutoffs` on the bracket sensors instead: every title of the season (for example Gladiator, Duelist, Rival) with the rating it needs, highest first.
 
 The rated PvP sensors only count the current season. Blizzard returns the last season a character played; ratings from an older season show as 0, with the old rating in `last_season_rating`. Every bracket sensor has `season_played`, `season_won`, `season_lost`, `weekly_played` and `weekly_won`, and 3v3 / RBG show the `gladiator_cutoff` / `hero_cutoff`.
 
-With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail character played this season also get `leaderboard_rank` (place on the regional leaderboard, `null` if not on it), `leaderboard_entries` and `leaderboard_min_rating` (the rating needed to be listed). Blizzard only lists the best players of the region, about 5000 per bracket. Each leaderboard needed by one of your characters is downloaded once per hour (about 2 MB).
+With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail, Classic Progression or Anniversary character played this season also get `leaderboard_rank` (place on the regional leaderboard, `null` if not on it), `leaderboard_entries` and `leaderboard_min_rating` (the rating needed to be listed). Blizzard only lists the best players of the region, about 5000 per bracket. Each leaderboard needed by one of your characters is downloaded once per hour (about 2 MB).
 
 | LFR / Normal / Heroic / Mythic Progress | `sensor.thrall_stormrage_mythic_progress` | Bosses defeated in the current expansion's raids |
 | Total Boss Kills | `sensor.thrall_stormrage_total_boss_kills` | Bosses defeated across all raids, lifetime |
@@ -217,16 +219,16 @@ With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail
 | Professions | `sensor.thrall_stormrage_professions` | Primary professions; skill of the newest tier per profession in `professions` |
 | Health | `sensor.thrall_stormrage_health` | Details; primary stats, armor, power in attributes |
 | Critical Strike / Haste / Mastery / Versatility | `sensor.thrall_stormrage_haste` | Details, in percent |
-| Title | `sensor.thrall_stormrage_title` | Details, active title ("No title" if none is selected); Retail adds `title_count` |
+| Title | `sensor.thrall_stormrage_title` | Details, active title ("No title" if none is selected); Retail adds `title_count` and `title_total` (titles in the game) |
 | Reputations | `sensor.thrall_stormrage_reputations` | Details, number of known factions; standing per faction in `factions` |
 | Talents | `sensor.thrall_stormrage_talents` | Details; Retail: hero talent tree with `loadout_code`, Classic Progression: specialization with `talent_list` and `glyphs`, Era/Anniversary: points per tree |
 | Dungeons Completed | `sensor.thrall_stormrage_dungeons_completed` | Details, dungeons of the newest expansion with at least one completed difficulty |
 | Deaths | `sensor.thrall_stormrage_deaths` | Details, lifetime |
 | Quests Completed | `sensor.thrall_stormrage_quests_completed` | Details, lifetime |
 | Active Quests | `sensor.thrall_stormrage_active_quests` | Details, Retail and WoW Forever; quest names in `quests` |
-| Achievements | `sensor.thrall_stormrage_achievements` | Details, Retail, Classic Progression and WoW Forever; `total_points` and the 10 most recent achievements in `recent_achievements`. The response is 1 to 3 MB, it is only fetched after a new login and at most every 6 hours |
+| Achievements | `sensor.thrall_stormrage_achievements` | Details, Retail, Classic Progression and WoW Forever; `total_points`, the 10 most recent achievements in `recent_achievements`, and `total` / `percent` (all achievements of the game version, including Feats of Strength and guild achievements). The response is 1 to 3 MB, it is only fetched after a new login and at most every 6 hours |
 | Hunter Pet | `sensor.thrall_stormrage_hunter_pet` | Details, hunters only; summoned pet, all pets in `pets` |
-| Mounts / Pets / Toys / Heirlooms / Housing Decor | `sensor.thrall_stormrage_mounts` | Collections, Retail |
+| Mounts / Pets / Toys / Heirlooms / Housing Decor | `sensor.thrall_stormrage_mounts` | Collections, Retail (WoW Forever: mounts, pets, toys, heirlooms); `total` (how many the game has, including ones that can no longer be obtained) and `percent` |
 | Transmog Appearances | `sensor.thrall_stormrage_transmog_appearances` | Collections, Retail and WoW Forever; `appearance_sets` and `appearances_per_slot` in attributes. The response can be several MB, it is only fetched after a new login and at most every 6 hours |
 | Solo Shuffle Rating / Blitz Rating | `sensor.thrall_stormrage_solo_shuffle_rating` | PvP, Retail, for the active specialization; `legend_cutoff` attribute |
 | Gold | `sensor.thrall_stormrage_gold` | Retail, with the Battle.net Account entry; gold gained/lost, deaths, location and hearthstone in attributes |
@@ -260,7 +262,7 @@ show_state: false
 | Population | `sensor.stormrage_server_population` | Localized, e.g. "High" |
 | Queue | `sensor.stormrage_server_queue` | `True` while a login queue is active |
 
-The `status_type` (`UP`, `DOWN`) and `population_type` (`LOW`, `MEDIUM`, `HIGH`, `FULL`, ...) attributes are language independent. Use them in automations.
+The `status_type` (`UP`, `DOWN`) and `population_type` (`LOW`, `MEDIUM`, `HIGH`, `FULL`, ...) attributes are language independent. Use them in automations. `realm_category` is the realm list category, for example `Seasonal` (Classic Era), `Active` or `Legacy` (Classic Progression), and `realm_type` is `NORMAL`, `PVP`, `RP` or `PVP_RP`. Classic Era realms also have `locked_for_new_characters` and `locked_for_transfers` (paid character transfers); no other game version reports locks.
 
 If the same realm name exists in two game versions, the second device gets the game version appended to its name.
 
@@ -272,7 +274,8 @@ Region-wide data lives on the device `WoW <REGION>`, for example `WoW EU`; Class
 | --- | --- | --- |
 | WoW Token Price | `sensor.wow_eu_wow_token_price` | Retail, in gold; `last_updated` attribute |
 | WoW Token Price (Classic) | `sensor.wow_eu_wow_token_price_classic` | Only with a Classic Progression character |
-| Weekly Reset | `sensor.wow_eu_weekly_reset` | Timestamp of the next weekly reset (Retail) |
+| Weekly Reset | `sensor.wow_eu_weekly_reset` | Timestamp of the next weekly reset (Retail and Classic Progression) |
+| Game Version | `sensor.wow_eu_game_version` | Game version of the entry, e.g. `12.1.5`; `build` and `full_version` (`12.1.5.70077`) in attributes. Changes on patch day |
 | M+ Season | `sensor.wow_eu_m_season` | Mythic+, Retail; season ID, start and number of weeks in attributes |
 | PvP Season | `sensor.wow_eu_pvp_season` | PvP, Retail; season ID and start in attributes |
 | PvP Season (Classic) / (Anniversary) | `sensor.wow_eu_pvp_season_classic` | PvP, only with a character of that version; season number, start and `title_cutoffs` per bracket |
@@ -290,7 +293,7 @@ Every tracked item gets a sensor on the device `WoW <REGION> Auction House`, nam
 
 ### Guild activity
 
-Each guild of your characters gets an event entity on the device of the first character in it, e.g. `event.thrall_stormrage_guild_activity`. It fires `achievement` (attributes `character`, `achievement`, `achievement_id`) and `encounter` (`encounter`, `encounter_id`, `difficulty`, `difficulty_name`) for every new entry in the guild's activity feed, and `member_joined` / `member_left` (`character`, `character_realm`, `level`) when the guild roster changes. Activity and roster are checked hourly; entries from before Home Assistant started are not replayed, and roster changes are found by comparing two checks, so joins and leaves while Home Assistant was off are not reported. A new event entity starts with the guild's newest feed entry instead of `unknown`. Blizzard has no activity feed for Classic Anniversary and WoW Forever guilds; those only get roster events.
+Each guild of your characters gets an event entity on the device of the first character in it, e.g. `event.thrall_stormrage_guild_activity`. It fires `achievement` (attributes `character`, `achievement`, `achievement_id`) and `encounter` (`encounter`, `encounter_id`, `difficulty`, `difficulty_name`) for every new entry in the guild's activity feed, and `member_joined` / `member_left` (`character`, `character_realm`, `level`) when the guild roster changes. Activity and roster are checked hourly; entries from before Home Assistant started are not replayed, and roster changes are found by comparing two checks, so joins and leaves while Home Assistant was off are not reported. A new event entity starts with the guild's newest feed entry instead of `unknown`. Blizzard has no activity feed for Classic Era, Anniversary and WoW Forever guilds; those only get roster events.
 
 ```yaml
 automation:
@@ -421,7 +424,7 @@ sections: [overview, collections, characters]
 
 ### Realm card
 
-`custom:wow-realm-card` shows a realm's status, population and login queue, and the best Mythic+ keys of the week on it (Retail, with the Mythic+ leaderboards enabled). With a region device it also shows the WoW Token price, the next weekly reset, the Mythic+ season with this week's affixes and the PvP season with its title cutoffs.
+`custom:wow-realm-card` shows a realm's status, population, login queue, category and type (and for Classic Era whether new characters are possible), and the best Mythic+ keys of the week on it (Retail, with the Mythic+ leaderboards enabled). With a region device it also shows the WoW Token price, the next weekly reset, the Mythic+ season with this week's affixes, the PvP season with its title cutoffs and the game version.
 
 <img width="30%" alt="Realm card with region" src="https://raw.githubusercontent.com/yourdawi/homeassistant-wow-blizzard/main/docs/images/realm-card.webp" />
 
@@ -429,7 +432,7 @@ sections: [overview, collections, characters]
 type: custom:wow-realm-card
 device: 171b768099577d3b957eaaeb1b6dd16e
 region: b421a2ce5da6834ea2b8db740870696b
-sections: [status, mythic_plus, token, reset, mythic_season, pvp_season]
+sections: [status, mythic_plus, token, reset, mythic_season, pvp_season, version]
 ```
 
 ### Auction house card
@@ -479,6 +482,7 @@ The cards ship no fonts or textures and load no code from other sites. Pictures 
 - Item icons and the slowly changing character data (details, collections, achievements) are stored, so a restart or reload only fetches what changed (e.g. 15 characters: about 13 seconds instead of about a minute).
 - Data from the Battle.net API reflects what Blizzard has processed, which usually lags the game by a few minutes and may be refreshed only after logout.
 - Character details and collections are only fetched again when the character's last login changes, and at least every 6 hours. Guild data, roster, guild achievements and guild activity are cached for 1 hour, the weekly period until the reset, the Mythic+ and PvP seasons for 6 hours.
+- The game version and the Classic Era realm locks are refreshed hourly; how many mounts, pets, toys, heirlooms, decor, achievements and titles the game has is fetched once a day and after a new build, and stored across restarts.
 - Auction prices, Mythic+ and PvP leaderboards are refreshed hourly, account data (gold) every 15 minutes while the Battle.net login is valid. Large responses are decoded outside the event loop.
 - If a character profile cannot be fetched (API error, maintenance), the last known values are kept, so graphs do not drop to 0. The profile status sensor then shows whether the character still exists.
 - On HTTP 429 (rate limit) the request is retried up to two times, waiting at most 30 seconds. The Battle.net API allows 36,000 requests per hour, and each character uses roughly 4 to 10 requests per update depending on the enabled features, plus up to 13 after a new login.

@@ -30,7 +30,7 @@
           "enable_character_details": "Charakterdetails aktivieren (Berufe, Werte, Talente, Ruf, ...)",
           "enable_collections": "Sammlungen aktivieren (Reittiere, Haustiere, Spielzeuge, Erbstücke)",
           "enable_guild": "Gildendaten aktivieren",
-          "enable_region_data": "WoW-Marken-Preis und Wochen-Reset aktivieren",
+          "enable_region_data": "Regionsdaten aktivieren (WoW-Marken-Preis, Wochen-Reset, Spielversion)",
           "enable_mythic_leaderboard": "Mythic+-Bestenlisten der Realms und Wochen-Affixe aktivieren (ca. 8 MB pro Realm und Stunde)",
           "enable_pvp_leaderboard": "PvP-Ranglistenplätze deiner Charaktere aktivieren (ca. 2 MB pro Bracket und Stunde)",
           "auction_items": "Item-IDs für Auktionspreise (kommagetrennt, leer = aus)"
@@ -126,7 +126,7 @@
           "enable_character_details": "Charakterdetails (Berufe, Werte, Talente, Ruf, ...)",
           "enable_collections": "Sammlungen (Reittiere, Haustiere, Spielzeuge, Erbstücke)",
           "enable_guild": "Gildenmitglieder & Erfolgspunkte",
-          "enable_region_data": "WoW-Marken-Preis & Wochen-Reset",
+          "enable_region_data": "Regionsdaten (WoW-Marke, Wochen-Reset, Spielversion)",
           "enable_mythic_leaderboard": "Mythic+-Bestenlisten der Realms & Affixe (ca. 8 MB pro Realm und Stunde)",
           "enable_pvp_leaderboard": "PvP-Ranglistenplätze (ca. 2 MB pro Bracket und Stunde)",
           "auction_items": "Item-IDs für Auktionspreise (kommagetrennt, leer = aus)"
@@ -221,6 +221,9 @@
       "character_equipment": {
         "name": "Ausrüstungsdetails"
       },
+      "character_experience": {
+        "name": "Erfahrung"
+      },
       "realm_status": {
         "name": "Realm-Status"
       },
@@ -235,6 +238,9 @@
       },
       "pvp_3v3_rating": {
         "name": "3v3 Arena-Wertung"
+      },
+      "pvp_5v5_rating": {
+        "name": "5v5 Arena-Wertung"
       },
       "pvp_rbg_rating": {
         "name": "RBG-Wertung"
@@ -432,6 +438,9 @@
       },
       "mythicplus_affixes": {
         "name": "M+ Affixe"
+      },
+      "game_build": {
+        "name": "Spielversion"
       },
       "mythicplus_realm_best": {
         "name": "Bester M+ Key der Woche"

@@ -39,6 +39,7 @@ const STAT_CHIPS: Array<[string, StringKey, number]> = [
   ["character_gold", "gold", 0],
   ["pvp_2v2_rating", "rating_2v2", 1],
   ["pvp_3v3_rating", "rating_3v3", 1],
+  ["pvp_5v5_rating", "rating_5v5", 1],
   ["pvp_rbg_rating", "rating_rbg", 1],
   ["pvp_shuffle_rating", "rating_shuffle", 1],
   ["pvp_blitz_rating", "rating_blitz", 1],
@@ -297,6 +298,7 @@ const pvp: Renderer = (ctx) =>
     tiles(ctx, [
       tile(ctx, "pvp_2v2_rating", "rating_2v2"),
       tile(ctx, "pvp_3v3_rating", "rating_3v3"),
+      tile(ctx, "pvp_5v5_rating", "rating_5v5"),
       tile(ctx, "pvp_rbg_rating", "rating_rbg"),
       tile(ctx, "pvp_shuffle_rating", "rating_shuffle"),
       tile(ctx, "pvp_blitz_rating", "rating_blitz"),
@@ -367,12 +369,12 @@ const collections: Renderer = (ctx) =>
     ctx,
     "section_collections",
     tiles(ctx, [
-      tile(ctx, "mounts_collected", "mounts"),
-      tile(ctx, "pets_collected", "pets"),
-      tile(ctx, "toys_collected", "toys"),
-      tile(ctx, "heirlooms_collected", "heirlooms"),
+      tile(ctx, "mounts_collected", "mounts", { ofTotal: true }),
+      tile(ctx, "pets_collected", "pets", { ofTotal: true }),
+      tile(ctx, "toys_collected", "toys", { ofTotal: true }),
+      tile(ctx, "heirlooms_collected", "heirlooms", { ofTotal: true }),
       tile(ctx, "transmogs_collected", "transmogs"),
-      tile(ctx, "decor_collected", "decor"),
+      tile(ctx, "decor_collected", "decor", { ofTotal: true }),
     ]),
   );
 
@@ -400,7 +402,7 @@ function achievementList(ctx: SectionContext, items: Achievement[]): Content {
 const achievements: Renderer = (ctx) => {
   const top = tiles(ctx, [
     tile(ctx, "achievement_points", "achievement_points_long", { accent: "var(--wow-gold)" }),
-    tile(ctx, "achievements_completed", "achievements_completed"),
+    tile(ctx, "achievements_completed", "achievements_completed", { ofTotal: true }),
   ]);
   let recent = (attr(ctx, "achievements_completed", "recent_achievements") ?? []) as Achievement[];
   const latest = ctx.entities.get("character_achievements")?.attributes;
@@ -421,6 +423,8 @@ const activity: Renderer = (ctx) => {
   const g = gold?.attributes ?? {};
   const top = tiles(ctx, [
     tile(ctx, "character_gold", "gold", { accent: "#ffd100" }),
+    // Experience in the current level; 0 at the maximum level is left out
+    tile(ctx, "character_experience", "experience", { min: 1 }),
     tile(ctx, "deaths", "deaths"),
     tile(ctx, "quests_completed", "quests_completed"),
     tile(ctx, "active_quests", "active_quests"),

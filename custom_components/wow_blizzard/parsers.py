@@ -175,8 +175,51 @@ def parse_connected_realm_search(data: Dict[str, Any], locale: Optional[str]) ->
                 "realm_queue": bool(connected.get("has_queue", False)),
                 "realm_timezone": realm.get("timezone", "Unknown"),
                 "realm_locale": realm.get("locale", "Unknown"),
+                # e.g. "Seasonal" (Classic Era), "Active" / "Legacy" (Classic Progression)
+                "realm_category": localized(realm.get("category"), locale),
+                # Language independent: NORMAL, PVP, RP, PVP_RP
+                "realm_type": (realm.get("type") or {}).get("type"),
             }
     return result
+
+
+def parse_realm_lock(connected: Dict[str, Any]) -> Dict[str, Any]:
+    """Whether a connected realm is locked (only Classic Era reports it)."""
+    lock = (connected or {}).get("realm_locked_status")
+    if not isinstance(lock, dict):
+        return {}
+    return {
+        "locked_for_new_characters": lock.get("is_locked_for_new_characters"),
+        # "pct": paid character transfers
+        "locked_for_transfers": lock.get("is_locked_for_pct"),
+    }
+
+
+# Static indexes with the totals of the collection sensors: sensor -> (path, list key)
+COLLECTION_TOTALS = {
+    "mounts_collected": ("/data/wow/mount/index", "mounts"),
+    "pets_collected": ("/data/wow/pet/index", "pets"),
+    "toys_collected": ("/data/wow/toy/index", "toys"),
+    "heirlooms_collected": ("/data/wow/heirloom/index", "heirlooms"),
+    "decor_collected": ("/data/wow/decor/index", "decor_items"),
+    "achievements_completed": ("/data/wow/achievement/index", "achievements"),
+    "active_title": ("/data/wow/title/index", "titles"),
+}
+
+
+def total_attributes(sensor: str, value: Any, total: Any) -> Dict[str, Any]:
+    """"x of y" attributes of a collection sensor.
+
+    The titles sensor shows the active title, so its count is in title_count.
+    """
+    if not isinstance(total, int) or total <= 0:
+        return {}
+    if sensor == "active_title":
+        return {"title_total": total}
+    attrs: Dict[str, Any] = {"total": total}
+    if isinstance(value, (int, float)):
+        attrs["percent"] = round(min(value / total, 1) * 100, 1)
+    return attrs
 
 
 def _guild_path(guild: Dict[str, Any]) -> Optional[str]:

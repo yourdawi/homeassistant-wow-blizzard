@@ -61,12 +61,27 @@ export function tiles(ctx: BlockContext, items: Array<Tile | undefined>): Conten
   `;
 }
 
-/** A tile from an entity's numeric state; undefined when it is missing or below min. */
-export function tile(ctx: BlockContext, key: string, label: StringKey, opts: { min?: number; prefix?: string; digits?: number; accent?: string } = {}): Tile | undefined {
+/**
+ * A tile from an entity's numeric state; undefined when it is missing or below min.
+ * With ofTotal, collections show "47 / 141" when the integration knows the total.
+ */
+export function tile(
+  ctx: BlockContext,
+  key: string,
+  label: StringKey,
+  opts: { min?: number; prefix?: string; digits?: number; accent?: string; ofTotal?: boolean } = {},
+): Tile | undefined {
   const state = ctx.entities.get(key);
   const value = numericState(state);
   if (value === undefined || value < (opts.min ?? 0)) return undefined;
-  return { label: ctx.t(label), value: `${opts.prefix ?? ""}${ctx.num(value, opts.digits)}`, state, accent: opts.accent };
+  const total = opts.ofTotal ? state?.attributes.total : undefined;
+  const shown = `${opts.prefix ?? ""}${ctx.num(value, opts.digits)}`;
+  return {
+    label: ctx.t(label),
+    value: typeof total === "number" && total > 0 ? `${shown} / ${ctx.num(total)}` : shown,
+    state,
+    accent: opts.accent,
+  };
 }
 
 export interface Row {
