@@ -258,3 +258,31 @@ async def test_achievement_rewards(hass: HomeAssistant) -> None:
     restored = _coordinator(hass, "forever", MagicMock())
     restored.load_cache(coordinator._cache_data())
     assert restored._achievement_rewards == {("forever", 62041): "Earn 1 Legacy Point.", ("forever", 62000): ""}
+
+
+def test_keep_character_sensor():
+    """Character sensors of turned off features are removed, everything else stays."""
+    from custom_components.wow_blizzard.sensor import _keep_character_sensor
+
+    allowed = {"stormwind_Varian": {"character_level", "pvp_2v2_rating"}}
+    assert _keep_character_sensor("wow_blizzard_stormwind_Varian_character_level", allowed)
+    assert not _keep_character_sensor("wow_blizzard_stormwind_Varian_mounts_collected", allowed)
+    # Gold comes from the account entry and is handled on its own
+    assert _keep_character_sensor("wow_blizzard_stormwind_Varian_character_gold", allowed)
+    # Other characters, realms and region sensors
+    assert _keep_character_sensor("wow_blizzard_stormwind_Anduin_mounts_collected", allowed)
+    assert _keep_character_sensor("wow_blizzard_server_stormwind_realm_status", allowed)
+    assert _keep_character_sensor("wow_blizzard_01ABC_game_build", allowed)
+
+
+def test_no_primary_professions(hass: HomeAssistant) -> None:
+    """Loaded professions without a primary one say so; not loaded stays unknown."""
+    from custom_components.wow_blizzard.sensor import WoWCharacterSensor
+
+    coordinator = _coordinator(hass, "retail")
+    coordinator.client.locale = "de_DE"
+    sensor = WoWCharacterSensor(coordinator, "professions", "stormwind-Varian", "Varian", "stormwind")
+    coordinator.data = {"stormwind-Varian": {"character_level": 80, "professions": None}}
+    assert sensor.native_value == "Keine Hauptberufe"
+    coordinator.data = {"stormwind-Varian": {"character_level": 80}}
+    assert sensor.native_value is None

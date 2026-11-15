@@ -14,7 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, CONF_REALM, CONF_CHARACTER_NAME, CONF_GAME_VERSION, CONF_ENABLE_GUILD
 from .crest import compose_crest
-from .entries import add_character_entities
+from .entries import add_character_entities, remove_entities
 from .sensor import WoWDataUpdateCoordinator, _game_version_label
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,7 +38,10 @@ async def async_setup_entry(
     ]
 
     # One crest per guild, on the device of the first character in it
-    if coordinator.features.get(CONF_ENABLE_GUILD, False):
+    if not coordinator.features.get(CONF_ENABLE_GUILD, False):
+        # Crests of a turned off guild feature would stay "unavailable"
+        remove_entities(hass, entry, "image", lambda unique_id: not unique_id.startswith(f"{DOMAIN}_guild_crest_"))
+    else:
         crests = (coordinator.data or {}).get("guild_crests") or {}
         seen = set()
         for character in coordinator.characters:

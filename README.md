@@ -169,7 +169,7 @@ Open **Settings > Devices & Services > World of Warcraft**. Each game version is
 
 - **Add character** (next to a game version entry) adds a character of that game version.
 - To remove a character, open the menu of the character below its entry and delete it. Its devices and entities are removed.
-- **Configure** on a game version entry turns feature groups on or off and sets the auction item IDs, for that game version only. It only shows the features with an effect in that game version (for example Mythic+ and the Hall of Fame only for Retail).
+- **Configure** on a game version entry turns feature groups on or off and sets the auction item IDs, for that game version only. It only shows the features with an effect in that game version (for example Mythic+ and the Hall of Fame only for Retail). Entities of a feature you turn off are removed; their history stays in the recorder, and they come back with the same entity IDs when you turn the feature on again.
 - **Configure** on the Battle.net Account entry removes the login (deleting the entry does the same); the account sensors and the gold of the characters go, characters and everything else stay.
 - **Reconfigure** (in an entry's menu) logs in with Battle.net to import more characters or renew the login.
 
@@ -216,7 +216,7 @@ With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail
 | Profile Status | `sensor.thrall_stormrage_profile_status` | `valid`, `invalid` or `not_found`, e.g. after a rename, transfer or deletion |
 | Honorable Kills | `sensor.thrall_stormrage_honorable_kills` | PvP, lifetime |
 | PvP Rank | `sensor.thrall_stormrage_pvp_rank` | PvP, Classic Era honor rank (0 = none) |
-| Professions | `sensor.thrall_stormrage_professions` | Primary professions; skill of the newest tier per profession in `professions` |
+| Professions | `sensor.thrall_stormrage_professions` | Primary professions ("No primary professions" if there are none); skill of the newest tier per profession in `professions` |
 | Health | `sensor.thrall_stormrage_health` | Details; primary stats, armor, power in attributes |
 | Critical Strike / Haste / Mastery / Versatility | `sensor.thrall_stormrage_haste` | Details, in percent |
 | Title | `sensor.thrall_stormrage_title` | Details, active title ("No title" if none is selected); Retail adds `title_count` and `title_total` (titles in the game) |

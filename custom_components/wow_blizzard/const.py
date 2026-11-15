@@ -830,7 +830,7 @@ VERSION_SENSOR_SUPPORT = {
     },
 }
 
-# Shown instead of "unknown" when a character has no title or no guild. In the
+# Shown instead of "unknown" when a character has no title, guild or primary profession. In the
 # language of the API locale, like all other names the API returns.
 NO_VALUE_TEXT = {
     "active_title": {
@@ -842,6 +842,12 @@ NO_VALUE_TEXT = {
         "de": "Keine Gilde", "en": "No guild", "es": "Sin hermandad", "fr": "Aucune guilde",
         "it": "Nessuna gilda", "pt": "Sem guilda", "ru": "Нет гильдии", "ko": "길드 없음",
         "zh": "无公会",
+    },
+    # The state lists the primary professions (secondary ones are in the attributes)
+    "professions": {
+        "de": "Keine Hauptberufe", "en": "No primary professions", "es": "Sin profesiones principales",
+        "fr": "Aucun métier principal", "it": "Nessuna professione primaria", "pt": "Sem profissões primárias",
+        "ru": "Нет основных профессий", "ko": "주 전문 기술 없음", "zh": "无主要专业",
     },
 }
 

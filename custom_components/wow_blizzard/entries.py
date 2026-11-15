@@ -333,6 +333,19 @@ def add_character_entities(entry: ConfigEntry, async_add_entities, items) -> Non
         async_add_entities(entities, config_subentry_id=subentry_id)
 
 
+def remove_entities(hass: HomeAssistant, entry: ConfigEntry, domain: str, keep: Callable[[str], bool]) -> None:
+    """Remove the entry's entities of a platform whose unique ID keep() rejects.
+
+    Used for features that were turned off: their entities would otherwise
+    stay as "unavailable". The history stays in the recorder.
+    """
+    registry = er.async_get(hass)
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if entity.domain == domain and entity.platform == DOMAIN and not keep(entity.unique_id):
+            _LOGGER.debug("Removing %s (feature turned off)", entity.entity_id)
+            registry.async_remove(entity.entity_id)
+
+
 def slug(value: str) -> str:
     """Realm slug as the API uses it."""
     return WoWBlizzardAPIClient.realm_to_slug(value)

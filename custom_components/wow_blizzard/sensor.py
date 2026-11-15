@@ -68,11 +68,13 @@ from .const import (
     ITEM_QUALITY_COLORS,
     GAME_VERSIONS,
     get_sensor_types_for_version,
+    CHARACTER_SENSOR_GROUPS,
     NO_VALUE_TEXT,
     no_value_text,
 )
 from .api_client import WoWBlizzardAPIClient
 from .entries import (
+    remove_entities,
     entry_characters,
     entry_game_version,
     group_subentry_id,
@@ -1804,7 +1806,8 @@ async def async_setup_entry(
     entities = []
     by_subentry: Dict[Optional[str], list] = {}
 
-    # Character sensors
+    # Character sensors; per character the sensor types its features allow
+    allowed_sensors: Dict[str, set] = {}
     for character in coordinator.characters:
         realm = character[CONF_REALM]
         name = character[CONF_CHARACTER_NAME]
@@ -1813,6 +1816,11 @@ async def async_setup_entry(
 
         # Get the sensor types applicable to this game version
         version_sensors = get_sensor_types_for_version(game_version)
+        allowed = set(version_sensors["basic"])
+        for group, feature in FEATURE_GROUPS.items():
+            if features[feature]:
+                allowed |= set(version_sensors[group])
+        allowed_sensors[char_key.replace(f"{realm}-{name}", f"{realm}_{name}", 1)] = allowed
         sensor_types = list(version_sensors["basic"])
         if features[CONF_ENABLE_PVP]:
             sensor_types += list(version_sensors["pvp"])
@@ -1854,6 +1862,9 @@ async def async_setup_entry(
             stale = entity_registry.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{id_base}_character_gold")
             if stale:
                 entity_registry.async_remove(stale)
+
+    # Sensors of feature groups that were turned off would stay "unavailable"
+    remove_entities(hass, entry, "sensor", lambda unique_id: _keep_character_sensor(unique_id, allowed_sensors))
 
     # Server sensors
     if features[CONF_ENABLE_SERVER_STATUS]:
@@ -1922,6 +1933,28 @@ async def async_setup_entry(
             # Character deleted while the entry was loading; the reload follows
             continue
         async_add_entities(character_entities, config_subentry_id=subentry_id)
+
+
+# Character sensor groups and the feature that turns them on
+FEATURE_GROUPS = {
+    "pvp": CONF_ENABLE_PVP,
+    "raid": CONF_ENABLE_RAIDS,
+    "mythicplus": CONF_ENABLE_MYTHIC_PLUS,
+    "details": CONF_ENABLE_CHARACTER_DETAILS,
+    "collections": CONF_ENABLE_COLLECTIONS,
+    "guild": CONF_ENABLE_GUILD,
+}
+CHARACTER_SENSOR_KEYS = frozenset(key for group in CHARACTER_SENSOR_GROUPS.values() for key in group)
+
+
+def _keep_character_sensor(unique_id: str, allowed_sensors: Dict[str, set]) -> bool:
+    """False for a character sensor whose feature is off (or the game version lacks it)."""
+    for id_base, allowed in allowed_sensors.items():
+        prefix = f"{DOMAIN}_{id_base}_"
+        if unique_id.startswith(prefix):
+            sensor_type = unique_id[len(prefix):]
+            return sensor_type not in CHARACTER_SENSOR_KEYS or sensor_type in allowed
+    return True
 
 
 def _setup_account_sensors(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -1994,8 +2027,14 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
         """Return the state of the sensor."""
         char_data = self._char_data
         value = char_data.get(self._sensor_type)
-        if value is None and self._sensor_type in NO_VALUE_TEXT and "character_level" in char_data:
-            # Profile loaded, but no title / no guild: say so instead of "unknown"
+        if (
+            value is None
+            and self._sensor_type in NO_VALUE_TEXT
+            and "character_level" in char_data
+            # Professions come with the details: only when they were loaded
+            and (self._sensor_type != "professions" or "professions" in char_data)
+        ):
+            # Profile loaded, but no title / guild / primary profession: say so instead of "unknown"
             return no_value_text(self._sensor_type, self.coordinator.client.locale)
         return value
 
