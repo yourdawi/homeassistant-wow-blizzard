@@ -214,3 +214,36 @@ async def test_era_realm_lock(hass: HomeAssistant) -> None:
     # Cached for an hour
     await coordinator._fetch_all_server_data()
     client.get_connected_realm_by_id.assert_awaited_once()
+
+
+async def test_achievement_rewards(hass: HomeAssistant) -> None:
+    """Recent achievements carry their reward; rewards are cached and stored."""
+    client = MagicMock()
+
+    async def resource(realm, name, kind, game_version, parse_in_thread=False):
+        if kind == "achievements":
+            return {"total_quantity": 2, "total_points": 0, "recent_events": [
+                {"achievement": {"id": 62041, "name": "Rank 3"}, "timestamp": 2},
+                {"achievement": {"id": 62000, "name": "Level 10"}, "timestamp": 1},
+            ]}
+        return {}
+
+    client.get_character_resource = AsyncMock(side_effect=resource)
+    client.get_achievement = AsyncMock(side_effect=lambda achievement_id, game_version: {
+        62041: {"id": 62041, "reward_description": "Earn 1 Legacy Point."},
+        62000: {"id": 62000},
+    }[achievement_id])
+    coordinator = _coordinator(hass, "forever", client)
+
+    result = await coordinator._fetch_details_data("forever", "Varian Wrynn", "forever", None)
+    recent = result["attrs"]["achievements_completed"]["recent_achievements"]
+    assert recent[0] == {"achievement": "Rank 3", "achievement_id": 62041, "timestamp": 2,
+                         "reward": "Earn 1 Legacy Point."}
+    assert "reward" not in recent[1]
+
+    await coordinator._fetch_details_data("forever", "Varian Wrynn", "forever", None)
+    assert client.get_achievement.await_count == 2
+
+    restored = _coordinator(hass, "forever", MagicMock())
+    restored.load_cache(coordinator._cache_data())
+    assert restored._achievement_rewards == {("forever", 62041): "Earn 1 Legacy Point.", ("forever", 62000): ""}

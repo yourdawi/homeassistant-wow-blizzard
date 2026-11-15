@@ -381,6 +381,7 @@ const collections: Renderer = (ctx) =>
 interface Achievement {
   achievement: string;
   timestamp?: number;
+  reward?: string;
 }
 
 function achievementList(ctx: SectionContext, items: Achievement[]): Content {
@@ -390,7 +391,9 @@ function achievementList(ctx: SectionContext, items: Achievement[]): Content {
       ${items.map(
         (a) => html`
           <div class="list-row">
-            <span class="grow achievement">${a.achievement}</span>
+            <span class="grow achievement"
+              >${a.achievement}${a.reward ? html`<br /><small class="dim">${a.reward}</small>` : nothing}</span
+            >
             ${a.timestamp ? html`<span class="dim">${ctx.date(a.timestamp)}</span>` : nothing}
           </div>
         `,

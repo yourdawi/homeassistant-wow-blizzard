@@ -226,7 +226,7 @@ With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail
 | Deaths | `sensor.thrall_stormrage_deaths` | Details, lifetime |
 | Quests Completed | `sensor.thrall_stormrage_quests_completed` | Details, lifetime |
 | Active Quests | `sensor.thrall_stormrage_active_quests` | Details, Retail and WoW Forever; quest names in `quests` |
-| Achievements | `sensor.thrall_stormrage_achievements` | Details, Retail, Classic Progression and WoW Forever; `total_points`, the 10 most recent achievements in `recent_achievements`, and `total` / `percent` (all achievements of the game version, including Feats of Strength and guild achievements). The response is 1 to 3 MB, it is only fetched after a new login and at most every 6 hours |
+| Achievements | `sensor.thrall_stormrage_achievements` | Details, Retail, Classic Progression and WoW Forever; `total_points`, the 10 most recent achievements in `recent_achievements` (with their `reward`, e.g. a title or "Earn 1 Legacy Point" in WoW Forever), and `total` / `percent` (all achievements of the game version, including Feats of Strength and guild achievements). The response is 1 to 3 MB, it is only fetched after a new login and at most every 6 hours |
 | Hunter Pet | `sensor.thrall_stormrage_hunter_pet` | Details, hunters only; summoned pet, all pets in `pets` |
 | Mounts / Pets / Toys / Heirlooms / Housing Decor | `sensor.thrall_stormrage_mounts` | Collections, Retail (WoW Forever: mounts, pets, toys, heirlooms); `total` (how many the game has, including ones that can no longer be obtained) and `percent` |
 | Transmog Appearances | `sensor.thrall_stormrage_transmog_appearances` | Collections, Retail and WoW Forever; `appearance_sets` and `appearances_per_slot` in attributes. The response can be several MB, it is only fetched after a new login and at most every 6 hours |
@@ -316,7 +316,7 @@ automation:
 
 ### Character achievements
 
-With character details enabled, every Retail, Classic Progression and WoW Forever character gets an event entity, e.g. `event.thrall_stormrage_achievements`. It fires `achievement` (attributes `achievement`, `achievement_id`, `timestamp`, `character`) for every new achievement. Blizzard updates achievements when the character logs out, and the integration checks them after a new login, so the event follows the logout.
+With character details enabled, every Retail, Classic Progression and WoW Forever character gets an event entity, e.g. `event.thrall_stormrage_achievements`. It fires `achievement` (attributes `achievement`, `achievement_id`, `timestamp`, `character`, and `reward` if the achievement has one) for every new achievement. Blizzard updates achievements when the character logs out, and the integration checks them after a new login, so the event follows the logout.
 
 ### Guild crest
 

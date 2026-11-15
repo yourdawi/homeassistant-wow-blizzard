@@ -252,6 +252,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._item_names: Dict[Any, Optional[Dict[str, Any]]] = {}
         # Item level per (version, item ID), for Classic, whose equipment has none
         self._item_levels: Dict[Any, int] = {}
+        # Reward text per (version, achievement ID), "" for none (e.g. "Earn 1 Legacy Point")
+        self._achievement_rewards: Dict[Any, str] = {}
         # Hourly data: (fetch time, data)
         self._leaderboard_cache: Optional[Any] = None
         self._auction_cache: Optional[Any] = None
@@ -804,6 +806,15 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 data = {"_links": {}}
             _merge(result, parser(data))
 
+        # Rewards of the recent achievements (titles, mounts, Legacy Points in WoW Forever)
+        recent = ((result.get("attrs") or {}).get("achievements_completed") or {}).get("recent_achievements") or []
+        rewards = await asyncio.gather(*(
+            self._achievement_reward(a.get("achievement_id"), game_version) for a in recent
+        ))
+        for achievement, reward in zip(recent, rewards):
+            if reward:
+                achievement["reward"] = reward
+
         # Retail lists all earned titles; the active one comes with the profile
         if game_version == "retail" and "active_title" in supported:
             titles = await self.client.get_character_resource(realm, character_name, "titles", game_version)
@@ -1084,6 +1095,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         return {
             "item_icons": {f"{k[0]}:{k[1]}": v for k, v in self._item_icons.items()},
             "item_levels": {f"{k[0]}:{k[1]}": v for k, v in self._item_levels.items()},
+            "achievement_rewards": {f"{k[0]}:{k[1]}": v for k, v in self._achievement_rewards.items()},
             "slow": {
                 char_key: [last_login, fetched.isoformat(), data]
                 for char_key, (last_login, fetched, data) in self._slow_cache.items()
@@ -1107,6 +1119,10 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             version, _, item_id = key.partition(":")
             if item_id.isdigit() and isinstance(level, int):
                 self._item_levels[(version, int(item_id))] = level
+        for key, reward in (stored.get("achievement_rewards") or {}).items():
+            version, _, achievement_id = key.partition(":")
+            if achievement_id.isdigit() and isinstance(reward, str):
+                self._achievement_rewards[(version, int(achievement_id))] = reward
         totals = stored.get("collection_totals") or {}
         try:
             if isinstance(totals.get("totals"), dict) and totals.get("fetched"):
@@ -1139,6 +1155,20 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             self._item_levels[key] = level
             self._schedule_cache_save()
         return self._item_levels[key]
+
+    async def _achievement_reward(self, achievement_id: Optional[int], game_version: str) -> Optional[str]:
+        """Reward text of an achievement, cached across restarts (it is fixed per achievement)."""
+        if not isinstance(achievement_id, int):
+            return None
+        key = (game_version, achievement_id)
+        if key not in self._achievement_rewards:
+            achievement = await self.client.get_achievement(achievement_id, game_version)
+            if not achievement:
+                # Do not cache failures, retry with the next details refresh
+                return None
+            self._achievement_rewards[key] = achievement.get("reward_description") or ""
+            self._schedule_cache_save()
+        return self._achievement_rewards[key] or None
 
     async def _item_info(self, item_id: int, game_version: str) -> Optional[Dict[str, Any]]:
         """Localized name, quality and media ID of an item, cached for the runtime."""

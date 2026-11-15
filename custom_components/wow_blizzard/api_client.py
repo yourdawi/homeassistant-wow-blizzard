@@ -627,6 +627,11 @@ class WoWBlizzardAPIClient:
         params = {"namespace": self.get_namespace("static", game_version)}
         return await self._make_request(path, params, parse_in_thread=parse_in_thread)
 
+    async def get_achievement(self, achievement_id: int, game_version: str = "retail") -> Dict[str, Any]:
+        """Get an achievement (description, points, reward such as "Earn 1 Legacy Point")."""
+        params = {"namespace": self.get_namespace("static", game_version)}
+        return await self._make_request(f"/data/wow/achievement/{achievement_id}", params)
+
     async def get_game_build(self, game_version: str = "retail") -> Dict[str, Any]:
         """Game version and build, read from the versioned namespace in the links.
 
