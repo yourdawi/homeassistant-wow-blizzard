@@ -9,8 +9,16 @@ on:
 
 permissions: {}
 
+# A newer push to the same branch cancels the running checks
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate-hacs:
+    # Pull requests from branches of this repository are already tested by
+    # their push; only pull requests from forks run here
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - name: HACS validation
@@ -19,6 +27,9 @@ jobs:
           category: integration
 
   tests:
+    # Pull requests from branches of this repository are already tested by
+    # their push; only pull requests from forks run here
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +44,9 @@ jobs:
         run: pytest -q
 
   build-cards:
+    # Pull requests from branches of this repository are already tested by
+    # their push; only pull requests from forks run here
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
