@@ -2598,12 +2598,16 @@ class WoWAccountSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return additional state attributes."""
-        return {
+        attributes = {
             "category": "account",
             # False once the 24 hour login has expired; values are then the last known ones
             "login_valid": self._account.get("login_valid", False),
             **((self._account.get("attrs") or {}).get(self._sensor_type) or {}),
         }
+        if self._sensor_type == "account_login" and self._account.get("battletag"):
+            # Shown by the account card instead of "Battle.net Account"
+            attributes["battletag"] = self._account["battletag"]
+        return attributes
 
     @property
     def device_info(self):

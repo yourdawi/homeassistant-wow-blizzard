@@ -21,6 +21,8 @@ from .const import (
     HOF_PROBE_RAID,
     OAUTH_TOKEN_URLS,
     OAUTH_TOKEN_URL_DEFAULT,
+    OAUTH_USERINFO_URLS,
+    OAUTH_USERINFO_URL_DEFAULT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -507,6 +509,20 @@ class WoWBlizzardAPIClient:
             "access_token": token["access_token"],
             "expires_at": int(datetime.now().timestamp()) + int(token.get("expires_in", 86400)),
         }
+
+    async def get_user_info(self, user_token: str) -> Dict[str, Any]:
+        """BattleTag of the logged-in player ({"battletag", "id", "sub"}); {} on errors."""
+        session = await self._get_session()
+        url = OAUTH_USERINFO_URLS.get(self.region, OAUTH_USERINFO_URL_DEFAULT)
+        try:
+            async with session.get(url, headers={"Authorization": f"Bearer {user_token}"}) as response:
+                if response.status != 200:
+                    _LOGGER.debug("User info answered %s", response.status)
+                    return {}
+                return await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+            _LOGGER.debug("Could not fetch the user info: %s", err)
+            return {}
 
     async def get_account_profile(self, user_token: str, game_version: str = "retail") -> Dict[str, Any]:
         """Get the WoW accounts and characters of the logged-in player."""

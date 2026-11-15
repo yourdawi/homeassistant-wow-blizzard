@@ -106,6 +106,8 @@ class AccountCoordinator(DataUpdateCoordinator):
         self._transmogs: Optional[Any] = None
         # WoW Forever account transmogs: (fetch time, parsed) or (fetch time, None) without Forever
         self._forever_transmogs: Optional[Any] = None
+        # BattleTag, fetched once per login: (token, battletag)
+        self._battletag: Optional[Any] = None
         super().__init__(
             hass, _LOGGER, name=f"{DOMAIN}_account", config_entry=entry,
             update_interval=timedelta(seconds=ACCOUNT_REFRESH_INTERVAL),
@@ -196,6 +198,9 @@ class AccountCoordinator(DataUpdateCoordinator):
                 }
         result["account_gold_total"] = total_gold
         result["account_characters"] = account_characters
+        battletag = await self._fetch_battletag(token)
+        if battletag:
+            result["battletag"] = battletag
 
         for sensor, (kind, list_keys) in ACCOUNT_COLLECTIONS.items():
             count = count_collection(await self.client.get_account_collection(token, kind), list_keys)
@@ -229,6 +234,16 @@ class AccountCoordinator(DataUpdateCoordinator):
                 "account_transmogs_forever": (self._last.get("attrs") or {}).get("account_transmogs_forever") or {},
             }})
         return result
+
+    async def _fetch_battletag(self, token: str) -> Optional[str]:
+        """BattleTag of the player, once per login (kept on errors)."""
+        if self._battletag and self._battletag[0] == token:
+            return self._battletag[1]
+        battletag = (await self.client.get_user_info(token)).get("battletag")
+        if battletag:
+            self._battletag = (token, battletag)
+            return battletag
+        return self._last.get("battletag")
 
     async def _fetch_forever_transmogs(self, token: str) -> Optional[Dict[str, Any]]:
         """Transmogs of the WoW Forever account, every few hours; None without Forever characters."""

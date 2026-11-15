@@ -99,6 +99,11 @@ OAUTH_TOKEN_URLS = {
 OAUTH_AUTHORIZE_URL_DEFAULT = "https://oauth.battle.net/authorize"
 OAUTH_TOKEN_URL_DEFAULT = "https://oauth.battle.net/token"
 OAUTH_SCOPE = "wow.profile"
+# BattleTag and account ID of the logged-in player (no extra scope needed)
+OAUTH_USERINFO_URLS = {
+    "cn": "https://oauth.battlenet.com.cn/userinfo",
+}
+OAUTH_USERINFO_URL_DEFAULT = "https://oauth.battle.net/userinfo"
 
 # Game versions and their Blizzard API namespace suffixes.
 # The namespace is built as "{type}{suffix}-{region}", e.g. "profile-classic1x-eu".

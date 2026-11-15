@@ -321,3 +321,21 @@ def test_protected_stats_attributes():
     }
     # Missing stats stay None (the totals of gold keep their old 0)
     assert protected_stats_attributes({})["total_item_value_gained"] is None
+
+
+async def test_battletag_once_per_login(hass: HomeAssistant) -> None:
+    """The BattleTag is fetched once per login and kept when the user info fails."""
+    from custom_components.wow_blizzard.account import AccountCoordinator
+
+    coordinator = AccountCoordinator.__new__(AccountCoordinator)
+    coordinator.client = MagicMock()
+    coordinator.client.get_user_info = AsyncMock(return_value={"battletag": "Varian#1234", "id": 1})
+    coordinator._battletag = None
+    coordinator._last = {}
+    assert await coordinator._fetch_battletag("token-a") == "Varian#1234"
+    assert await coordinator._fetch_battletag("token-a") == "Varian#1234"
+    coordinator.client.get_user_info.assert_awaited_once()
+    # New login, user info fails: keep the stored one
+    coordinator.client.get_user_info = AsyncMock(return_value={})
+    coordinator._last = {"battletag": "Varian#1234"}
+    assert await coordinator._fetch_battletag("token-b") == "Varian#1234"

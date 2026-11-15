@@ -95,7 +95,7 @@ export class WowAccountCard extends WowBaseCard<AccountCardConfig> {
       <div class="header" @click=${() => this.moreInfo(login)}>
         <div class="avatar emblem">⚔</div>
         <div class="ident">
-          <div class="name heading gold">${this.t("battlenet_account")}</div>
+          <div class="name heading gold">${login?.attributes.battletag ?? this.t("battlenet_account")}</div>
           <div class="line ${valid ? "ok" : "bad"}">
             ${valid ? html`${this.t("login_valid")} ${expires ? this.relative(expires) : ""}` : this.t("login_expired")}
           </div>
