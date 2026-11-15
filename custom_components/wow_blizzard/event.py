@@ -10,8 +10,15 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, CONF_REALM, CONF_CHARACTER_NAME, CONF_GAME_VERSION, CONF_ENABLE_GUILD
-from .entries import add_character_entities
+from .const import (
+    DOMAIN,
+    CONF_REALM,
+    CONF_CHARACTER_NAME,
+    CONF_GAME_VERSION,
+    CONF_ENABLE_CHARACTER_DETAILS,
+    CONF_ENABLE_GUILD,
+)
+from .entries import add_character_entities, remove_entities
 from .sensor import WoWDataUpdateCoordinator, _game_version_label
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,8 +37,15 @@ async def async_setup_entry(
     seen = set()
     feeds = (coordinator.data or {}).get("guild_activity") or {}
     rosters = (coordinator.data or {}).get("guild_roster_events") or {}
-    if not coordinator.features.get(CONF_ENABLE_GUILD, False):
+    guild_on = coordinator.features.get(CONF_ENABLE_GUILD, False)
+    details_on = coordinator.features.get(CONF_ENABLE_CHARACTER_DETAILS, False)
+    if not guild_on:
         feeds, rosters = {}, {}
+    # Events of features that were turned off would stay "unavailable"
+    remove_entities(hass, entry, "event", lambda unique_id: (
+        (guild_on or not unique_id.startswith(f"{DOMAIN}_guild_activity_"))
+        and (details_on or not unique_id.endswith("_achievement_event"))
+    ))
     for character in coordinator.characters:
         char_data = (coordinator.data or {}).get(character["key"]) or {}
         guild_key = char_data.get("guild_key")

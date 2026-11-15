@@ -47,12 +47,11 @@ FEATURE_DEFAULTS = {
 FEATURE_VERSIONS = {
     "enable_raids": ("retail", "forever"),
     "enable_collections": ("retail", "forever"),
-    "enable_region_data": ("retail", "classic"),
     "auction_items": ("retail", "classic", "forever"),
     "enable_mythic_plus": ("retail",),
     "enable_hall_of_fame": ("retail",),
     "enable_mythic_leaderboard": ("retail",),
-    "enable_pvp_leaderboard": ("retail",),
+    "enable_pvp_leaderboard": ("retail", "classic", "classicann"),
 }
 CONF_GAME_VERSION = "game_version"
 CONF_LOCALE = "locale"
@@ -100,6 +99,11 @@ OAUTH_TOKEN_URLS = {
 OAUTH_AUTHORIZE_URL_DEFAULT = "https://oauth.battle.net/authorize"
 OAUTH_TOKEN_URL_DEFAULT = "https://oauth.battle.net/token"
 OAUTH_SCOPE = "wow.profile"
+# BattleTag and account ID of the logged-in player (no extra scope needed)
+OAUTH_USERINFO_URLS = {
+    "cn": "https://oauth.battlenet.com.cn/userinfo",
+}
+OAUTH_USERINFO_URL_DEFAULT = "https://oauth.battle.net/userinfo"
 
 # Game versions and their Blizzard API namespace suffixes.
 # The namespace is built as "{type}{suffix}-{region}", e.g. "profile-classic1x-eu".
@@ -187,6 +191,13 @@ BASIC_SENSOR_TYPES = {
         "unit": "items",
         "device_class": None,
     },
+    "character_experience": {
+        "name": "Experience",
+        "icon": "mdi:progress-star",
+        "unit": "XP",
+        "device_class": None,
+        "state_class": "measurement",
+    },
     "character_status": {
         "name": "Profile Status",
         "icon": "mdi:account-check",
@@ -229,6 +240,13 @@ PVP_SENSOR_TYPES = {
     },
     "pvp_3v3_rating": {
         "name": "3v3 Arena Rating", 
+        "icon": "mdi:sword-cross",
+        "unit": "rating",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "pvp_5v5_rating": {
+        "name": "5v5 Arena Rating",
         "icon": "mdi:sword-cross",
         "unit": "rating",
         "device_class": None,
@@ -583,6 +601,20 @@ ACCOUNT_SENSOR_TYPES = {
         "device_class": None,
         "state_class": "measurement",
     },
+    "account_transmogs_forever": {
+        "name": "Account Transmog Appearances (WoW Forever)",
+        "icon": "mdi:tshirt-crew-outline",
+        "unit": "appearances",
+        "device_class": None,
+        "state_class": "measurement",
+    },
+    "account_houses": {
+        "name": "Houses",
+        "icon": "mdi:home-variant-outline",
+        "unit": "houses",
+        "device_class": None,
+        "state_class": "measurement",
+    },
     "account_login": {
         "name": "Battle.net Login",
         "icon": "mdi:login",
@@ -711,6 +743,12 @@ REGION_SENSOR_TYPES = {
         "unit": None,
         "device_class": None,
     },
+    "game_build": {
+        "name": "Game Version",
+        "icon": "mdi:update",
+        "unit": None,
+        "device_class": None,
+    },
 }
 
 # Hall of Fame Leaderboard Sensors
@@ -769,17 +807,19 @@ VERSION_SENSOR_SUPPORT = {
     # list, dungeon encounters or collections endpoints; no versatility stat
     "classic": {
         "basic": None,
-        "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season", "pvp_honorable_kills"},
+        "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_5v5_rating", "pvp_rbg_rating",
+                "pvp_wins_season", "pvp_honorable_kills"},
         "details": {"stat_health", "stat_crit", "stat_haste", "stat_mastery", "active_title",
                     "reputations", "talents", "deaths", "quests_completed", "hunter_pet",
                     "achievements_completed"},
         "guild": None,
     },
-    # Classic Anniversary (Burning Crusade): no achievements
+    # Classic Anniversary (Burning Crusade): no achievements, but 5v5 arenas
     "classicann": {
         "basic": {"character_level", "character_item_level", "guild_name", "character_equipment",
-                  "character_status"},
-        "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_wins_season", "pvp_honorable_kills"},
+                  "character_experience", "character_status"},
+        "pvp": {"pvp_2v2_rating", "pvp_3v3_rating", "pvp_5v5_rating", "pvp_wins_season",
+                "pvp_honorable_kills"},
         "details": {"stat_health", "stat_crit", "stat_haste", "active_title", "reputations",
                     "talents", "hunter_pet"},
         "guild": {"guild_members", "guild_max_level_members", "guild_rank"},
@@ -787,7 +827,7 @@ VERSION_SENSOR_SUPPORT = {
     # Classic Era (Vanilla): no achievements, no arenas, but the old PvP rank
     "classic1x": {
         "basic": {"character_level", "character_item_level", "guild_name", "character_equipment",
-                  "character_status"},
+                  "character_experience", "character_status"},
         "pvp": {"pvp_honorable_kills", "pvp_rank"},
         "details": {"stat_health", "stat_crit", "active_title", "reputations", "talents",
                     "hunter_pet"},
@@ -809,7 +849,7 @@ VERSION_SENSOR_SUPPORT = {
     },
 }
 
-# Shown instead of "unknown" when a character has no title or no guild. In the
+# Shown instead of "unknown" when a character has no title, guild or primary profession. In the
 # language of the API locale, like all other names the API returns.
 NO_VALUE_TEXT = {
     "active_title": {
@@ -821,6 +861,12 @@ NO_VALUE_TEXT = {
         "de": "Keine Gilde", "en": "No guild", "es": "Sin hermandad", "fr": "Aucune guilde",
         "it": "Nessuna gilda", "pt": "Sem guilda", "ru": "Нет гильдии", "ko": "길드 없음",
         "zh": "无公会",
+    },
+    # The state lists the primary professions (secondary ones are in the attributes)
+    "professions": {
+        "de": "Keine Hauptberufe", "en": "No primary professions", "es": "Sin profesiones principales",
+        "fr": "Aucun métier principal", "it": "Nessuna professione primaria", "pt": "Sem profissões primárias",
+        "ru": "Нет основных профессий", "ko": "주 전문 기술 없음", "zh": "无主要专业",
     },
 }
 

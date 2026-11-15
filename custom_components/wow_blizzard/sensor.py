@@ -68,11 +68,13 @@ from .const import (
     ITEM_QUALITY_COLORS,
     GAME_VERSIONS,
     get_sensor_types_for_version,
+    CHARACTER_SENSOR_GROUPS,
     NO_VALUE_TEXT,
     no_value_text,
 )
 from .api_client import WoWBlizzardAPIClient
 from .entries import (
+    remove_entities,
     entry_characters,
     entry_game_version,
     group_subentry_id,
@@ -105,6 +107,9 @@ from .parsers import (
     parse_mythic_best_runs,
     parse_title_cutoffs,
     parse_connected_realm_search,
+    parse_realm_lock,
+    COLLECTION_TOTALS,
+    total_attributes,
     with_render_fallback,
     parse_pvp_leaderboard,
     parse_transmogs,
@@ -134,6 +139,13 @@ RAID_DIFFICULTY_SENSORS = {
 
 # Delay before the cache is written, so several changes are saved together
 CACHE_SAVE_DELAY = 60
+# Realm locks (Classic Era) and the game build change rarely
+REALM_LOCK_REFRESH_INTERVAL = 3600
+GAME_BUILD_REFRESH_INTERVAL = 3600
+# Totals of the collections (all mounts, pets ...); also refetched on a new build
+COLLECTION_TOTALS_REFRESH_INTERVAL = 24 * 3600
+# Region sensors that more than one game version has
+REGION_SENSORS_PER_VERSION = ("game_build", "weekly_reset")
 
 # Hall of Fame list sizes: split faction lists hold 100 guilds, unified lists 200
 HOF_FULL_SPLIT = 100
@@ -244,6 +256,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._item_names: Dict[Any, Optional[Dict[str, Any]]] = {}
         # Item level per (version, item ID), for Classic, whose equipment has none
         self._item_levels: Dict[Any, int] = {}
+        # Reward text per (version, achievement ID), "" for none (e.g. "Earn 1 Legacy Point")
+        self._achievement_rewards: Dict[Any, str] = {}
         # Hourly data: (fetch time, data)
         self._leaderboard_cache: Optional[Any] = None
         self._auction_cache: Optional[Any] = None
@@ -264,6 +278,12 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         self._mythic_season: Dict[str, Any] = {}
         # PvP leaderboards per "season:bracket": (fetch time, ranks by character ID)
         self._pvp_leaderboard_cache: Dict[str, Any] = {}
+        # Classic Era realm locks per connected realm ID: (fetch time, lock)
+        self._realm_locks: Dict[int, Any] = {}
+        # Game version and build: (fetch time, {"version", "build"})
+        self._game_build: Optional[Any] = None
+        # Totals for "x of y": {"fetched", "build", "totals": {sensor: count}}
+        self._collection_totals: Dict[str, Any] = {}
         # Item icons and slow character data across restarts and reloads
         self._cache_store: Optional[Store] = None
         self.entry_id: Optional[str] = None
@@ -369,6 +389,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             if "achievement_points" in supported_basic:
                 # The profile carries the total; the achievements endpoint is >1 MB
                 result["achievement_points"] = profile.get("achievement_points")
+            if "character_experience" in supported_basic and isinstance(profile.get("experience"), int):
+                # Experience points in the current level (0 at the maximum level)
+                result["character_experience"] = profile["experience"]
 
             return result
 
@@ -482,15 +505,30 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             data = found.get(f"{game_version}:{self.client.realm_to_slug(realm['realm'])}")
             if data:
                 # Also spares the realm lookup for auctions and Mythic+ leaderboards
-                if isinstance(data.get("connected_realm_id"), int):
-                    self._connected_realms[(realm["realm"], game_version)] = data["connected_realm_id"]
+                connected_realm_id = data.get("connected_realm_id")
+                if isinstance(connected_realm_id, int):
+                    self._connected_realms[(realm["realm"], game_version)] = connected_realm_id
                 server_data[realm_key] = {k: v for k, v in data.items() if k != "connected_realm_id"}
+                if game_version == "classic1x" and isinstance(connected_realm_id, int):
+                    # Only Classic Era reports locks, and only on the connected realm itself
+                    server_data[realm_key].update(await self._realm_lock(connected_realm_id, game_version))
             else:
                 # WoW Forever rulesets, and realms the search missed
                 server_data[realm_key] = await self._fetch_server_data(
                     realm["realm"], game_version=game_version, ruleset_id=realm.get("ruleset_id")
                 )
         return server_data
+
+    async def _realm_lock(self, connected_realm_id: int, game_version: str) -> Dict[str, Any]:
+        """Whether a Classic Era realm is locked for new characters, refreshed hourly."""
+        cached = self._realm_locks.get(connected_realm_id)
+        if self._is_fresh(cached, REALM_LOCK_REFRESH_INTERVAL):
+            return cached[1]
+        lock = parse_realm_lock(await self.client.get_connected_realm_by_id(connected_realm_id, game_version))
+        if not lock and cached:
+            lock = cached[1]
+        self._realm_locks[connected_realm_id] = (datetime.now(), lock)
+        return lock
 
     async def _spec_bracket_slug(self, spec_id: Optional[int]) -> Optional[str]:
         """English "class-spec" slug for Solo Shuffle and Blitz brackets, cached per spec."""
@@ -519,6 +557,8 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             brackets = {
                 "pvp_2v2_rating": "2v2",
                 "pvp_3v3_rating": "3v3",
+                # Classic Progression and Anniversary
+                "pvp_5v5_rating": "5v5",
                 "pvp_rbg_rating": "rbg",
             }
             if {"pvp_shuffle_rating", "pvp_blitz_rating"} & set(supported_pvp):
@@ -541,8 +581,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 result["pvp_rank"] = summary.get("pvp_rank", 0)
 
             # Brackets report the last season the character played; older
-            # seasons count as 0 for the current one (Retail only)
-            current_season = (self._pvp_season.get("season") or {}).get("id") if game_version == "retail" else None
+            # seasons count as 0 for the current one
+            # Current season: Retail, Classic Progression and Anniversary (Era has no seasons)
+            current_season = self._leaderboard_season_id(game_version)
             # Retail title cutoffs only for Retail; Classic seasons list several titles per bracket
             cutoffs = (self._pvp_season.get("cutoffs") or {}) if game_version == "retail" else {}
             title_cutoffs = (self._classic_pvp_seasons.get(game_version) or {}).get("titles") or {}
@@ -576,12 +617,17 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                     "weekly_played": weekly_stats.get("played", 0),
                     "weekly_won": weekly_stats.get("won", 0),
                 }
-                classic_bracket = {"pvp_2v2_rating": "ARENA_2v2", "pvp_3v3_rating": "ARENA_3v3"}.get(sensor)
+                classic_bracket = {
+                    "pvp_2v2_rating": "ARENA_2v2",
+                    "pvp_3v3_rating": "ARENA_3v3",
+                    "pvp_5v5_rating": "ARENA_5v5",
+                    "pvp_rbg_rating": "BATTLEGROUNDS",
+                }.get(sensor) if game_version != "retail" else None
                 if classic_bracket and title_cutoffs.get(classic_bracket):
                     attrs["title_cutoffs"] = title_cutoffs[classic_bracket]
                 if sensor == "pvp_3v3_rating" and game_version == "retail":
                     attrs["gladiator_cutoff"] = cutoffs.get("gladiator")
-                elif sensor == "pvp_rbg_rating":
+                elif sensor == "pvp_rbg_rating" and game_version == "retail":
                     attrs["hero_cutoff"] = (cutoffs.get("hero") or {}).get(faction)
                 elif sensor == "pvp_shuffle_rating":
                     attrs["legend_cutoff"] = (cutoffs.get("shuffle") or {}).get(basic.get("spec_id"))
@@ -763,6 +809,15 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 data = {"_links": {}}
             _merge(result, parser(data))
 
+        # Rewards of the recent achievements (titles, mounts, Legacy Points in WoW Forever)
+        recent = ((result.get("attrs") or {}).get("achievements_completed") or {}).get("recent_achievements") or []
+        rewards = await asyncio.gather(*(
+            self._achievement_reward(a.get("achievement_id"), game_version) for a in recent
+        ))
+        for achievement, reward in zip(recent, rewards):
+            if reward:
+                achievement["reward"] = reward
+
         # Retail lists all earned titles; the active one comes with the profile
         if game_version == "retail" and "active_title" in supported:
             titles = await self.client.get_character_resource(realm, character_name, "titles", game_version)
@@ -937,10 +992,11 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                     "last_updated": _format_timestamp(token.get("last_updated_timestamp")),
                 }
 
-        if self.has_retail:
+        if self.has_retail or self.has_classic_progression:
+            # Classic Progression has weekly periods too (not documented)
             now_ms = datetime.now(timezone.utc).timestamp() * 1000
             if not self._period or now_ms > (self._period.get("end_timestamp") or 0):
-                self._period = await self.client.get_current_keystone_period() or self._period
+                self._period = await self.client.get_current_keystone_period(self.game_version) or self._period
             end = self._period.get("end_timestamp")
             if isinstance(end, int):
                 # The period ends one second before the reset
@@ -949,7 +1005,74 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                     "period_id": self._period.get("id"),
                     "period_start": _format_timestamp(self._period.get("start_timestamp")),
                 }
+
+        build = await self._fetch_game_build()
+        if build:
+            result["game_build"] = build["version"]
+            result.setdefault("attrs", {})["game_build"] = {
+                "build": build["build"],
+                "full_version": f"{build['version']}.{build['build']}",
+            }
         return result
+
+    async def _fetch_game_build(self) -> Dict[str, Any]:
+        """Game version and build of this entry's game version, refreshed hourly."""
+        if self._is_fresh(self._game_build, GAME_BUILD_REFRESH_INTERVAL):
+            return self._game_build[1]
+        build = await self.client.get_game_build(self.game_version)
+        if not build and self._game_build:
+            build = self._game_build[1]
+        self._game_build = (datetime.now(), build)
+        return build
+
+    def _collection_total_sensors(self) -> set:
+        """Sensors of this game version that get "x of y" totals."""
+        version_sensors = get_sensor_types_for_version(self.game_version)
+        sensors = set()
+        if self.features.get(CONF_ENABLE_COLLECTIONS, False):
+            sensors |= set(version_sensors["collections"])
+        if self.features.get(CONF_ENABLE_CHARACTER_DETAILS, False):
+            sensors |= set(version_sensors["details"]) & {"achievements_completed"}
+            if self.game_version == "retail":
+                # Only Retail lists the titles of a character (title_count)
+                sensors |= set(version_sensors["details"]) & {"active_title"}
+        return sensors & set(COLLECTION_TOTALS)
+
+    async def _fetch_collection_totals(self) -> Dict[str, int]:
+        """Number of mounts, pets, toys, heirlooms, decor, achievements and titles in the game.
+
+        Refreshed daily and after a new game build; stored across restarts.
+        """
+        needed = self._collection_total_sensors()
+        if not needed:
+            return {}
+        totals = dict(self._collection_totals.get("totals") or {})
+        fetched = self._collection_totals.get("fetched")
+        build = (self._game_build[1] or {}).get("build") if self._game_build else None
+        stale = (
+            not isinstance(fetched, datetime)
+            or datetime.now() - fetched >= timedelta(seconds=COLLECTION_TOTALS_REFRESH_INTERVAL)
+            or (build is not None and build != self._collection_totals.get("build"))
+            or bool(needed - set(totals))
+        )
+        if stale:
+            fresh: Dict[str, int] = {}
+            for sensor in sorted(needed):
+                path, list_key = COLLECTION_TOTALS[sensor]
+                # The Retail achievement index is about 1.3 MB
+                data = await self.client.get_static_index(
+                    path, self.game_version, parse_in_thread=sensor == "achievements_completed"
+                )
+                if isinstance((data or {}).get(list_key), list):
+                    fresh[sensor] = len(data[list_key])
+                elif data or self.client.last_status == 404:
+                    # Answered without a list (e.g. Forever heirlooms) or not available
+                    fresh[sensor] = 0
+            if fresh:
+                totals.update(fresh)
+                self._collection_totals = {"fetched": datetime.now(), "build": build, "totals": totals}
+                self._schedule_cache_save()
+        return {sensor: total for sensor, total in totals.items() if sensor in needed}
 
     async def _item_icon(self, media_id: Optional[int], game_version: str) -> Optional[str]:
         """Icon URL of an item, cached for the runtime (icons only change with patches)."""
@@ -975,10 +1098,16 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
         return {
             "item_icons": {f"{k[0]}:{k[1]}": v for k, v in self._item_icons.items()},
             "item_levels": {f"{k[0]}:{k[1]}": v for k, v in self._item_levels.items()},
+            "achievement_rewards": {f"{k[0]}:{k[1]}": v for k, v in self._achievement_rewards.items()},
             "slow": {
                 char_key: [last_login, fetched.isoformat(), data]
                 for char_key, (last_login, fetched, data) in self._slow_cache.items()
             },
+            "collection_totals": {
+                "fetched": self._collection_totals["fetched"].isoformat(),
+                "build": self._collection_totals.get("build"),
+                "totals": self._collection_totals.get("totals") or {},
+            } if isinstance(self._collection_totals.get("fetched"), datetime) else {},
         }
 
     def load_cache(self, stored: Optional[Dict[str, Any]]) -> None:
@@ -993,6 +1122,20 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             version, _, item_id = key.partition(":")
             if item_id.isdigit() and isinstance(level, int):
                 self._item_levels[(version, int(item_id))] = level
+        for key, reward in (stored.get("achievement_rewards") or {}).items():
+            version, _, achievement_id = key.partition(":")
+            if achievement_id.isdigit() and isinstance(reward, str):
+                self._achievement_rewards[(version, int(achievement_id))] = reward
+        totals = stored.get("collection_totals") or {}
+        try:
+            if isinstance(totals.get("totals"), dict) and totals.get("fetched"):
+                self._collection_totals = {
+                    "fetched": datetime.fromisoformat(totals["fetched"]),
+                    "build": totals.get("build"),
+                    "totals": {k: v for k, v in totals["totals"].items() if isinstance(v, int)},
+                }
+        except (TypeError, ValueError):
+            self._collection_totals = {}
         known = {c["key"] for c in self.characters}
         for char_key, (last_login, fetched, data) in (stored.get("slow") or {}).items():
             if char_key in known:
@@ -1015,6 +1158,20 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             self._item_levels[key] = level
             self._schedule_cache_save()
         return self._item_levels[key]
+
+    async def _achievement_reward(self, achievement_id: Optional[int], game_version: str) -> Optional[str]:
+        """Reward text of an achievement, cached across restarts (it is fixed per achievement)."""
+        if not isinstance(achievement_id, int):
+            return None
+        key = (game_version, achievement_id)
+        if key not in self._achievement_rewards:
+            achievement = await self.client.get_achievement(achievement_id, game_version)
+            if not achievement:
+                # Do not cache failures, retry with the next details refresh
+                return None
+            self._achievement_rewards[key] = achievement.get("reward_description") or ""
+            self._schedule_cache_save()
+        return self._achievement_rewards[key] or None
 
     async def _item_info(self, item_id: int, game_version: str) -> Optional[Dict[str, Any]]:
         """Localized name, quality and media ID of an item, cached for the runtime."""
@@ -1186,13 +1343,23 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             },
         }
 
+    def _leaderboard_season_id(self, game_version: str) -> Optional[int]:
+        """Current PvP season with leaderboards: Retail, Classic Progression and Anniversary."""
+        if game_version == "retail":
+            season = self._pvp_season.get("season") or {}
+        elif game_version in ("classic", "classicann"):
+            season = (self._classic_pvp_seasons.get(game_version) or {}).get("season") or {}
+        else:
+            return None
+        return season.get("id") if isinstance(season.get("id"), int) else None
+
     async def _apply_pvp_leaderboards(self, all_data: Dict[str, Any]) -> None:
         """Add the leaderboard rank to the rating sensors of the brackets a character played (opt-in, hourly).
 
         Each leaderboard holds the best ~5000 of the region and is downloaded
         once per hour, however many characters need it.
         """
-        season_id = (self._pvp_season.get("season") or {}).get("id")
+        season_id = self._leaderboard_season_id(self.game_version)
         if not self.features.get(CONF_ENABLE_PVP_LEADERBOARD, False) or not isinstance(season_id, int):
             return
         characters = [
@@ -1204,7 +1371,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
             cache_key = f"{season_id}:{bracket}"
             cached = self._pvp_leaderboard_cache.get(cache_key)
             if not self._is_fresh(cached, LEADERBOARD_REFRESH_INTERVAL):
-                board = parse_pvp_leaderboard(await self.client.get_pvp_leaderboard(season_id, bracket))
+                board = parse_pvp_leaderboard(
+                    await self.client.get_pvp_leaderboard(season_id, bracket, self.game_version)
+                )
                 # On errors keep the last board and wait an hour as well,
                 # instead of downloading 2 MB on every update
                 cached = (datetime.now(), board or (cached[1] if cached else {}))
@@ -1473,6 +1642,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 region_data["mythicplus_affixes"] = ", ".join(a["name"] for a in leaderboards["affixes"] if a.get("name"))
                 region_data.setdefault("attrs", {})["mythicplus_affixes"] = {"affixes": leaderboards["affixes"]}
             all_data["region"] = region_data or self._previous("region")
+            all_data["collection_totals"] = await self._fetch_collection_totals() or self._previous("collection_totals")
 
             all_data["auctions"] = await self._fetch_auctions(all_data) or self._previous("auctions")
             all_data["guild_activity"] = dict(self._guild_activity)
@@ -1636,7 +1806,8 @@ async def async_setup_entry(
     entities = []
     by_subentry: Dict[Optional[str], list] = {}
 
-    # Character sensors
+    # Character sensors; per character the sensor types its features allow
+    allowed_sensors: Dict[str, set] = {}
     for character in coordinator.characters:
         realm = character[CONF_REALM]
         name = character[CONF_CHARACTER_NAME]
@@ -1645,6 +1816,11 @@ async def async_setup_entry(
 
         # Get the sensor types applicable to this game version
         version_sensors = get_sensor_types_for_version(game_version)
+        allowed = set(version_sensors["basic"])
+        for group, feature in FEATURE_GROUPS.items():
+            if features[feature]:
+                allowed |= set(version_sensors[group])
+        allowed_sensors[char_key.replace(f"{realm}-{name}", f"{realm}_{name}", 1)] = allowed
         sensor_types = list(version_sensors["basic"])
         if features[CONF_ENABLE_PVP]:
             sensor_types += list(version_sensors["pvp"])
@@ -1687,6 +1863,9 @@ async def async_setup_entry(
             if stale:
                 entity_registry.async_remove(stale)
 
+    # Sensors of feature groups that were turned off would stay "unavailable"
+    remove_entities(hass, entry, "sensor", lambda unique_id: _keep_character_sensor(unique_id, allowed_sensors))
+
     # Server sensors
     if features[CONF_ENABLE_SERVER_STATUS]:
         for realm_key, realm in coordinator.realms.items():
@@ -1707,11 +1886,11 @@ async def async_setup_entry(
 
     # Region-wide sensors (WoW Token, weekly reset)
     if features[CONF_ENABLE_REGION_DATA]:
-        region_sensors = []
+        region_sensors = ["game_build"]
         if coordinator.has_retail:
             region_sensors += ["wow_token_price", "weekly_reset"]
         if coordinator.has_classic_progression:
-            region_sensors.append("wow_token_price_classic")
+            region_sensors += ["wow_token_price_classic", "weekly_reset"]
         for sensor_type in region_sensors:
             entities.append(WoWRegionSensor(coordinator, sensor_type, base))
 
@@ -1756,11 +1935,33 @@ async def async_setup_entry(
         async_add_entities(character_entities, config_subentry_id=subentry_id)
 
 
+# Character sensor groups and the feature that turns them on
+FEATURE_GROUPS = {
+    "pvp": CONF_ENABLE_PVP,
+    "raid": CONF_ENABLE_RAIDS,
+    "mythicplus": CONF_ENABLE_MYTHIC_PLUS,
+    "details": CONF_ENABLE_CHARACTER_DETAILS,
+    "collections": CONF_ENABLE_COLLECTIONS,
+    "guild": CONF_ENABLE_GUILD,
+}
+CHARACTER_SENSOR_KEYS = frozenset(key for group in CHARACTER_SENSOR_GROUPS.values() for key in group)
+
+
+def _keep_character_sensor(unique_id: str, allowed_sensors: Dict[str, set]) -> bool:
+    """False for a character sensor whose feature is off (or the game version lacks it)."""
+    for id_base, allowed in allowed_sensors.items():
+        prefix = f"{DOMAIN}_{id_base}_"
+        if unique_id.startswith(prefix):
+            sensor_type = unique_id[len(prefix):]
+            return sensor_type not in CHARACTER_SENSOR_KEYS or sensor_type in allowed
+    return True
+
+
 def _setup_account_sensors(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Sensors of the Battle.net account entry (totals, collections, login)."""
     account: AccountCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     data = account.data or {}
-    collections = set(ACCOUNT_COLLECTIONS) | {"account_transmogs"}
+    collections = set(ACCOUNT_COLLECTIONS) | {"account_transmogs", "account_transmogs_forever", "account_houses"}
     async_add_entities(
         WoWAccountSensor(account, sensor_type, unique_base(entry))
         for sensor_type in ACCOUNT_SENSOR_TYPES
@@ -1826,8 +2027,14 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
         """Return the state of the sensor."""
         char_data = self._char_data
         value = char_data.get(self._sensor_type)
-        if value is None and self._sensor_type in NO_VALUE_TEXT and "character_level" in char_data:
-            # Profile loaded, but no title / no guild: say so instead of "unknown"
+        if (
+            value is None
+            and self._sensor_type in NO_VALUE_TEXT
+            and "character_level" in char_data
+            # Professions come with the details: only when they were loaded
+            and (self._sensor_type != "professions" or "professions" in char_data)
+        ):
+            # Profile loaded, but no title / guild / primary profession: say so instead of "unknown"
             return no_value_text(self._sensor_type, self.coordinator.client.locale)
         return value
 
@@ -1899,6 +2106,13 @@ class WoWCharacterSensor(CoordinatorEntity, SensorEntity):
 
         # Sensor specific details, e.g. skill per profession or standing per faction
         attributes.update((char_data.get("attrs") or {}).get(self._sensor_type) or {})
+
+        # "x of y": how many mounts, pets, achievements ... the game has
+        if self._sensor_type in COLLECTION_TOTALS:
+            totals = (self.coordinator.data or {}).get("collection_totals") or {}
+            attributes.update(total_attributes(
+                self._sensor_type, char_data.get(self._sensor_type), totals.get(self._sensor_type)
+            ))
 
         return attributes
 
@@ -2008,6 +2222,15 @@ class WoWServerSensor(CoordinatorEntity, SensorEntity):
             "population_type": realm_data.get("realm_population_type"),
             "timezone": realm_data.get("realm_timezone"),
             "locale": realm_data.get("realm_locale"),
+            # e.g. "Seasonal" (Classic Era) or "Active" / "Legacy" (Classic Progression)
+            "realm_category": realm_data.get("realm_category"),
+            # Language independent: NORMAL, PVP, RP, PVP_RP
+            "realm_type": realm_data.get("realm_type"),
+            **{
+                key: realm_data[key]
+                for key in ("locked_for_new_characters", "locked_for_transfers")
+                if key in realm_data
+            },
             "last_update": self.coordinator.last_update_success,
         }
 
@@ -2190,6 +2413,10 @@ class WoWRegionSensor(CoordinatorEntity, SensorEntity):
         self._attr_has_entity_name = True
         self._attr_translation_key = sensor_type
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_{sensor_type}"
+        if sensor_type in REGION_SENSORS_PER_VERSION and coordinator.game_version != "retail":
+            # Split entries share their unique base; these sensors exist in
+            # several game versions (Retail keeps its original ID)
+            self._attr_unique_id += f"_{coordinator.game_version}"
         self._attr_icon = sensor_config["icon"]
         self._attr_native_unit_of_measurement = sensor_config.get("unit")
         self._attr_device_class = sensor_config.get("device_class")
@@ -2371,12 +2598,16 @@ class WoWAccountSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return additional state attributes."""
-        return {
+        attributes = {
             "category": "account",
             # False once the 24 hour login has expired; values are then the last known ones
             "login_valid": self._account.get("login_valid", False),
             **((self._account.get("attrs") or {}).get(self._sensor_type) or {}),
         }
+        if self._sensor_type == "account_login" and self._account.get("battletag"):
+            # Shown by the account card instead of "Battle.net Account"
+            attributes["battletag"] = self._account["battletag"]
+        return attributes
 
     @property
     def device_info(self):

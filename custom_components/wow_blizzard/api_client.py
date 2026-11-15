@@ -21,6 +21,8 @@ from .const import (
     HOF_PROBE_RAID,
     OAUTH_TOKEN_URLS,
     OAUTH_TOKEN_URL_DEFAULT,
+    OAUTH_USERINFO_URLS,
+    OAUTH_USERINFO_URL_DEFAULT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -508,6 +510,20 @@ class WoWBlizzardAPIClient:
             "expires_at": int(datetime.now().timestamp()) + int(token.get("expires_in", 86400)),
         }
 
+    async def get_user_info(self, user_token: str) -> Dict[str, Any]:
+        """BattleTag of the logged-in player ({"battletag", "id", "sub"}); {} on errors."""
+        session = await self._get_session()
+        url = OAUTH_USERINFO_URLS.get(self.region, OAUTH_USERINFO_URL_DEFAULT)
+        try:
+            async with session.get(url, headers={"Authorization": f"Bearer {user_token}"}) as response:
+                if response.status != 200:
+                    _LOGGER.debug("User info answered %s", response.status)
+                    return {}
+                return await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+            _LOGGER.debug("Could not fetch the user info: %s", err)
+            return {}
+
     async def get_account_profile(self, user_token: str, game_version: str = "retail") -> Dict[str, Any]:
         """Get the WoW accounts and characters of the logged-in player."""
         params = {"namespace": self.get_namespace("profile", game_version)}
@@ -519,9 +535,14 @@ class WoWBlizzardAPIClient:
         endpoint = f"/profile/user/wow/protected-character/{realm_id}-{character_id}"
         return await self._make_request(endpoint, params, user_token=user_token)
 
-    async def get_account_collection(self, user_token: str, kind: str, parse_in_thread: bool = False) -> Dict[str, Any]:
-        """Get an account-wide collection, e.g. "mounts", "pets" or "transmogs" (Retail)."""
-        params = {"namespace": self.get_namespace("profile", "retail")}
+    async def get_account_collection(
+        self, user_token: str, kind: str, parse_in_thread: bool = False, game_version: str = "retail"
+    ) -> Dict[str, Any]:
+        """Get an account-wide collection, e.g. "mounts", "pets" or "transmogs".
+
+        Retail, and (not documented) WoW Forever, whose account only has transmogs.
+        """
+        params = {"namespace": self.get_namespace("profile", game_version)}
         return await self._make_request(
             f"/profile/user/wow/collections/{kind}", params, user_token=user_token, parse_in_thread=parse_in_thread
         )
@@ -566,9 +587,13 @@ class WoWBlizzardAPIClient:
         params = {"namespace": self.get_namespace("static", game_version)}
         return await self._make_request(f"/data/wow/media/guild-crest/{kind}/{media_id}", params)
 
-    async def get_pvp_leaderboard(self, season_id: int, bracket: str) -> Dict[str, Any]:
-        """Get the top of a PvP leaderboard (up to about 5000 entries, about 2 MB)."""
-        params = {"namespace": self.get_namespace("dynamic", "retail")}
+    async def get_pvp_leaderboard(self, season_id: int, bracket: str, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the top of a PvP leaderboard (up to about 5000 entries, about 2 MB).
+
+        Classic Progression and Anniversary use the Retail path; the documented
+        Classic path below /data/wow/pvp-region/ answers 404 (verified 2026-11).
+        """
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
         endpoint = f"/data/wow/pvp-season/{season_id}/pvp-leaderboard/{bracket}"
         return await self._make_request(endpoint, params, parse_in_thread=True)
 
@@ -618,6 +643,34 @@ class WoWBlizzardAPIClient:
         endpoint = f"/data/wow/connected-realm/{connected_realm_id}/mythic-leaderboard/{dungeon_id}/period/{period}"
         return await self._make_request(endpoint, params, parse_in_thread=True)
 
+    async def get_static_index(self, path: str, game_version: str = "retail", parse_in_thread: bool = False) -> Dict[str, Any]:
+        """Get a static index such as "/data/wow/mount/index" (for collection totals)."""
+        params = {"namespace": self.get_namespace("static", game_version)}
+        return await self._make_request(path, params, parse_in_thread=parse_in_thread)
+
+    async def get_achievement(self, achievement_id: int, game_version: str = "retail") -> Dict[str, Any]:
+        """Get an achievement (description, points, reward such as "Earn 1 Legacy Point")."""
+        params = {"namespace": self.get_namespace("static", game_version)}
+        return await self._make_request(f"/data/wow/achievement/{achievement_id}", params)
+
+    async def get_game_build(self, game_version: str = "retail") -> Dict[str, Any]:
+        """Game version and build, read from the versioned namespace in the links.
+
+        Every static response links with the namespace of the current build,
+        e.g. "static-12.1.5_70077-eu"; the power type index is the smallest one.
+        """
+        params = {"namespace": self.get_namespace("static", game_version)}
+        data = await self._make_request("/data/wow/power-type/index", params)
+        match = re.search(r"namespace=static-(\d+(?:\.\d+)+)_(\d+)", json.dumps(data or {}))
+        if not match:
+            return {}
+        return {"version": match.group(1), "build": int(match.group(2))}
+
+    async def get_connected_realm_by_id(self, connected_realm_id: int, game_version: str = "retail") -> Dict[str, Any]:
+        """Get a connected realm by ID (Classic Era also reports whether it is locked)."""
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
+        return await self._make_request(f"/data/wow/connected-realm/{connected_realm_id}", params)
+
     async def get_commodities(self) -> Dict[str, Any]:
         """Get the region-wide Retail commodity auctions (about 30 MB of JSON)."""
         params = {"namespace": self.get_namespace("dynamic", "retail")}
@@ -650,9 +703,12 @@ class WoWBlizzardAPIClient:
         endpoint = f"/data/wow/ruleset/{ruleset_id}/auctions/{house_id}/commodities"
         return await self._make_request(endpoint, params, parse_in_thread=True)
 
-    async def get_current_keystone_period(self) -> Dict[str, Any]:
-        """Get the current weekly period (start and end of the reset week)."""
-        params = {"namespace": self.get_namespace("dynamic", "retail")}
+    async def get_current_keystone_period(self, game_version: str = "retail") -> Dict[str, Any]:
+        """Get the current weekly period (start and end of the reset week).
+
+        Also answers for Classic Progression, although it is not documented there.
+        """
+        params = {"namespace": self.get_namespace("dynamic", game_version)}
         index = await self._make_request("/data/wow/mythic-keystone/period/index", params)
         period_id = (index.get("current_period") or {}).get("id")
         if not isinstance(period_id, int):

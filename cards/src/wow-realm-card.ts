@@ -20,7 +20,11 @@ const SECTIONS = {
   reset: ["weekly_reset"],
   mythic_season: ["mythicplus_season", "mythicplus_affixes"],
   pvp_season: ["pvp_season", "pvp_cutoff_gladiator", "pvp_cutoff_hero", "pvp_season_classic", "pvp_season_classicann"],
+  version: ["game_build"],
 } as const;
+
+// Realm types as the game shows them
+const REALM_TYPES: Record<string, string> = { NORMAL: "PvE", PVP: "PvP", RP: "RP", PVP_RP: "RP-PvP" };
 type RealmSection = keyof typeof SECTIONS;
 const SECTION_IDS = Object.keys(SECTIONS) as RealmSection[];
 
@@ -132,10 +136,22 @@ export class WowRealmCard extends WowBaseCard<RealmCardConfig> {
       case "status": {
         const population = e.get("realm_population");
         const queue = e.get("realm_queue");
+        const status = e.get("realm_status");
+        const a = status?.attributes ?? {};
         return rows(ctx, [
           hasValue(population) ? { label: this.t("population"), value: population.state, state: population } : undefined,
           hasValue(queue)
             ? { label: this.t("queue"), value: queue.state === "True" ? this.t("queue_active") : this.t("queue_none"), state: queue }
+            : undefined,
+          a.realm_category ? { label: this.t("realm_category"), value: a.realm_category, state: status } : undefined,
+          a.realm_type ? { label: this.t("realm_type"), value: REALM_TYPES[a.realm_type] ?? a.realm_type, state: status } : undefined,
+          // Only Classic Era reports whether a realm is closed for new characters
+          typeof a.locked_for_new_characters === "boolean"
+            ? {
+                label: this.t("realm_locked"),
+                value: a.locked_for_new_characters ? this.t("realm_locked_yes") : this.t("realm_locked_no"),
+                state: status,
+              }
             : undefined,
         ]);
       }
@@ -195,6 +211,20 @@ export class WowRealmCard extends WowBaseCard<RealmCardConfig> {
           ])}
         `;
         return section(ctx, "realm_pvp_season", body);
+      }
+      case "version": {
+        const build = e.get("game_build");
+        if (!hasValue(build)) return nothing;
+        return section(
+          ctx,
+          "realm_version",
+          rows(ctx, [
+            { label: this.t("game_version"), value: build.state, state: build },
+            typeof build.attributes.build === "number"
+              ? { label: this.t("game_build"), value: String(build.attributes.build), state: build }
+              : undefined,
+          ]),
+        );
       }
     }
   }

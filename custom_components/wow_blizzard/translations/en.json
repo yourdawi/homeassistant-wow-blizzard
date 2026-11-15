@@ -30,7 +30,7 @@
           "enable_character_details": "Enable character details (professions, stats, talents, reputations, ...)",
           "enable_collections": "Enable collections (mounts, pets, toys, heirlooms)",
           "enable_guild": "Enable guild data",
-          "enable_region_data": "Enable WoW Token price and weekly reset",
+          "enable_region_data": "Enable region data (game version; WoW Token and weekly reset in Retail and Classic Progression)",
           "enable_mythic_leaderboard": "Mythic+ realm leaderboards and weekly affixes (about 8 MB per realm and hour)",
           "enable_pvp_leaderboard": "PvP leaderboard ranks of your characters (about 2 MB per bracket and hour)",
           "auction_items": "Item IDs for auction prices (comma separated, empty = off)"
@@ -126,7 +126,7 @@
           "enable_character_details": "Character details (professions, stats, talents, reputations, ...)",
           "enable_collections": "Collections (mounts, pets, toys, heirlooms)",
           "enable_guild": "Guild members & achievement points",
-          "enable_region_data": "WoW Token price & weekly reset",
+          "enable_region_data": "Region data (game version; WoW Token and weekly reset in Retail and Classic Progression)",
           "enable_mythic_leaderboard": "Mythic+ realm leaderboards & affixes (about 8 MB per realm and hour)",
           "enable_pvp_leaderboard": "PvP leaderboard ranks (about 2 MB per bracket and hour)",
           "auction_items": "Item IDs for auction prices (comma separated, empty = off)"
@@ -221,6 +221,9 @@
       "character_equipment": {
         "name": "Equipment Details"
       },
+      "character_experience": {
+        "name": "Experience"
+      },
       "realm_status": {
         "name": "Realm Status"
       },
@@ -235,6 +238,9 @@
       },
       "pvp_3v3_rating": {
         "name": "3v3 Arena Rating"
+      },
+      "pvp_5v5_rating": {
+        "name": "5v5 Arena Rating"
       },
       "pvp_rbg_rating": {
         "name": "RBG Rating"
@@ -418,6 +424,12 @@
       "account_transmogs": {
         "name": "Account Transmog Appearances"
       },
+      "account_transmogs_forever": {
+        "name": "Account Transmog Appearances (WoW Forever)"
+      },
+      "account_houses": {
+        "name": "Houses"
+      },
       "account_login": {
         "name": "Battle.net Login Expires"
       },
@@ -432,6 +444,9 @@
       },
       "mythicplus_affixes": {
         "name": "M+ Affixes"
+      },
+      "game_build": {
+        "name": "Game Version"
       },
       "mythicplus_realm_best": {
         "name": "Best M+ Key This Week"
