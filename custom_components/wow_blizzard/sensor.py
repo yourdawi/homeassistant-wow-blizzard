@@ -579,10 +579,9 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 result["pvp_rank"] = summary.get("pvp_rank", 0)
 
             # Brackets report the last season the character played; older
-            # seasons count as 0 for the current one (Retail only)
-            current_season = (self._pvp_season.get("season") or {}).get("id") if game_version == "retail" else None
-            # Season of the leaderboards (Retail, Classic Progression, Anniversary)
-            leaderboard_season = self._leaderboard_season_id(game_version)
+            # seasons count as 0 for the current one
+            # Current season: Retail, Classic Progression and Anniversary (Era has no seasons)
+            current_season = self._leaderboard_season_id(game_version)
             # Retail title cutoffs only for Retail; Classic seasons list several titles per bracket
             cutoffs = (self._pvp_season.get("cutoffs") or {}) if game_version == "retail" else {}
             title_cutoffs = (self._classic_pvp_seasons.get(game_version) or {}).get("titles") or {}
@@ -603,7 +602,7 @@ class WoWDataUpdateCoordinator(DataUpdateCoordinator):
                 weekly_stats = {} if stale else (data.get("weekly_match_statistics") or {})
                 result[sensor] = 0 if stale else data["rating"]
                 wins_season += season_stats.get("won", 0)
-                if not stale and leaderboard_season is not None and season_id == leaderboard_season and season_stats.get("played"):
+                if not stale and current_season is not None and season_stats.get("played"):
                     # Played this season: look the character up on the leaderboard
                     result.setdefault("pvp_leaderboard_brackets", {})[sensor] = bracket
 

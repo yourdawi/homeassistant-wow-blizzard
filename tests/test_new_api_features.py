@@ -112,7 +112,18 @@ async def test_classic_5v5_and_leaderboard(hass: HomeAssistant) -> None:
         "ARENA_5v5": [{"title": "Gladiator", "rating": 2500}],
     }}}
 
+    # 3v3 was last played in an older season
+    original = client.get_character_pvp_bracket.side_effect
+
+    async def with_old_season(realm, name, slug, game_version):
+        if slug == "3v3":
+            return {"rating": 2100, "season": {"id": 13}, "season_match_statistics": {"played": 50, "won": 30}}
+        return await original(realm, name, slug, game_version)
+
+    client.get_character_pvp_bracket = AsyncMock(side_effect=with_old_season)
     result = await coordinator._fetch_pvp_data("stormwind", "Varian", "classic", {"faction_type": "ALLIANCE"})
+    assert result["pvp_3v3_rating"] == 0
+    assert result["attrs"]["pvp_3v3_rating"]["last_season_rating"] == 2100
     assert result["pvp_5v5_rating"] == 1850
     assert result["pvp_rbg_rating"] == 0
     assert result["pvp_wins_season"] == 12

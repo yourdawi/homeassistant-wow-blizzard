@@ -202,7 +202,7 @@ Each character becomes a device named `<Character> (<realm>)`, each realm become
 
 Classic Progression and Anniversary characters get `title_cutoffs` on the bracket sensors instead: every title of the season (for example Gladiator, Duelist, Rival) with the rating it needs, highest first.
 
-The rated PvP sensors only count the current season. Blizzard returns the last season a character played; ratings from an older season show as 0, with the old rating in `last_season_rating`. Every bracket sensor has `season_played`, `season_won`, `season_lost`, `weekly_played` and `weekly_won`, and 3v3 / RBG show the `gladiator_cutoff` / `hero_cutoff`.
+The rated PvP sensors only count the current season (Retail, Classic Progression and Anniversary). Blizzard returns the last season a character played; ratings from an older season show as 0, with the old rating in `last_season_rating`. Every bracket sensor has `season_played`, `season_won`, `season_lost`, `weekly_played` and `weekly_won`, and 3v3 / RBG show the `gladiator_cutoff` / `hero_cutoff`.
 
 With **PvP leaderboards** enabled, the bracket sensors of every bracket a Retail, Classic Progression or Anniversary character played this season also get `leaderboard_rank` (place on the regional leaderboard, `null` if not on it), `leaderboard_entries` and `leaderboard_min_rating` (the rating needed to be listed). Blizzard only lists the best players of the region, about 5000 per bracket. Each leaderboard needed by one of your characters is downloaded once per hour (about 2 MB).
 
