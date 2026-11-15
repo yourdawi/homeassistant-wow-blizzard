@@ -142,6 +142,8 @@ REALM_LOCK_REFRESH_INTERVAL = 3600
 GAME_BUILD_REFRESH_INTERVAL = 3600
 # Totals of the collections (all mounts, pets ...); also refetched on a new build
 COLLECTION_TOTALS_REFRESH_INTERVAL = 24 * 3600
+# Region sensors that more than one game version has
+REGION_SENSORS_PER_VERSION = ("game_build", "weekly_reset")
 
 # Hall of Fame list sizes: split faction lists hold 100 guilds, unified lists 200
 HOF_FULL_SPLIT = 100
@@ -2373,6 +2375,10 @@ class WoWRegionSensor(CoordinatorEntity, SensorEntity):
         self._attr_has_entity_name = True
         self._attr_translation_key = sensor_type
         self._attr_unique_id = f"{DOMAIN}_{entry_id}_{sensor_type}"
+        if sensor_type in REGION_SENSORS_PER_VERSION and coordinator.game_version != "retail":
+            # Split entries share their unique base; these sensors exist in
+            # several game versions (Retail keeps its original ID)
+            self._attr_unique_id += f"_{coordinator.game_version}"
         self._attr_icon = sensor_config["icon"]
         self._attr_native_unit_of_measurement = sensor_config.get("unit")
         self._attr_device_class = sensor_config.get("device_class")
