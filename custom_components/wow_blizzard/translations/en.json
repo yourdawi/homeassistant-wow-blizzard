@@ -86,6 +86,10 @@
         "title": "Battle.net login not completed",
         "description": "Nothing is lost. Go back to add characters by hand or try the login again. If this keeps failing, check that `{redirect_url}` is a redirect URL of your Battle.net API client."
       },
+      "reauth_confirm": {
+        "title": "Battle.net login expired",
+        "description": "Blizzard limits logins to 24 hours. Select **Submit** to log in with Battle.net again; gold and account values then update again. Your characters stay as they are."
+      },
       "account_options": {
         "title": "Account data",
         "description": "{selected_count} character(s) selected. They are added to the entry of their game version, which is created if missing.\n\nKeep the Battle.net login to load gold per character, total gold and account collections; it is stored in the **Battle.net Account** entry. Blizzard limits logins to 24 hours; afterwards the values keep their last state, everything else keeps working, and Home Assistant asks you to log in again: one click on **Re-authenticate** opens the Battle.net login.",

@@ -857,8 +857,19 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
         return await self.async_step_account_login()
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
-        """Expired Battle.net login: one click on "Re-authenticate" opens the login."""
+        """Expired Battle.net login, started in the background by the account update."""
         self.data = dict(entry_data)
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Ask before the login.
+
+        Without My Home Assistant the redirect URL comes from the browser request,
+        which only exists once the user submits a step; a reauth flow starts
+        without one.
+        """
+        if user_input is None:
+            return self.async_show_form(step_id="reauth_confirm", data_schema=vol.Schema({}))
         return await self.async_step_account_login()
 
 

@@ -86,6 +86,10 @@
         "title": "Battle.net-Anmeldung nicht abgeschlossen",
         "description": "Es geht nichts verloren. Geh zurück, um Charaktere von Hand hinzuzufügen oder die Anmeldung erneut zu versuchen. Klappt es dauerhaft nicht, prüfe, ob `{redirect_url}` als Redirect-URL im Battle.net-API-Client eingetragen ist."
       },
+      "reauth_confirm": {
+        "title": "Battle.net-Login abgelaufen",
+        "description": "Blizzard begrenzt Logins auf 24 Stunden. Wähle **Absenden**, um dich erneut bei Battle.net anzumelden; danach aktualisieren sich Gold und Account-Werte wieder. Deine Charaktere bleiben unverändert."
+      },
       "account_options": {
         "title": "Account-Daten",
         "description": "{selected_count} Charakter(e) ausgewählt. Sie kommen in den Eintrag ihrer Spielversion, der bei Bedarf angelegt wird.\n\nBehalte den Battle.net-Login, um Gold pro Charakter, Gold gesamt und Account-Sammlungen zu laden; er wird im Eintrag **Battle.net Account** gespeichert. Blizzard begrenzt Logins auf 24 Stunden; danach behalten die Werte ihren letzten Stand, alles andere läuft weiter, und Home Assistant fordert dich zur erneuten Anmeldung auf: Ein Klick auf **Erneut authentifizieren** öffnet den Battle.net-Login.",
