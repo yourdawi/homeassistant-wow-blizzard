@@ -1,5 +1,6 @@
 """Config flow: one entry per game version, characters as subentries."""
 import logging
+from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Dict, List, Optional
 
@@ -648,12 +649,24 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
                 _LOGGER.exception("Battle.net login failed")
             finally:
                 await client.close()
+        if self.source == config_entries.SOURCE_REAUTH:
+            return self.async_external_step_done(next_step_id="account_renewed")
         return self.async_external_step_done(next_step_id="account_select")
+
+    async def async_step_account_renewed(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Re-authentication: store the new login, no character selection."""
+        if not self._account_token:
+            self._account_error = "account_login_failed"
+            return await self.async_step_account_failed()
+        entry = self._get_reauth_entry()
+        return self.async_update_reload_and_abort(
+            entry, data={**entry.data, CONF_ACCOUNT_TOKEN: self._account_token}, reason="reauth_successful",
+        )
 
     async def async_step_account_failed(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Explain a failed login; nothing is lost."""
         if user_input is not None:
-            if self.source == config_entries.SOURCE_RECONFIGURE or self._is_account:
+            if self.source in (config_entries.SOURCE_RECONFIGURE, config_entries.SOURCE_REAUTH) or self._is_account:
                 return self.async_abort(reason="account_login_skipped")
             return await self.async_step_add_method()
         return self.async_show_form(
@@ -841,6 +854,11 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
         """Log in with Battle.net again: import characters and refresh the account login."""
         entry = self._get_reconfigure_entry()
         self.data = dict(entry.data)
+        return await self.async_step_account_login()
+
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
+        """Expired Battle.net login: one click on "Re-authenticate" opens the login."""
+        self.data = dict(entry_data)
         return await self.async_step_account_login()
 
 
