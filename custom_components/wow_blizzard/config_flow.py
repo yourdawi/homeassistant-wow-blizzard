@@ -1,5 +1,6 @@
 """Config flow: one entry per game version, characters as subentries."""
 import logging
+from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Dict, List, Optional
 
@@ -11,6 +12,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult, section
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.config_entry_oauth2_flow import LocalOAuth2Implementation
 from yarl import URL
 
@@ -221,18 +223,20 @@ def character_details_schema(realms_list: List[Dict[str, Any]], realmless: bool 
     })
 
 
-def _client_for(data: Dict[str, Any]) -> WoWBlizzardAPIClient:
+def _client_for(hass: HomeAssistant, data: Dict[str, Any]) -> WoWBlizzardAPIClient:
+    """Build an API client on Home Assistant's shared aiohttp session."""
     return WoWBlizzardAPIClient(
         data[CONF_CLIENT_ID],
         data[CONF_CLIENT_SECRET],
         data[CONF_REGION],
         locale=data.get(CONF_LOCALE),
+        session=async_get_clientsession(hass),
     )
 
 
 async def validate_api_credentials(hass: HomeAssistant, data: dict[str, Any]) -> None:
     """Validate the API credentials by making a test call."""
-    client = _client_for(data)
+    client = _client_for(hass, data)
     try:
         realms = await client.get_all_realms()
         if not realms or "realms" not in realms:
@@ -248,13 +252,13 @@ async def validate_api_credentials(hass: HomeAssistant, data: dict[str, Any]) ->
         await client.close()
 
 
-async def load_realms(data: Dict[str, Any], game_version: str) -> Dict[str, Any]:
+async def load_realms(hass: HomeAssistant, data: Dict[str, Any], game_version: str) -> Dict[str, Any]:
     """Resolve the namespace for a game version and load its realm list.
 
     Returns {"suffix": str | None, "realms": [...]}. A suffix of None means the
     API does not offer this game version (yet).
     """
-    client = _client_for(data)
+    client = _client_for(hass, data)
     try:
         suffix = await client.resolve_namespace_suffix(game_version)
         if suffix is None:
@@ -270,13 +274,14 @@ async def load_realms(data: Dict[str, Any], game_version: str) -> Dict[str, Any]
 
 
 async def validate_character(
+    hass: HomeAssistant,
     data: dict[str, Any],
     character: dict[str, str],
     game_version: str,
     namespace_suffix: Optional[str] = None,
 ) -> dict[str, Any]:
     """Validate that a character exists and return its details."""
-    client = _client_for(data)
+    client = _client_for(hass, data)
     if namespace_suffix is not None:
         client.set_namespace_suffix(game_version, namespace_suffix)
     try:
@@ -362,7 +367,7 @@ class CharacterFormMixin:
     async def _get_realms(self, data: Dict[str, Any], game_version: str) -> Dict[str, Any]:
         if game_version not in self._realm_cache:
             try:
-                self._realm_cache[game_version] = await load_realms(data, game_version)
+                self._realm_cache[game_version] = await load_realms(self.hass, data, game_version)
             except Exception as e:
                 _LOGGER.error(f"Error loading realms for {game_version}: {e}")
                 return {"suffix": GAME_VERSIONS[game_version]["namespaces"][0], "realms": [], "error": True}
@@ -397,7 +402,7 @@ class CharacterFormMixin:
                 CONF_CHARACTER_NAME: user_input[CONF_CHARACTER_NAME].strip(),
             }
             try:
-                info = await validate_character(data, character, game_version, realms["suffix"])
+                info = await validate_character(self.hass, data, character, game_version, realms["suffix"])
                 if realmless:
                     # The ruleset takes the place of the realm (device name, server status)
                     character[CONF_REALM] = WoWBlizzardAPIClient.realm_to_slug(info["realm"])
@@ -635,7 +640,7 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
 
         self._account_token = None
         if "code" in user_input:
-            client = _client_for(self.data)
+            client = _client_for(self.hass, self.data)
             try:
                 self._account_token = await client.exchange_authorization_code(
                     user_input["code"], user_input["state"]["redirect_uri"]
@@ -644,12 +649,24 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
                 _LOGGER.exception("Battle.net login failed")
             finally:
                 await client.close()
+        if self.source == config_entries.SOURCE_REAUTH:
+            return self.async_external_step_done(next_step_id="account_renewed")
         return self.async_external_step_done(next_step_id="account_select")
+
+    async def async_step_account_renewed(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Re-authentication: store the new login, no character selection."""
+        if not self._account_token:
+            self._account_error = "account_login_failed"
+            return await self.async_step_account_failed()
+        entry = self._get_reauth_entry()
+        return self.async_update_reload_and_abort(
+            entry, data={**entry.data, CONF_ACCOUNT_TOKEN: self._account_token}, reason="reauth_successful",
+        )
 
     async def async_step_account_failed(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Explain a failed login; nothing is lost."""
         if user_input is not None:
-            if self.source == config_entries.SOURCE_RECONFIGURE or self._is_account:
+            if self.source in (config_entries.SOURCE_RECONFIGURE, config_entries.SOURCE_REAUTH) or self._is_account:
                 return self.async_abort(reason="account_login_skipped")
             return await self.async_step_add_method()
         return self.async_show_form(
@@ -676,7 +693,7 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
             return await self.async_step_account_failed()
 
         if not self._account_characters:
-            client = _client_for(self.data)
+            client = _client_for(self.hass, self.data)
             try:
                 for game_version in ACCOUNT_GAME_VERSIONS:
                     try:
@@ -837,6 +854,11 @@ class WoWBlizzardConfigFlow(CharacterFormMixin, config_entries.ConfigFlow, domai
         """Log in with Battle.net again: import characters and refresh the account login."""
         entry = self._get_reconfigure_entry()
         self.data = dict(entry.data)
+        return await self.async_step_account_login()
+
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> FlowResult:
+        """Expired Battle.net login: one click on "Re-authenticate" opens the login."""
+        self.data = dict(entry_data)
         return await self.async_step_account_login()
 
 

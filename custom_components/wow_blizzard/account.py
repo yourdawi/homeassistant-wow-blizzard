@@ -44,7 +44,7 @@ def is_account_entry(entry: ConfigEntry) -> bool:
 
 
 def account_issue_id(entry_id: Optional[str]) -> str:
-    """Repair issue shown while the Battle.net login is expired."""
+    """Repair issue of older versions for an expired login (only removed now)."""
     return f"account_login_expired_{entry_id}"
 
 
@@ -148,14 +148,11 @@ class AccountCoordinator(DataUpdateCoordinator):
                 self._last = {k: v for k, v in fresh.items() if k not in ("account_login", "login_valid")}
                 await self._store.async_save(self._last)
 
+        # Notice of older versions, replaced by Home Assistant's re-authentication
+        ir.async_delete_issue(self.hass, DOMAIN, account_issue_id(self.entry.entry_id))
         if self.expired:
-            ir.async_create_issue(
-                self.hass, DOMAIN, account_issue_id(self.entry.entry_id),
-                is_fixable=False, severity=ir.IssueSeverity.WARNING,
-                translation_key="account_login_expired",
-            )
-        else:
-            ir.async_delete_issue(self.hass, DOMAIN, account_issue_id(self.entry.entry_id))
+            # "Re-authenticate" opens the Battle.net login directly; started only once
+            self.entry.async_start_reauth(self.hass)
         return result
 
     async def _fetch(self, token: str, expires_at: int) -> Optional[Dict[str, Any]]:

@@ -88,7 +88,7 @@
       },
       "account_options": {
         "title": "Account-Daten",
-        "description": "{selected_count} Charakter(e) ausgewählt. Sie kommen in den Eintrag ihrer Spielversion, der bei Bedarf angelegt wird.\n\nBehalte den Battle.net-Login, um Gold pro Charakter, Gold gesamt und Account-Sammlungen zu laden; er wird im Eintrag **Battle.net Account** gespeichert. Blizzard begrenzt Logins auf 24 Stunden; danach behalten die Werte ihren letzten Stand, alles andere läuft weiter, und du kannst dich jederzeit über **Neu konfigurieren** am Battle.net-Account-Eintrag wieder anmelden.",
+        "description": "{selected_count} Charakter(e) ausgewählt. Sie kommen in den Eintrag ihrer Spielversion, der bei Bedarf angelegt wird.\n\nBehalte den Battle.net-Login, um Gold pro Charakter, Gold gesamt und Account-Sammlungen zu laden; er wird im Eintrag **Battle.net Account** gespeichert. Blizzard begrenzt Logins auf 24 Stunden; danach behalten die Werte ihren letzten Stand, alles andere läuft weiter, und Home Assistant fordert dich zur erneuten Anmeldung auf: Ein Klick auf **Erneut authentifizieren** öffnet den Battle.net-Login.",
         "data": {
           "keep_login": "Account-Daten laden (Gold, Account-Sammlungen), solange der Login gilt"
         }
@@ -109,7 +109,8 @@
       "all_versions_configured": "Alle Spielversionen sind für diese Region bereits eingerichtet",
       "reconfigure_successful": "Charaktere und Battle.net-Login aktualisiert",
       "account_login_skipped": "Battle.net-Anmeldung nicht abgeschlossen, die Konfiguration bleibt unverändert",
-      "characters_imported": "Charaktere importiert, der Login wurde nicht behalten"
+      "characters_imported": "Charaktere importiert, der Login wurde nicht behalten",
+      "reauth_successful": "Battle.net-Login erneuert"
     }
   },
   "options": {
@@ -513,12 +514,6 @@
         "forever": "WoW Forever",
         "account": "Battle.net-Account (Login für Gold und Account-Sammlungen)"
       }
-    }
-  },
-  "issues": {
-    "account_login_expired": {
-      "title": "Battle.net-Login abgelaufen",
-      "description": "Der Battle.net-Login von World of Warcraft ist abgelaufen (Blizzard begrenzt Logins auf 24 Stunden). Alles andere läuft normal weiter; Gold und Account-Werte behalten ihren letzten Stand. Zum Aktualisieren den Eintrag **Battle.net Account** öffnen und **Neu konfigurieren** wählen. Wenn du keine Account-Daten brauchst, entferne dort über **Konfigurieren** den Login oder ignoriere diesen Hinweis."
     }
   }
 }

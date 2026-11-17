@@ -88,7 +88,7 @@
       },
       "account_options": {
         "title": "Account data",
-        "description": "{selected_count} character(s) selected. They are added to the entry of their game version, which is created if missing.\n\nKeep the Battle.net login to load gold per character, total gold and account collections; it is stored in the **Battle.net Account** entry. Blizzard limits logins to 24 hours; afterwards the values keep their last state, everything else keeps working, and you can log in again with **Reconfigure** on the Battle.net Account entry whenever you like.",
+        "description": "{selected_count} character(s) selected. They are added to the entry of their game version, which is created if missing.\n\nKeep the Battle.net login to load gold per character, total gold and account collections; it is stored in the **Battle.net Account** entry. Blizzard limits logins to 24 hours; afterwards the values keep their last state, everything else keeps working, and Home Assistant asks you to log in again: one click on **Re-authenticate** opens the Battle.net login.",
         "data": {
           "keep_login": "Load account data (gold, account collections) while the login is valid"
         }
@@ -109,7 +109,8 @@
       "all_versions_configured": "All game versions are already set up for this region",
       "reconfigure_successful": "Characters and Battle.net login updated",
       "account_login_skipped": "Battle.net login not completed, the configuration is unchanged",
-      "characters_imported": "Characters imported, the login was not kept"
+      "characters_imported": "Characters imported, the login was not kept",
+      "reauth_successful": "Battle.net login renewed"
     }
   },
   "options": {
@@ -513,12 +514,6 @@
         "forever": "WoW Forever",
         "account": "Battle.net Account (login for gold and account collections)"
       }
-    }
-  },
-  "issues": {
-    "account_login_expired": {
-      "title": "Battle.net login expired",
-      "description": "The Battle.net login of World of Warcraft has expired (Blizzard limits logins to 24 hours). Everything else keeps working; gold and account values keep their last state. To update them, open the **Battle.net Account** entry and choose **Reconfigure**. If you do not need account data, choose **Configure** there to remove the login, or ignore this notice."
     }
   }
 }
