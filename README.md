@@ -3,6 +3,7 @@
 <!-- ha-marketplace:exclude-start -->
 [![Validate](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/validate.yaml/badge.svg)](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/validate.yaml)
 [![Validate with hassfest](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/yourdawi/homeassistant-wow-blizzard/actions/workflows/hassfest.yaml)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/default)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/yourdawi/homeassistant-wow-blizzard/total)
 
 [![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=yourdawi&repository=homeassistant-wow-blizzard&category=integration)
@@ -85,21 +86,19 @@ Not available for Forever in the API: arena ratings, Mythic+, WoW Token, weekly 
 
 ### Marketplace (Home Assistant 2026.11 and newer)
 
-Since Home Assistant 2026.11 the Marketplace (formerly HACS) is part of Home Assistant.
+Since Home Assistant 2026.11 the Marketplace (formerly HACS) is part of Home Assistant. The integration is listed there by default, so you do not need to add a repository.
 
 [![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=yourdawi&repository=homeassistant-wow-blizzard&category=integration)
 
-1. Click the button above, or go to **Settings > Marketplace** and search for **World of Warcraft**. If it is not listed yet, add `https://github.com/yourdawi/homeassistant-wow-blizzard` as a repository by link with the type **Integration**.
+1. Click the button above, or go to **Settings > Marketplace** and search for **World of Warcraft**.
 2. Select **Download**.
 3. Continue with [Configuration](#configuration). A restart is only needed for updates.
 
 ### HACS (Home Assistant before 2026.11)
 
-1. Open HACS and select **Integrations**.
-2. Open the menu and select **Custom repositories**.
-3. Add `https://github.com/yourdawi/homeassistant-wow-blizzard` with the category **Integration**.
-4. Install **World of Warcraft**.
-5. Restart Home Assistant.
+1. Open HACS and search for **World of Warcraft**.
+2. Select **Download**.
+3. Restart Home Assistant.
 
 ### Manual
 
